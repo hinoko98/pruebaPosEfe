@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 //import { dirname } from 'node:path';
 
 import sqlite3 from 'sqlite3';
-import bcrypt from 'bcrypt';
+//import bcrypt from 'bcryptjs'
 
 import path from "node:path";
 
@@ -50,7 +50,7 @@ function createWindow() {
   win.webContents.on("did-finish-load", () => {
     win?.webContents.send("main-process-message", new Date().toLocaleString());
   });
-
+  
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL);
   } else {
