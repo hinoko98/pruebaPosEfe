@@ -1,7 +1,8 @@
 import { app, BrowserWindow, ipcMain, Menu } from "electron";
 import { fileURLToPath } from "node:url";
-import sqlite3 from "sqlite3";
 import path from "node:path";
+import sqlite3 from "sqlite3";
+import bcrypt from "bcryptjs";
 const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname$1, "..");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
@@ -13,10 +14,13 @@ let db = null;
 function createWindow() {
   win = new BrowserWindow({
     icon: path.join(process.env.VITE_PUBLIC, "mascot.png"),
+    // Icono de la aplicación
     webPreferences: {
+      // El script 'preload' actúa como puente seguro entre Node.js y el navegador (React)
       preload: path.join(__dirname$1, "preload.mjs")
     },
     show: false
+    // Se mantiene oculta inicialmente para evitar que se vea el proceso de carga
   });
   Menu.setApplicationMenu(null);
   win.maximize();
@@ -65,7 +69,9 @@ ipcMain.handle("login", async (_event, { username, password }) => {
       if (err) return resolve({ success: false, message: "Error en DB" });
       if (!row) return resolve({ success: false, message: "Usuario no encontrado" });
       const match = await bcrypt.compare(password, row.password_hash);
-      resolve(match ? { success: true, user: { username: row.username, role: row.role } } : { success: false, message: "Contraseña incorrecta" });
+      resolve(
+        match ? { success: true, user: { username: row.username, role: row.role } } : { success: false, message: "Contraseña incorrecta" }
+      );
     });
   });
 });
