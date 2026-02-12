@@ -1,13 +1,11 @@
-// src/composables/ProtectedRoute.tsx
-import { Navigate, Outlet } from 'react-router-dom';
-import { useAuth } from "@/composables/useAuth.tsx"; // mismo alias que usas
+import { Navigate, Outlet } from "react-router-dom";
+import { useAuth } from "@/composables/useAuth";
 
 export default function ProtectedRoute() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
+  if (loading) return null; // o un Loader
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
 
   return <Outlet />;
 }
