@@ -176,9 +176,7 @@ export default function SideMenu({
             <Typography variant="caption" color="text.secondary">
               Última sincronización
             </Typography>
-            <Typography variant="body2">
-              {lastSyncText ?? "—"}
-            </Typography>
+            <Typography variant="body2">{lastSyncText ?? "—"}</Typography>
           </Box>
 
           <IconButton
@@ -195,17 +193,16 @@ export default function SideMenu({
   );
 }
 
-/** Ejemplo de menú estilo Alegra POS (lo usas donde quieras) */
+/** menú estilo POS */
 export const allegraLikeMenu: MenuItem[] = [
   { type: "item", label: "Facturar", path: "/app/pos", icon: <HomeIcon /> },
-  { type: "item", label: "Documentos electrónicos", path: "/app/docs", icon: <DescriptionIcon /> },
-
   {
     type: "group",
     label: "Ingresos",
     icon: <AttachMoneyIcon />,
     children: [
       { label: "Ingresos", path: "/app/incomes" },
+      { label: "Historial de ventas", path: "/app/incomes/history" },
       { label: "Pagos", path: "/app/payments" },
     ],
   },
@@ -215,14 +212,29 @@ export const allegraLikeMenu: MenuItem[] = [
     label: "Turnos",
     icon: <SwapVertIcon />,
     children: [
-      { label: "Apertura/Cierre", path: "/app/shifts" },
-      { label: "Arqueo", path: "/app/cash-count" },
+      { label: "Historial de turnos", path: "/app/shifts" },
+      { label: "Reportes de turnos", path: "/app/cash-count" },
     ],
   },
 
-  { type: "item", label: "Gestión de efectivo", path: "/app/cash", icon: <AttachMoneyIcon /> },
-  { type: "item", label: "Devoluciones", path: "/app/refunds", icon: <SwapVertIcon /> },
-  { type: "item", label: "Contactos", path: "/app/contacts", icon: <PeopleAltIcon /> },
+  {
+    type: "item",
+    label: "Gestión de efectivo",
+    path: "/app/cash",
+    icon: <AttachMoneyIcon />,
+  },
+  {
+    type: "item",
+    label: "Devoluciones",
+    path: "/app/refunds",
+    icon: <SwapVertIcon />,
+  },
+  {
+    type: "item",
+    label: "Contactos",
+    path: "/app/contacts",
+    icon: <PeopleAltIcon />,
+  },
 
   {
     type: "group",
@@ -231,14 +243,20 @@ export const allegraLikeMenu: MenuItem[] = [
     children: [
       { label: "Productos", path: "/admin/products" }, // ajusta según rol
       { label: "Movimientos", path: "/app/stock-moves" },
+      { label: "Bodegas", path: "/app/warehouses" },
     ],
   },
 
-  { type: "item", label: "Compras", path: "/app/purchases", icon: <ShoppingCartIcon /> },
-  { type: "item", label: "Configuraciones", path: "/app/settings", icon: <SettingsIcon /> },
-
-  { type: "divider" },
-  { type: "item", label: "Mi suscripción", path: "/app/subscription" },
-  { type: "item", label: "Atajos del teclado", path: "/app/shortcuts" },
-  { type: "item", label: "Portal de clientes", path: "/app/portal" },
+  {
+    type: "item",
+    label: "Compras",
+    path: "/app/purchases",
+    icon: <ShoppingCartIcon />,
+  },
+  {
+    type: "item",
+    label: "Configuraciones",
+    path: "/app/settings",
+    icon: <SettingsIcon />,
+  },
 ];

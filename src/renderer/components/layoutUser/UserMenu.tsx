@@ -25,10 +25,10 @@ export type UserMenuItem = {
   key: string;
   label: string;
   icon?: React.ReactNode;
-  path?: string;              // navegación interna
-  external?: boolean;         // si abre afuera (en web)
-  href?: string;              // link externo
-  roles?: Role[];             // opcional: restringe por rol
+  path?: string; // navegación interna
+  external?: boolean; // si abre afuera (en web)
+  href?: string; // link externo
+  roles?: Role[]; // opcional: restringe por rol
   dividerBefore?: boolean;
 };
 
@@ -60,7 +60,8 @@ export default function UserMenu({
     return (a + b).toUpperCase();
   }, [user.name]);
 
-  const handleOpen = (e: React.MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget);
+  const handleOpen = (e: React.MouseEvent<HTMLElement>) =>
+    setAnchorEl(e.currentTarget);
   const handleClose = () => setAnchorEl(null);
 
   const handleItemClick = (item: UserMenuItem) => {
@@ -136,40 +137,28 @@ export default function UserMenu({
 }
 
 /** Items default recomendados (los “generales” que pediste) */
-export function defaultUserMenuItems(basePath: "/admin" | "/app"): UserMenuItem[] {
+export function defaultUserMenuItems(
+  basePath: "/admin" | "/app",
+): UserMenuItem[] {
   return [
-    // Opcionales tipo “POS para Windows / Consumo plan” (solo ADMIN normalmente)
-    {
-      key: "pos-windows",
-      label: "POS para Windows",
-      icon: <MonitorIcon />,
-      roles: ["ADMIN"],
-      external: true,
-      href: "https://example.com", // cámbialo o quítalo
-    },
-    {
-      key: "plan",
-      label: "Consumo del plan",
-      icon: <BarChartIcon />,
-      roles: ["ADMIN"],
-      external: true,
-      href: "https://example.com",
-    },
-
     // Generales para TODOS
-    { key: "profile", label: "Mi Perfil", icon: <PersonIcon />, path: `${basePath}/profile` },
-    { key: "security", label: "Seguridad", icon: <SecurityIcon />, path: `${basePath}/security` },
-    { key: "settings", label: "Configuraciones", icon: <SettingsIcon />, path: `${basePath}/settings` },
-
-    // Ejemplo: DIAN solo admin (si luego lo implementas)
     {
-      key: "dian",
-      label: "Habilitación DIAN",
-      icon: <AppsIcon />,
-      roles: ["ADMIN"],
-      external: true,
-      href: "https://example.com",
-      dividerBefore: true,
+      key: "profile",
+      label: "Mi Perfil",
+      icon: <PersonIcon />,
+      path: `${basePath}/profile`,
+    },
+    {
+      key: "security",
+      label: "Seguridad",
+      icon: <SecurityIcon />,
+      path: `${basePath}/security`,
+    },
+    {
+      key: "settings",
+      label: "Configuraciones",
+      icon: <SettingsIcon />,
+      path: `${basePath}/settings`,
     },
   ];
 }

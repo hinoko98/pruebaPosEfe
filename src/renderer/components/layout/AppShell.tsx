@@ -4,7 +4,6 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
 import CssBaseline from "@mui/material/CssBaseline";
-import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
 import Toolbar from "@mui/material/Toolbar";
@@ -12,12 +11,11 @@ import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
 
 import MenuIcon from "@mui/icons-material/Menu";
-import LogoutIcon from "@mui/icons-material/Logout";
 
 import { useAuth } from "@/composables/useAuth";
 
 import SideMenu, { allegraLikeMenu } from "@/components/layoutMenu/SideMenu";
-import UserMenu, { defaultUserMenuItems } from "@/components/layout/UserMenu";
+import UserMenu, { defaultUserMenuItems } from "@/components/layoutUser/UserMenu";
 
 export type NavItem = {
   label: string;
@@ -38,7 +36,7 @@ export default function AppShell({
   navItems: NavItem[];
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -65,31 +63,31 @@ export default function AppShell({
     />
   );
 
+  
+
   return (
     <Box sx={{ display: "flex" }}>
       <CssBaseline />
 
       <AppBar position="fixed" sx={{ zIndex: (t) => t.zIndex.drawer + 1 }}>
         <Toolbar>
-          <IconButton
-            color="inherit"
-            edge="start"
-            onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { sm: "none" } }}
-            aria-label="open drawer"
-          >
-            <MenuIcon />
-          </IconButton>
-
-          <Typography variant="h6" noWrap component="div">
-            {title}
-          </Typography>
-
+          {/* ... izquierda */}
           <Box sx={{ flexGrow: 1 }} />
 
-          <Button color="inherit" onClick={() => navigate(basePath)}>
-            Inicio
-          </Button>
+          {user ? (
+            <UserMenu
+              user={{
+                name: user.name ?? user.username,
+                //email: user.email, // si no tienes email aún, quítalo
+                role: user.role,
+              }}
+              items={defaultUserMenuItems(basePath as "/admin" | "/app")}
+              onLogout={() => {
+                logout();
+                navigate("/login", { replace: true });
+              }}
+            />
+          ) : null}
         </Toolbar>
       </AppBar>
 
