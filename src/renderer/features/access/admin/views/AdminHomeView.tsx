@@ -14,7 +14,7 @@ export default function DashBoardUserView() {
   return (
     <div style={{ padding: '3rem 2rem', maxWidth: '800px', margin: '0 auto' }}>
       <h1>Bienvenido a la aplicación</h1>
-      <p>Has iniciado sesión correctamente.</p>
+      <p>Has iniciado sesión correctamente admin.</p>
       
       <div style={{ marginTop: '2rem' }}>
         <button
