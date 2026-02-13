@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./app.db"
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+model User {
+  id           String       @id @default(uuid())
+  username     String       @unique
+  name         String?
+  role         Role         @default(EMPLOYEE)
+  passwordHash String
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  loginEvents  LoginEvent[]
+}
+
+model LoginEvent {
+  id         String   @id @default(uuid())
+  userId     String?
+  username   String
+  success    Boolean
+  reason     String?
+  occurredAt DateTime @default(now())
+
+  appVersion String?
+  osPlatform String?
+  osRelease  String?
+  deviceName String?
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([occurredAt])
+  @@index([username])
+  @@index([userId])
+}

@@ -1,8 +1,8 @@
-import { defineConfig } from 'vite'
-import path from 'node:path'
-import electron from 'vite-plugin-electron/simple'
-import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
+import { defineConfig } from "vite";
+import path from "node:path";
+import electron from "vite-plugin-electron/simple";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -11,26 +11,32 @@ export default defineConfig({
     tailwindcss(),
     electron({
       main: {
-        entry: 'src/main/electron/main.ts',
+        entry: "src/main/electron/main.ts",
+        // --- AQUÍ VA LA CONFIGURACIÓN ---
+        vite: {
+          build: {
+            rollupOptions: {
+              external: [
+                "bcryptjs",
+                "@prisma/client",
+                ".prisma/client",
+                ".prisma/client/default",
+                "prisma",
+              ],
+            },
+          },
+        },
       },
       preload: {
-        // Shortcut of `build.rollupOptions.input`.
-        // Preload scripts may contain Web assets, so use the `build.rollupOptions.input` instead `build.lib.entry`.
-        input: path.join(__dirname, 'src/main/electron/preload.ts'),
+        input: path.join(__dirname, "src/main/electron/preload.ts"),
       },
-      // Ployfill the Electron and Node.js API for Renderer process.
-      // If you want use Node.js in Renderer process, the `nodeIntegration` needs to be enabled in the Main process.
-      // See 👉 https://github.com/electron-vite/vite-plugin-electron-renderer
-      renderer: process.env.NODE_ENV === 'test'
-        // https://github.com/electron-vite/vite-plugin-electron-renderer/issues/78#issuecomment-2053600808
-        ? undefined
-        : {},
+      renderer: process.env.NODE_ENV === "test" ? undefined : {},
     }),
   ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src/renderer/'),
-      '~': path.resolve(__dirname, 'src')
-    }
-  }
-})
+      "@": path.resolve(__dirname, "src/renderer/"),
+      "~": path.resolve(__dirname, "src"),
+    },
+  },
+});
