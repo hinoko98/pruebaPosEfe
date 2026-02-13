@@ -78,7 +78,7 @@ async function logLoginEvent(params: {
     await prisma.loginEvent.create({
       data: {
         userId: params.userId ?? null,
-        username: params.username,
+        username: params.username, 
         success: params.success,
         reason: params.reason,
         occurredAt: new Date(),
