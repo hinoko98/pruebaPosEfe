@@ -1,26 +1,10 @@
-import { ipcRenderer, contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from "electron";
+import type { LoginInput, LoginResult, CreateUserInput } from "./ipc/schemas/auth.schema";
 
-// --------- Expose some API to the Renderer process ---------
-contextBridge.exposeInMainWorld('ipcRenderer', {
-  on(...args: Parameters<typeof ipcRenderer.on>) {
-    const [channel, listener] = args
-    return ipcRenderer.on(channel, (event, ...args) => listener(event, ...args))
-  },
-  off(...args: Parameters<typeof ipcRenderer.off>) {
-    const [channel, ...omit] = args
-    return ipcRenderer.off(channel, ...omit)
-  },
-  send(...args: Parameters<typeof ipcRenderer.send>) {
-    const [channel, ...omit] = args
-    return ipcRenderer.send(channel, ...omit)
-  },
-  invoke(...args: Parameters<typeof ipcRenderer.invoke>) {
-    const [channel, ...omit] = args
-    return ipcRenderer.invoke(channel, ...omit)
-  },
-})
+contextBridge.exposeInMainWorld("api", {
+  login: (payload: LoginInput): Promise<LoginResult> =>
+    ipcRenderer.invoke("auth:login", payload),
 
-contextBridge.exposeInMainWorld('api', {
-  login: (credentials: { username: string; password: string }) => ipcRenderer.invoke('login', credentials),
-  createUser: (data: { newUsername: string; newPassword: string; adminUsername: string }) => ipcRenderer.invoke('create-user', data),
+  createUser: (payload: CreateUserInput): Promise<{ success: boolean; message?: string }> =>
+    ipcRenderer.invoke("auth:createUser", payload),
 });
