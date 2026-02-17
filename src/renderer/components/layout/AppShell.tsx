@@ -1,52 +1,37 @@
-import { ReactNode, useMemo, useState } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Outlet, useNavigate } from "react-router-dom";
 
-import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
 import CssBaseline from "@mui/material/CssBaseline";
 import Drawer from "@mui/material/Drawer";
-import IconButton from "@mui/material/IconButton";
 import Toolbar from "@mui/material/Toolbar";
-import Typography from "@mui/material/Typography";
-import Button from "@mui/material/Button";
 
-import MenuIcon from "@mui/icons-material/Menu";
+import { useAuth } from "@/features/auth/hooks/useAuth";
 
-import { useAuth } from "@/composables/useAuth";
-
-import SideMenu, { allegraLikeMenu } from "@/components/layoutMenu/SideMenu";
-import UserMenu, { defaultUserMenuItems } from "@/components/layoutUser/UserMenu";
-
-export type NavItem = {
-  label: string;
-  path: string;
-  icon?: ReactNode;
-  disabled?: boolean;
-};
+import SideMenu, { MenuItem } from "./SideMenu";
+import AppHeader from "./AppHeader";
 
 const drawerWidth = 280;
+
+type AppShellProps = {
+  title: string;
+  basePath: "/admin" | "/app";
+  menu: MenuItem[];
+  lastSyncText?: string;
+  onSync?: () => void;
+};
 
 export default function AppShell({
   title,
   basePath,
-  navItems,
-}: {
-  title: string;
-  basePath: string; // "/admin" o "/app"
-  navItems: NavItem[];
-}) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const { user, logout } = useAuth();
+  menu,
+  lastSyncText,
+  onSync,
+}: AppShellProps) {
+  const [drawerOpen, setDrawerOpen] = useState(true);
+
+  const { logout } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-
-  const selectedPath = useMemo(() => {
-    // selecciona por prefijo para que /admin/products también marque "Productos"
-    const found = navItems.find((i) => location.pathname.startsWith(i.path));
-    return found?.path ?? "";
-  }, [location.pathname, navItems]);
-
-  const handleDrawerToggle = () => setMobileOpen((v) => !v);
 
   const handleLogout = () => {
     logout();
@@ -55,82 +40,60 @@ export default function AppShell({
 
   const drawer = (
     <SideMenu
-      title="POS"
-      menu={allegraLikeMenu}
+      title={title}
+      menu={menu}
       onLogout={handleLogout}
-      lastSyncText="06/02/2026 6:33 pm"
-      onSync={() => console.log("sync")}
+      lastSyncText={lastSyncText}
+      onSync={onSync}
     />
   );
 
-  
-
   return (
-    <Box sx={{ display: "flex" }}>
+    <Box sx={{ display: "flex", height: "100vh" }}>
       <CssBaseline />
 
-      <AppBar position="fixed" sx={{ zIndex: (t) => t.zIndex.drawer + 1 }}>
-        <Toolbar>
-          {/* ... izquierda */}
-          <Box sx={{ flexGrow: 1 }} />
+      {/* HEADER */}
+      <AppHeader
+        title={title}
+        basePath={basePath}
+        onToggleDesktopMenu={() => setDrawerOpen((v) => !v)}
+      />
 
-          {user ? (
-            <UserMenu
-              user={{
-                name: user.name ?? user.username,
-                //email: user.email, // si no tienes email aún, quítalo
-                role: user.role,
-              }}
-              items={defaultUserMenuItems(basePath as "/admin" | "/app")}
-              onLogout={() => {
-                logout();
-                navigate("/login", { replace: true });
-              }}
-            />
-          ) : null}
-        </Toolbar>
-      </AppBar>
-
-      {/* Drawer móvil */}
+      {/* NAV */}
       <Box
         component="nav"
-        sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
+        sx={{
+          width: { sm: drawerOpen ? drawerWidth : 0 },
+          flexShrink: { sm: 0 },
+        }}
       >
+        {/* Drawer desktop colapsable */}
         <Drawer
-          variant="temporary"
-          open={mobileOpen}
-          onClose={handleDrawerToggle}
-          ModalProps={{ keepMounted: true }}
-          sx={{
-            display: { xs: "block", sm: "none" },
-            "& .MuiDrawer-paper": {
-              boxSizing: "border-box",
-              width: drawerWidth,
-            },
-          }}
-        >
-          {drawer}
-        </Drawer>
-
-        {/* Drawer desktop */}
-        <Drawer
-          variant="permanent"
+          variant="persistent"
+          open={drawerOpen}
           sx={{
             display: { xs: "none", sm: "block" },
             "& .MuiDrawer-paper": {
-              boxSizing: "border-box",
               width: drawerWidth,
+              boxSizing: "border-box",
             },
           }}
-          open
         >
+          <Toolbar />
           {drawer}
         </Drawer>
       </Box>
 
-      {/* Contenido */}
-      <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
-        <Toolbar /> {/* empuja contenido debajo del AppBar */}
+      {/* CONTENT */}
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          p: 3,
+          overflow: "auto",
+        }}
+      >
+        <Toolbar />
         <Outlet />
       </Box>
     </Box>

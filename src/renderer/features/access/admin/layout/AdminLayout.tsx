@@ -1,16 +1,15 @@
-import AppShell, { NavItem } from "@/components/layout/AppShell";
-import DashboardIcon from "@mui/icons-material/Dashboard";
-import Inventory2Icon from "@mui/icons-material/Inventory2";
-import PeopleIcon from "@mui/icons-material/People";
-import SettingsIcon from "@mui/icons-material/Settings";
 
-const adminNav: NavItem[] = [
-  { label: "Dashboard", path: "/admin", icon: <DashboardIcon /> },
-  { label: "Productos", path: "/admin/products", icon: <Inventory2Icon /> },
-  { label: "Clientes", path: "/admin/customers", icon: <PeopleIcon /> },
-  { label: "Configuración", path: "/admin/settings", icon: <SettingsIcon /> },
-];
+import AppShell from "@/components/layout/AppShell";
+import { adminMenu } from "@/routes/menu";
 
 export default function AdminLayout() {
-  return <AppShell title="Panel Admin" basePath="/admin" navItems={adminNav} />;
+  return (
+    <AppShell
+      title="Panel Admin"
+      basePath="/admin"
+      menu={adminMenu}
+      lastSyncText="06/02/2026 6:33 pm"
+      onSync={() => console.log("sync")}
+    />
+  );
 }

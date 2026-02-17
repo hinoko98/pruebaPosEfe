@@ -88,24 +88,7 @@ export default function SideMenu({
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      {/* Header tipo “Cerrar turno” */}
-      <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>
-        <Typography variant="h6" noWrap>
-          {title}
-        </Typography>
-
-        <IconButton
-          onClick={onLogout}
-          size="small"
-          aria-label="cerrar turno / salir"
-          title="Cerrar turno / salir"
-        >
-          <LogoutIcon fontSize="small" />
-        </IconButton>
-      </Toolbar>
-
-      <Divider />
-
+      
       {/* Menú */}
       <List sx={{ px: 1 }}>
         {menu.map((m, idx) => {
@@ -116,7 +99,7 @@ export default function SideMenu({
           if (m.type === "item") {
             const selected = isPathActive(m.path);
             return (
-              <ListItemButton
+              <ListItemButton 
                 key={m.path}
                 selected={selected}
                 disabled={m.disabled}
@@ -201,7 +184,6 @@ export const allegraLikeMenu: MenuItem[] = [
     label: "Ingresos",
     icon: <AttachMoneyIcon />,
     children: [
-      { label: "Ingresos", path: "/app/incomes" },
       { label: "Historial de ventas", path: "/app/incomes/history" },
       { label: "Pagos", path: "/app/payments" },
     ],

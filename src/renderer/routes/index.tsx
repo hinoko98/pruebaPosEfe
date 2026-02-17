@@ -1,12 +1,21 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Navigate, useRoutes } from "react-router-dom";
 import Login from "@/features/auth/view/LoginView";
+
 import ProtectedRoute from "@/features/auth/components/ProtectedRoute";
 import RoleRoute from "@/routes/RoleRoute";
 
-import AdminRoutes from "@/routes/admin.routes";
-import EmployeeRoutes from "@/routes/employee.routes";
+import AdminLayout from "@/features/access/admin/layout/AdminLayout";
+import AdminHomeView from "@/features/access/admin/views/AdminHomeView";
+import ProductListView from "@/features/products/views/ProductListView";
 
-import { useAuth } from "@/composables/useAuth";
+import ProfileView from "@/features/account/views/ProfileView";
+import SecurityView from "@/features/account/views/SecurityView";
+import SettingsView from "@/features/account/views/SettingsView";
+
+import EmployeeLayout from "@/features/access/employee/layout/EmployeeLayout";
+import EmployeeHomeView from "@/features/access/employee/views/EmployeeHomeView";
+
+import { useAuth } from "@/features/auth/hooks/useAuth";
 
 function IndexRedirect() {
   const { user, loading } = useAuth();
@@ -20,32 +29,52 @@ function IndexRedirect() {
 }
 
 export default function AppRoutes() {
-  return (
-    <Routes>
-      {/* Pública */}
-      <Route path="/login" element={<Login />} />
+  return useRoutes([
+    { path: "/login", element: <Login /> },
 
-      {/* Protegidas */}
-      <Route element={<ProtectedRoute />}>
+    {
+      element: <ProtectedRoute />,
+      children: [
+        { path: "/", element: <IndexRedirect /> },
 
-        {/* Redirect automático */}
-        <Route path="/" element={<IndexRedirect />} />
+        {
+          element: <RoleRoute allow={["ADMIN"]} />,
+          children: [
+            {
+              path: "/admin",
+              element: <AdminLayout />,
+              children: [
+                { index: true, element: <AdminHomeView /> },
+                { path: "products", element: <ProductListView /> },
+                { path: "customers", element: <div>Clientes</div> },
+                { path: "profile", element: <ProfileView /> },
+                { path: "security", element: <SecurityView /> },
+                { path: "settings", element: <SettingsView /> },
+              ],
+            },
+          ],
+        },
 
-        {/* ADMIN */}
-        <Route element={<RoleRoute allow={["ADMIN"]} />}>
-          {AdminRoutes()}
-        </Route>
+        {
+          element: <RoleRoute allow={["EMPLOYEE", "ADMIN"]} />,
+          children: [
+            {
+              path: "/app",
+              element: <EmployeeLayout />,
+              children: [
+                { index: true, element: <EmployeeHomeView /> },
+                { path: "profile", element: <ProfileView /> },
+                { path: "security", element: <SecurityView /> },
+                { path: "settings", element: <SettingsView /> },
+              ],
+            },
+          ],
+        },
 
-        {/* EMPLOYEE */}
-        <Route element={<RoleRoute allow={["EMPLOYEE", "ADMIN"]} />}>
-          {EmployeeRoutes()}
-        </Route>
+        { path: "/no-access", element: <div>No tienes acceso</div> },
+      ],
+    },
 
-        <Route path="/no-access" element={<div>No tienes acceso</div>} />
-      </Route>
-
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-  );
+    { path: "*", element: <Navigate to="/" replace /> },
+  ]);
 }

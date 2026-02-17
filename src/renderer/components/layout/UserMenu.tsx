@@ -92,7 +92,7 @@ export default function UserMenu({
         anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
         PaperProps={{ sx: { width: 320, borderRadius: 3, overflow: "hidden" } }}
       >
-        {/* Header tipo Alegra */}
+        {/* Header */}
         <Box sx={{ px: 2, py: 1.5 }}>
           <Typography fontWeight={700}>{user.name}</Typography>
           {user.email ? (

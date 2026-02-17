@@ -11,7 +11,7 @@ import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import Stack from "@mui/material/Stack";
 
-import { useAuth } from "@/composables/useAuth";
+import { useAuth } from "@/features/auth/hooks/useAuth";
 
 export default function Login() {
   const [user, setUser] = useState("");
