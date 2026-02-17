@@ -1,4 +1,4 @@
-import AppShell, { NavItem } from "@/components/layout/AppShell";
+import AppShell, { NavItem } from "@/app/layout/AppShell";
 import PointOfSaleIcon from "@mui/icons-material/PointOfSale";
 import HistoryIcon from "@mui/icons-material/History";
 import PeopleIcon from "@mui/icons-material/People";

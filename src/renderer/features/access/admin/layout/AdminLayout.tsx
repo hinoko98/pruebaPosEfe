@@ -1,6 +1,6 @@
 
-import AppShell from "@/components/layout/AppShell";
-import { adminMenu } from "@/routes/menu";
+import AppShell from "@/app/layout/AppShell";
+import { adminMenu } from "@/app/routes/menu";
 
 export default function AdminLayout() {
   return (

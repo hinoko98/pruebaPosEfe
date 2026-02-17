@@ -68,7 +68,6 @@ export default function UserMenu({
     handleClose();
 
     if (item.external && item.href) {
-      // En Electron luego podrías abrir con shell.openExternal(...)
       window.open(item.href, "_blank");
       return;
     }
@@ -80,8 +79,30 @@ export default function UserMenu({
 
   return (
     <>
-      <IconButton onClick={handleOpen} size="small" aria-label="user menu">
+      <IconButton
+        onClick={handleOpen}
+        size="small"
+        aria-label="user menu"
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 1,
+          borderRadius: 2,
+          px: 1.2,
+        }}
+      >        
+        <Typography
+          variant="body2"
+          fontWeight={600}
+          sx={{
+            display: { xs: "none", sm: "block" }, // en móvil solo avatar
+          }}
+        >
+          {user.name}
+        </Typography>
+
         <Avatar sx={{ width: 34, height: 34 }}>{initials}</Avatar>
+
       </IconButton>
 
       <Menu

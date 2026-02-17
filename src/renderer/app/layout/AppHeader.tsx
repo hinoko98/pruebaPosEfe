@@ -56,6 +56,7 @@ export default function AppHeader({
         </Typography>
 
         <Box sx={{ flexGrow: 1 }} />
+        {/* Usuario */}
         {user ? (
           <UserMenu
             user={{

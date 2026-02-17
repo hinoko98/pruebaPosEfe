@@ -2,7 +2,7 @@ import { Navigate, useRoutes } from "react-router-dom";
 import Login from "@/features/auth/view/LoginView";
 
 import ProtectedRoute from "@/features/auth/components/ProtectedRoute";
-import RoleRoute from "@/routes/RoleRoute";
+import RoleRoute from "@/app/routes/RoleRoute";
 
 import AdminLayout from "@/features/access/admin/layout/AdminLayout";
 import AdminHomeView from "@/features/access/admin/views/AdminHomeView";
