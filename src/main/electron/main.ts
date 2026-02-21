@@ -5,6 +5,8 @@ import path from "node:path";
 import os from "node:os";
 import bcrypt from "bcryptjs";
 import { PrismaClient, Role } from "@prisma/client";
+import "dotenv/config";
+
 
 import { loginInputSchema, createUserInputSchema } from "./ipc/schemas/auth.schema";
 
@@ -48,23 +50,58 @@ function createWindow() {
 }
 
 // ================= SEED ADMIN =================
-async function seedAdminIfNeeded() {
-  const count = await prisma.user.count();
-  if (count > 0) return;
 
-  const passwordHash = await bcrypt.hash("admin123", 10);
+type SeedConfig = {
+  enabled: boolean;
+  username: string;
+  name: string;
+  password: string;
+  bcryptRounds: number;
+};
+
+function getSeedConfig(): SeedConfig {
+  const enabled = (process.env.SEED_ADMIN_ENABLED ?? "true").toLowerCase() === "true";
+
+  const username = process.env.SEED_ADMIN_USERNAME ?? "admin";
+  const name = process.env.SEED_ADMIN_NAME ?? "Administrador";
+  const password = process.env.SEED_ADMIN_PASSWORD ?? "admin123";
+
+  const bcryptRounds = Number(process.env.BCRYPT_ROUNDS ?? "10");
+
+  if (enabled && password.trim().length < 8) {
+    throw new Error(
+      "SEED_ADMIN_PASSWORD es obligatorio y debe tener mínimo 8 caracteres (cuando SEED_ADMIN_ENABLED=true)."
+    );
+  }
+
+  if (!Number.isFinite(bcryptRounds) || bcryptRounds < 8 || bcryptRounds > 15) {
+    throw new Error("BCRYPT_ROUNDS inválido. Usa un valor entre 8 y 15.");
+  }
+
+  return { enabled, username, name, password, bcryptRounds };
+}
+
+export async function seedAdminIfNeeded(prisma: PrismaClient) {
+  const cfg = getSeedConfig();
+  if (!cfg.enabled) return;
+
+  // Mejor que count(): valida que exista un ADMIN
+  const adminExists = await prisma.user.findFirst({ where: { role: Role.ADMIN } });
+  if (adminExists) return;
+
+  const passwordHash = await bcrypt.hash(cfg.password, cfg.bcryptRounds);
 
   await prisma.user.create({
     data: {
-      username: "admin",
-      name: "Administrador",
+      username: cfg.username,
+      name: cfg.name,
       role: Role.ADMIN,
       passwordHash,
       isActive: true,
     },
   });
 
-  console.log("Admin inicial creado: admin / admin123");
+  console.log(`Admin inicial creado: ${cfg.username} (password desde .env)`);
 }
 
 // ================= LOG LOGIN =================
@@ -78,7 +115,7 @@ async function logLoginEvent(params: {
     await prisma.loginEvent.create({
       data: {
         userId: params.userId ?? null,
-        username: params.username,
+        username: params.username, 
         success: params.success,
         reason: params.reason,
         occurredAt: new Date(),
@@ -99,7 +136,7 @@ app.whenReady().then(async () => {
 
   prisma = new PrismaClient();
 
-  await seedAdminIfNeeded();
+  await seedAdminIfNeeded(prisma);
 
   createWindow();
 });
