@@ -1,5 +1,5 @@
 // src/pages/Home.tsx
-import { useAuth } from '@/composables/useAuth';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 
 export default function DashBoardUserView() {
