@@ -12,6 +12,8 @@ dist
 dist-ssr
 dist-electron
 dist-electron.*
+dist-electron/*
+dist-electron/main.js
 .env
 .env.*
 *.local

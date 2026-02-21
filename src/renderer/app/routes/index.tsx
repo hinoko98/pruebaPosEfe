@@ -15,6 +15,8 @@ import SettingsView from "@/features/account/views/SettingsView";
 import EmployeeLayout from "@/features/access/employee/layout/EmployeeLayout";
 import EmployeeHomeView from "@/features/access/employee/views/EmployeeHomeView";
 
+import PosView from "@/features/sales/views/PosView";
+
 import { useAuth } from "@/features/auth/hooks/useAuth";
 
 function IndexRedirect() {
@@ -45,6 +47,7 @@ export default function AppRoutes() {
               element: <AdminLayout />,
               children: [
                 { index: true, element: <AdminHomeView /> },
+                { path: "pos", element: <PosView /> },
                 { path: "products", element: <ProductListView /> },
                 { path: "customers", element: <div>Clientes</div> },
                 { path: "profile", element: <ProfileView /> },
@@ -63,6 +66,7 @@ export default function AppRoutes() {
               element: <EmployeeLayout />,
               children: [
                 { index: true, element: <EmployeeHomeView /> },
+                { path: "pos", element: <PosView /> },
                 { path: "profile", element: <ProfileView /> },
                 { path: "security", element: <SecurityView /> },
                 { path: "settings", element: <SettingsView /> },
