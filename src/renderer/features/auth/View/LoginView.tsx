@@ -39,7 +39,7 @@ export default function Login() {
 
       if (response.success) {
         login(response.user); // Guarda el usuario en tu contexto/auth (incluye role)
-        navigate("/home");
+        navigate("/", { replace: true });
       } else {
         setError(response.message || "Error al iniciar sesión");
       }

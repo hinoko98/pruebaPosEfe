@@ -1,14 +1,14 @@
-import AppShell, { NavItem } from "@/app/layout/AppShell";
-import PointOfSaleIcon from "@mui/icons-material/PointOfSale";
-import HistoryIcon from "@mui/icons-material/History";
-import PeopleIcon from "@mui/icons-material/People";
-
-const employeeNav: NavItem[] = [
-  { label: "Vender (POS)", path: "/app/pos", icon: <PointOfSaleIcon /> },
-  { label: "Historial", path: "/app/history", icon: <HistoryIcon /> },
-  { label: "Clientes", path: "/app/customers", icon: <PeopleIcon /> },
-];
+import AppShell from "@/app/layout/AppShell";
+import { employeeMenu } from "@/app/routes/menu";
 
 export default function EmployeeLayout() {
-  return <AppShell title="Caja" basePath="/app" navItems={employeeNav} />;
-}
+  return (
+    <AppShell
+      title="Caja"
+      basePath="/app"
+      menu={employeeMenu}
+      lastSyncText="06/02/2026 6:33 pm"
+      onSync={() => console.log("sync")}
+    />
+  );
+  }

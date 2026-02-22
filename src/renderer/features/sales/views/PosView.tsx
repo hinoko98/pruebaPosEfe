@@ -7,10 +7,10 @@ import Divider from "@mui/material/Divider";
 
 import type { CartItem, Product, Payment } from "../types";
 import PosHeader from "@/features/sales/components/PosHeader";
-import ProductSearch from "@/features/sales//components/ProductSearch";
-import CartTable from "@/features/sales//components/CartTable";
-import TotalsCard from "@/features/sales//components/TotalsCard";
-import PaymentPanel from "@/features/sales//components/PaymentPanel";
+import ProductSearch from "@/features/sales/components/ProductSearch";
+import CartTable from "@/features/sales/components/CartTable";
+import TotalsCard from "@/features/sales/components/TotalsCard";
+import PaymentPanel from "@/features/sales/components/PaymentPanel";
 
 const mockProducts: Product[] = [
   { id: "p1", barcode: "7701234567890", name: "Galletas", price: 2500, taxRate: 0.19 },
