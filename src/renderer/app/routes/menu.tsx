@@ -9,8 +9,8 @@ import SwapVertIcon from "@mui/icons-material/SwapVert";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
 
 export const adminMenu: MenuItem[] = [
-  { type: "item", label: "Facturar", path: "/app/pos", icon: <PointOfSaleIcon /> },
   { type: "item", label: "Dashboard", path: "/admin", icon: <DashboardIcon /> },
+  { type: "item", label: "Facturar", path: "/admin/pos", icon: <PointOfSaleIcon /> },  
   {
     type: "group",
     label: "Inventario",
@@ -36,6 +36,6 @@ export const employeeMenu: MenuItem[] = [
     ],
   },
   { type: "item", label: "Gestión de efectivo", path: "/app/cash", icon: <AttachMoneyIcon /> },
-  { type: "item", label: "Contactos", path: "/app/contacts", icon: <PeopleAltIcon /> },
+  { type: "item", label: "Clientes", path: "/app/customers", icon: <PeopleAltIcon /> },
   { type: "item", label: "Configuración", path: "/app/settings", icon: <SettingsIcon /> },
 ];
