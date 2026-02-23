@@ -1,41 +1,87 @@
-// src/renderer/features/sales/views/PosView.tsx
 import { useMemo, useState } from "react";
-import Grid from '@mui/material/Grid';
-import Paper from "@mui/material/Paper";
-import Stack from "@mui/material/Stack";
-import Divider from "@mui/material/Divider";
+import type { CartItem, Product, Payment, PaymentMethod } from "../types";
+import SalesTabs from "@/features/sales/components/SalesTabs";
+import SearchBar from "@/features/sales/components/SearchBar";
+import CartArea from "@/features/sales/components/CartArea";
+import InvoicePanel from "@/features/sales/components/InvoicePanel";
 
-import type { CartItem, Product, Payment } from "../types";
-import PosHeader from "@/features/sales/components/PosHeader";
-import ProductSearch from "@/features/sales/components/ProductSearch";
-import CartTable from "@/features/sales/components/CartTable";
-import TotalsCard from "@/features/sales/components/TotalsCard";
-import PaymentPanel from "@/features/sales/components/PaymentPanel";
-
-const mockProducts: Product[] = [
-  { id: "p1", barcode: "7701234567890", name: "Galletas", price: 2500, taxRate: 0.19 },
-  { id: "p2", barcode: "7700000000001", name: "Coca-Cola 400ml", price: 3500, taxRate: 0.19 },
-  { id: "p3", barcode: "7700000000002", name: "Arroz 1kg", price: 5200, taxRate: 0.0 },
+// ─── Mock temporal (luego viene de IPC/DB) ────────────────────────────────────
+export const mockProducts: Product[] = [
+  { id: "p1", barcode: "7701234567890", name: "Galletas",       price: 2500, taxRate: 0.19 },
+  { id: "p2", barcode: "7700000000001", name: "Coca-Cola 400ml",price: 3500, taxRate: 0.19 },
+  { id: "p3", barcode: "7700000000002", name: "Arroz 1kg",      price: 5200, taxRate: 0    },
+  { id: "p4", barcode: "7700000000003", name: "Leche Entera 1L",price: 4100, taxRate: 0    },
+  { id: "p5", barcode: "7700000000004", name: "Pan Tajado",     price: 3800, taxRate: 0    },
 ];
 
-function money(n: number) {
-  return Math.round(n);
+// ─── Tipos internos ───────────────────────────────────────────────────────────
+export type SaleTab = {
+  id: string;
+  label: string;
+  cart: CartItem[];
+  payments: Payment[];
+  customer: string;
+  priceList: string;
+  numeration: string;
+};
+
+function newTab(n: number): SaleTab {
+  return {
+    id: crypto.randomUUID(),
+    label: `Venta ${n}`,
+    cart: [],
+    payments: [{ method: "CASH", amount: 0 }],
+    customer: "Consumidor final",
+    priceList: "General",
+    numeration: "Principal",
+  };
 }
 
-export default function PosView() {
-  const [query, setQuery] = useState("");
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([{ method: "CASH", amount: 0 }]);
+export const fmt = (n: number) =>
+  "$" + Math.round(n).toLocaleString("es-CO");
 
-  const addProductToCart = (p: Product, qty = 1) => {
-    setCart((prev) => {
-      const idx = prev.findIndex((i) => i.productId === p.id);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = { ...copy[idx], qty: copy[idx].qty + qty };
-        return copy;
-      }
-      return [
+// ─── Componente principal ─────────────────────────────────────────────────────
+export default function PosView() {
+  const [tabs, setTabs] = useState<SaleTab[]>([newTab(1)]);
+  const [activeId, setActiveId] = useState<string>(tabs[0].id);
+
+  // Tab activa
+  const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
+
+  // Actualiza un campo de la tab activa
+  const updateTab = (patch: Partial<SaleTab>) => {
+    setTabs((prev) =>
+      prev.map((t) => (t.id === activeId ? { ...t, ...patch } : t))
+    );
+  };
+
+  // ── Tabs ──────────────────────────────────────────────────────────────────
+  const addTab = () => {
+    const t = newTab(tabs.length + 1);
+    setTabs((prev) => [...prev, t]);
+    setActiveId(t.id);
+  };
+
+  const closeTab = (id: string) => {
+    if (tabs.length === 1) return; // al menos una
+    setTabs((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      if (id === activeId) setActiveId(next[next.length - 1].id);
+      return next;
+    });
+  };
+
+  // ── Carrito ──────────────────
+  const addToCart = (p: Product, qty = 1) => {
+    const prev = activeTab.cart;
+    const idx = prev.findIndex((i) => i.productId === p.id);
+    let next: CartItem[];
+    if (idx >= 0) {
+      next = prev.map((i, j) =>
+        j === idx ? { ...i, qty: i.qty + qty } : i
+      );
+    } else {
+      next = [
         ...prev,
         {
           lineId: crypto.randomUUID(),
@@ -46,85 +92,115 @@ export default function PosView() {
           taxRate: p.taxRate ?? 0,
         },
       ];
-    });
+    }
+    updateTab({ cart: next });
   };
 
   const updateQty = (lineId: string, qty: number) => {
-    setCart((prev) =>
-      prev
-        .map((i) => (i.lineId === lineId ? { ...i, qty: Math.max(1, qty) } : i))
-        .filter((i) => i.qty > 0)
-    );
+    updateTab({
+      cart: activeTab.cart.map((i) =>
+        i.lineId === lineId ? { ...i, qty: Math.max(1, qty) } : i
+      ),
+    });
   };
 
-  const removeLine = (lineId: string) => setCart((prev) => prev.filter((i) => i.lineId !== lineId));
+  const removeLine = (lineId: string) => {
+    updateTab({ cart: activeTab.cart.filter((i) => i.lineId !== lineId) });
+  };
 
-  const totals = useMemo(() => {
-    const subtotal = cart.reduce((acc, i) => acc + i.price * i.qty, 0);
-    const tax = cart.reduce((acc, i) => acc + i.price * i.qty * (i.taxRate ?? 0), 0);
-    const total = subtotal + tax;
-    const paid = payments.reduce((acc, p) => acc + p.amount, 0);
-    const due = total - paid;
-    return {
-      subtotal: money(subtotal),
-      tax: money(tax),
-      total: money(total),
-      paid: money(paid),
-      due: money(due),
-    };
-  }, [cart, payments]);
-
-  const onScanBarcode = (barcode: string) => {
+  const handleScan = (barcode: string) => {
     const p = mockProducts.find((x) => x.barcode === barcode);
-    if (p) addProductToCart(p, 1);
-    // si no existe: luego mostrar modal “producto no encontrado”
+    if (p) addToCart(p);
   };
 
-  const finalizeSale = async () => {
-    // aquí después llamas a IPC: window.api.sales.create(...)
-    // y haces transacción: venta + items + pagos + movimiento inventario + caja
-    console.log("VENTA", { cart, payments, totals });
-    setCart([]);
-    setPayments([{ method: "CASH", amount: 0 }]);
-    setQuery("");
+  // ── Totales ───────────────────────────────────────────────────────────────
+  const totals = useMemo(() => {
+    const cart = activeTab.cart;
+    const subtotal = cart.reduce((a, i) => a + i.price * i.qty, 0);
+    const tax = cart.reduce((a, i) => a + i.price * i.qty * (i.taxRate ?? 0), 0);
+    const total = subtotal + tax;
+    return {
+      subtotal: Math.round(subtotal),
+      tax: Math.round(tax),
+      total: Math.round(total),
+    };
+  }, [activeTab.cart]);
+
+  // ── Finalizar venta ───────────────────────────────────────────────────────
+  const finalize = () => {
+    console.log("VENTA", { cart: activeTab.cart, payments: activeTab.payments, totals });
+    updateTab({
+      cart: [],
+      payments: [{ method: "CASH", amount: 0 }],
+    });
   };
+
+  const p0 = activeTab.payments[0] ?? { method: "CASH" as PaymentMethod, amount: 0 };
 
   return (
-    <Stack spacing={2}>
-      <PosHeader title="Facturar" />
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        background: "#f1f5f9",
+        fontFamily: "'DM Sans', 'Segoe UI', sans-serif",
+        overflow: "hidden",
+      }}
+    >
+      {/* ── Tabs de ventas múltiples ── */}
+      <SalesTabs
+        tabs={tabs}
+        activeId={activeId}
+        onSelect={setActiveId}
+        onAdd={addTab}
+        onClose={closeTab}
+      />
 
-      <Grid container spacing={2}>
-        {/* Columna izquierda: búsqueda + carrito */}
-        <Grid size={{ xs: 12, md: 8 }}>
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Stack spacing={2}>
-              <ProductSearch
-                value={query}
-                onChange={setQuery}
-                products={mockProducts}
-                onPick={(p) => addProductToCart(p)}
-                onScan={onScanBarcode}
-              />
-              <Divider />
-              <CartTable items={cart} onQty={updateQty} onRemove={removeLine} />
-            </Stack>
-          </Paper>
-        </Grid>
+      {/* ── Contenido principal (izquierda + derecha) ── */}
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
-        {/* Columna derecha: totales + pagos */}
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Stack spacing={2}>
-            <TotalsCard totals={totals} />
-            <PaymentPanel
-              payments={payments}
-              onChange={setPayments}
-              total={totals.total}
-              onFinalize={finalizeSale}
-              disabledFinalize={cart.length === 0 || totals.due > 0}
-            />
-          </Stack>
-        </Grid>
-      </Grid>
-    </Stack>
+        {/* Columna izquierda */}
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          <SearchBar
+            products={mockProducts}
+            onPick={addToCart}
+            onScan={handleScan}
+          />
+          <CartArea
+            items={activeTab.cart}
+            onQty={updateQty}
+            onRemove={removeLine}
+          />
+        </div>
+
+        {/* Panel derecho */}
+        <InvoicePanel
+          cart={activeTab.cart}
+          totals={totals}
+          paymentMethod={p0.method}
+          onPaymentMethodChange={(m) =>
+            updateTab({ payments: [{ ...p0, method: m }] })
+          }
+          customer={activeTab.customer}
+          onCustomerChange={(c) => updateTab({ customer: c })}
+          priceList={activeTab.priceList}
+          onPriceListChange={(v) => updateTab({ priceList: v })}
+          numeration={activeTab.numeration}
+          onNumerationChange={(v) => updateTab({ numeration: v })}
+          onFinalize={finalize}
+          onCancel={() =>
+            updateTab({ cart: [], payments: [{ method: "CASH", amount: 0 }] })
+          }
+        />
+      </div>
+    </div>
   );
 }
