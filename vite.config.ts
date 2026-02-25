@@ -17,11 +17,22 @@ export default defineConfig({
           build: {
             rollupOptions: {
               external: [
+                // Node built-ins
+                "node:url",
+                "node:path",
+                "node:os",
+                "node:fs",
+                "node:crypto",
+                // Dependencias pesadas que NO deben empaquetarse
+                "electron",
                 "bcryptjs",
                 "@prisma/client",
                 ".prisma/client",
                 ".prisma/client/default",
                 "prisma",
+                "dotenv",
+                "dotenv/config",
+                "zod",
               ],
             },
           },
