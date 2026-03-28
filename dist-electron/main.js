@@ -1,3752 +1,2523 @@
-import { app, BrowserWindow, ipcMain, Menu } from "electron";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-import os from "node:os";
+import { BrowserWindow, app, ipcMain, Menu } from "electron";
 import bcrypt from "bcryptjs";
-import { PrismaClient, Role } from "@prisma/client";
-function $constructor(name, initializer2, params) {
-  function init(inst, def) {
-    if (!inst._zod) {
-      Object.defineProperty(inst, "_zod", {
-        value: {
-          def,
-          constr: _,
-          traits: /* @__PURE__ */ new Set()
-        },
-        enumerable: false
-      });
-    }
-    if (inst._zod.traits.has(name)) {
-      return;
-    }
-    inst._zod.traits.add(name);
-    initializer2(inst, def);
-    const proto = _.prototype;
-    const keys = Object.keys(proto);
-    for (let i = 0; i < keys.length; i++) {
-      const k = keys[i];
-      if (!(k in inst)) {
-        inst[k] = proto[k].bind(inst);
-      }
-    }
-  }
-  const Parent = (params == null ? void 0 : params.Parent) ?? Object;
-  class Definition extends Parent {
-  }
-  Object.defineProperty(Definition, "name", { value: name });
-  function _(def) {
-    var _a2;
-    const inst = (params == null ? void 0 : params.Parent) ? new Definition() : this;
-    init(inst, def);
-    (_a2 = inst._zod).deferred ?? (_a2.deferred = []);
-    for (const fn of inst._zod.deferred) {
-      fn();
-    }
-    return inst;
-  }
-  Object.defineProperty(_, "init", { value: init });
-  Object.defineProperty(_, Symbol.hasInstance, {
-    value: (inst) => {
-      var _a2, _b;
-      if ((params == null ? void 0 : params.Parent) && inst instanceof params.Parent)
-        return true;
-      return (_b = (_a2 = inst == null ? void 0 : inst._zod) == null ? void 0 : _a2.traits) == null ? void 0 : _b.has(name);
-    }
-  });
-  Object.defineProperty(_, "name", { value: name });
-  return _;
-}
-class $ZodAsyncError extends Error {
-  constructor() {
-    super(`Encountered Promise during synchronous parse. Use .parseAsync() instead.`);
-  }
-}
-class $ZodEncodeError extends Error {
-  constructor(name) {
-    super(`Encountered unidirectional transform during encode: ${name}`);
-    this.name = "ZodEncodeError";
-  }
-}
-const globalConfig = {};
-function config(newConfig) {
-  return globalConfig;
-}
-function getEnumValues(entries) {
-  const numericValues = Object.values(entries).filter((v) => typeof v === "number");
-  const values = Object.entries(entries).filter(([k, _]) => numericValues.indexOf(+k) === -1).map(([_, v]) => v);
-  return values;
-}
-function jsonStringifyReplacer(_, value) {
-  if (typeof value === "bigint")
-    return value.toString();
-  return value;
-}
-function cached(getter) {
-  return {
-    get value() {
-      {
-        const value = getter();
-        Object.defineProperty(this, "value", { value });
-        return value;
-      }
-    }
-  };
-}
-function nullish(input) {
-  return input === null || input === void 0;
-}
-function cleanRegex(source) {
-  const start = source.startsWith("^") ? 1 : 0;
-  const end = source.endsWith("$") ? source.length - 1 : source.length;
-  return source.slice(start, end);
-}
-const EVALUATING = Symbol("evaluating");
-function defineLazy(object2, key, getter) {
-  let value = void 0;
-  Object.defineProperty(object2, key, {
-    get() {
-      if (value === EVALUATING) {
-        return void 0;
-      }
-      if (value === void 0) {
-        value = EVALUATING;
-        value = getter();
-      }
-      return value;
-    },
-    set(v) {
-      Object.defineProperty(object2, key, {
-        value: v
-        // configurable: true,
-      });
-    },
-    configurable: true
-  });
-}
-function assignProp(target, prop, value) {
-  Object.defineProperty(target, prop, {
-    value,
-    writable: true,
-    enumerable: true,
-    configurable: true
-  });
-}
-function mergeDefs(...defs) {
-  const mergedDescriptors = {};
-  for (const def of defs) {
-    const descriptors = Object.getOwnPropertyDescriptors(def);
-    Object.assign(mergedDescriptors, descriptors);
-  }
-  return Object.defineProperties({}, mergedDescriptors);
-}
-function esc(str) {
-  return JSON.stringify(str);
-}
-function slugify(input) {
-  return input.toLowerCase().trim().replace(/[^\w\s-]/g, "").replace(/[\s_-]+/g, "-").replace(/^-+|-+$/g, "");
-}
-const captureStackTrace = "captureStackTrace" in Error ? Error.captureStackTrace : (..._args) => {
-};
-function isObject(data) {
-  return typeof data === "object" && data !== null && !Array.isArray(data);
-}
-const allowsEval = cached(() => {
-  var _a2;
-  if (typeof navigator !== "undefined" && ((_a2 = navigator == null ? void 0 : navigator.userAgent) == null ? void 0 : _a2.includes("Cloudflare"))) {
-    return false;
-  }
-  try {
-    const F = Function;
-    new F("");
-    return true;
-  } catch (_) {
-    return false;
-  }
-});
-function isPlainObject(o) {
-  if (isObject(o) === false)
-    return false;
-  const ctor = o.constructor;
-  if (ctor === void 0)
-    return true;
-  if (typeof ctor !== "function")
-    return true;
-  const prot = ctor.prototype;
-  if (isObject(prot) === false)
-    return false;
-  if (Object.prototype.hasOwnProperty.call(prot, "isPrototypeOf") === false) {
-    return false;
-  }
-  return true;
-}
-function shallowClone(o) {
-  if (isPlainObject(o))
-    return { ...o };
-  if (Array.isArray(o))
-    return [...o];
-  return o;
-}
-const propertyKeyTypes = /* @__PURE__ */ new Set(["string", "number", "symbol"]);
-function escapeRegex(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-function clone(inst, def, params) {
-  const cl = new inst._zod.constr(def ?? inst._zod.def);
-  if (!def || (params == null ? void 0 : params.parent))
-    cl._zod.parent = inst;
-  return cl;
-}
-function normalizeParams(_params) {
-  const params = _params;
-  if (!params)
-    return {};
-  if (typeof params === "string")
-    return { error: () => params };
-  if ((params == null ? void 0 : params.message) !== void 0) {
-    if ((params == null ? void 0 : params.error) !== void 0)
-      throw new Error("Cannot specify both `message` and `error` params");
-    params.error = params.message;
-  }
-  delete params.message;
-  if (typeof params.error === "string")
-    return { ...params, error: () => params.error };
-  return params;
-}
-function optionalKeys(shape) {
-  return Object.keys(shape).filter((k) => {
-    return shape[k]._zod.optin === "optional" && shape[k]._zod.optout === "optional";
-  });
-}
-function pick(schema, mask) {
-  const currDef = schema._zod.def;
-  const checks = currDef.checks;
-  const hasChecks = checks && checks.length > 0;
-  if (hasChecks) {
-    throw new Error(".pick() cannot be used on object schemas containing refinements");
-  }
-  const def = mergeDefs(schema._zod.def, {
-    get shape() {
-      const newShape = {};
-      for (const key in mask) {
-        if (!(key in currDef.shape)) {
-          throw new Error(`Unrecognized key: "${key}"`);
-        }
-        if (!mask[key])
-          continue;
-        newShape[key] = currDef.shape[key];
-      }
-      assignProp(this, "shape", newShape);
-      return newShape;
-    },
-    checks: []
-  });
-  return clone(schema, def);
-}
-function omit(schema, mask) {
-  const currDef = schema._zod.def;
-  const checks = currDef.checks;
-  const hasChecks = checks && checks.length > 0;
-  if (hasChecks) {
-    throw new Error(".omit() cannot be used on object schemas containing refinements");
-  }
-  const def = mergeDefs(schema._zod.def, {
-    get shape() {
-      const newShape = { ...schema._zod.def.shape };
-      for (const key in mask) {
-        if (!(key in currDef.shape)) {
-          throw new Error(`Unrecognized key: "${key}"`);
-        }
-        if (!mask[key])
-          continue;
-        delete newShape[key];
-      }
-      assignProp(this, "shape", newShape);
-      return newShape;
-    },
-    checks: []
-  });
-  return clone(schema, def);
-}
-function extend(schema, shape) {
-  if (!isPlainObject(shape)) {
-    throw new Error("Invalid input to extend: expected a plain object");
-  }
-  const checks = schema._zod.def.checks;
-  const hasChecks = checks && checks.length > 0;
-  if (hasChecks) {
-    const existingShape = schema._zod.def.shape;
-    for (const key in shape) {
-      if (Object.getOwnPropertyDescriptor(existingShape, key) !== void 0) {
-        throw new Error("Cannot overwrite keys on object schemas containing refinements. Use `.safeExtend()` instead.");
-      }
-    }
-  }
-  const def = mergeDefs(schema._zod.def, {
-    get shape() {
-      const _shape = { ...schema._zod.def.shape, ...shape };
-      assignProp(this, "shape", _shape);
-      return _shape;
-    }
-  });
-  return clone(schema, def);
-}
-function safeExtend(schema, shape) {
-  if (!isPlainObject(shape)) {
-    throw new Error("Invalid input to safeExtend: expected a plain object");
-  }
-  const def = mergeDefs(schema._zod.def, {
-    get shape() {
-      const _shape = { ...schema._zod.def.shape, ...shape };
-      assignProp(this, "shape", _shape);
-      return _shape;
-    }
-  });
-  return clone(schema, def);
-}
-function merge(a, b) {
-  const def = mergeDefs(a._zod.def, {
-    get shape() {
-      const _shape = { ...a._zod.def.shape, ...b._zod.def.shape };
-      assignProp(this, "shape", _shape);
-      return _shape;
-    },
-    get catchall() {
-      return b._zod.def.catchall;
-    },
-    checks: []
-    // delete existing checks
-  });
-  return clone(a, def);
-}
-function partial(Class, schema, mask) {
-  const currDef = schema._zod.def;
-  const checks = currDef.checks;
-  const hasChecks = checks && checks.length > 0;
-  if (hasChecks) {
-    throw new Error(".partial() cannot be used on object schemas containing refinements");
-  }
-  const def = mergeDefs(schema._zod.def, {
-    get shape() {
-      const oldShape = schema._zod.def.shape;
-      const shape = { ...oldShape };
-      if (mask) {
-        for (const key in mask) {
-          if (!(key in oldShape)) {
-            throw new Error(`Unrecognized key: "${key}"`);
-          }
-          if (!mask[key])
-            continue;
-          shape[key] = Class ? new Class({
-            type: "optional",
-            innerType: oldShape[key]
-          }) : oldShape[key];
-        }
-      } else {
-        for (const key in oldShape) {
-          shape[key] = Class ? new Class({
-            type: "optional",
-            innerType: oldShape[key]
-          }) : oldShape[key];
-        }
-      }
-      assignProp(this, "shape", shape);
-      return shape;
-    },
-    checks: []
-  });
-  return clone(schema, def);
-}
-function required(Class, schema, mask) {
-  const def = mergeDefs(schema._zod.def, {
-    get shape() {
-      const oldShape = schema._zod.def.shape;
-      const shape = { ...oldShape };
-      if (mask) {
-        for (const key in mask) {
-          if (!(key in shape)) {
-            throw new Error(`Unrecognized key: "${key}"`);
-          }
-          if (!mask[key])
-            continue;
-          shape[key] = new Class({
-            type: "nonoptional",
-            innerType: oldShape[key]
-          });
-        }
-      } else {
-        for (const key in oldShape) {
-          shape[key] = new Class({
-            type: "nonoptional",
-            innerType: oldShape[key]
-          });
-        }
-      }
-      assignProp(this, "shape", shape);
-      return shape;
-    }
-  });
-  return clone(schema, def);
-}
-function aborted(x, startIndex = 0) {
-  var _a2;
-  if (x.aborted === true)
-    return true;
-  for (let i = startIndex; i < x.issues.length; i++) {
-    if (((_a2 = x.issues[i]) == null ? void 0 : _a2.continue) !== true) {
-      return true;
-    }
-  }
-  return false;
-}
-function prefixIssues(path2, issues) {
-  return issues.map((iss) => {
-    var _a2;
-    (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path2);
-    return iss;
-  });
-}
-function unwrapMessage(message) {
-  return typeof message === "string" ? message : message == null ? void 0 : message.message;
-}
-function finalizeIssue(iss, ctx, config2) {
-  var _a2, _b, _c, _d, _e, _f;
-  const full = { ...iss, path: iss.path ?? [] };
-  if (!iss.message) {
-    const message = unwrapMessage((_c = (_b = (_a2 = iss.inst) == null ? void 0 : _a2._zod.def) == null ? void 0 : _b.error) == null ? void 0 : _c.call(_b, iss)) ?? unwrapMessage((_d = ctx == null ? void 0 : ctx.error) == null ? void 0 : _d.call(ctx, iss)) ?? unwrapMessage((_e = config2.customError) == null ? void 0 : _e.call(config2, iss)) ?? unwrapMessage((_f = config2.localeError) == null ? void 0 : _f.call(config2, iss)) ?? "Invalid input";
-    full.message = message;
-  }
-  delete full.inst;
-  delete full.continue;
-  if (!(ctx == null ? void 0 : ctx.reportInput)) {
-    delete full.input;
-  }
-  return full;
-}
-function getLengthableOrigin(input) {
-  if (Array.isArray(input))
-    return "array";
-  if (typeof input === "string")
-    return "string";
-  return "unknown";
-}
-function issue(...args) {
-  const [iss, input, inst] = args;
-  if (typeof iss === "string") {
-    return {
-      message: iss,
-      code: "custom",
-      input,
-      inst
-    };
-  }
-  return { ...iss };
-}
-const initializer$1 = (inst, def) => {
-  inst.name = "$ZodError";
-  Object.defineProperty(inst, "_zod", {
-    value: inst._zod,
-    enumerable: false
-  });
-  Object.defineProperty(inst, "issues", {
-    value: def,
-    enumerable: false
-  });
-  inst.message = JSON.stringify(def, jsonStringifyReplacer, 2);
-  Object.defineProperty(inst, "toString", {
-    value: () => inst.message,
-    enumerable: false
-  });
-};
-const $ZodError = $constructor("$ZodError", initializer$1);
-const $ZodRealError = $constructor("$ZodError", initializer$1, { Parent: Error });
-function flattenError(error, mapper = (issue2) => issue2.message) {
-  const fieldErrors = {};
-  const formErrors = [];
-  for (const sub of error.issues) {
-    if (sub.path.length > 0) {
-      fieldErrors[sub.path[0]] = fieldErrors[sub.path[0]] || [];
-      fieldErrors[sub.path[0]].push(mapper(sub));
-    } else {
-      formErrors.push(mapper(sub));
-    }
-  }
-  return { formErrors, fieldErrors };
-}
-function formatError(error, mapper = (issue2) => issue2.message) {
-  const fieldErrors = { _errors: [] };
-  const processError = (error2) => {
-    for (const issue2 of error2.issues) {
-      if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }));
-      } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues });
-      } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues });
-      } else if (issue2.path.length === 0) {
-        fieldErrors._errors.push(mapper(issue2));
-      } else {
-        let curr = fieldErrors;
-        let i = 0;
-        while (i < issue2.path.length) {
-          const el = issue2.path[i];
-          const terminal = i === issue2.path.length - 1;
-          if (!terminal) {
-            curr[el] = curr[el] || { _errors: [] };
-          } else {
-            curr[el] = curr[el] || { _errors: [] };
-            curr[el]._errors.push(mapper(issue2));
-          }
-          curr = curr[el];
-          i++;
-        }
-      }
-    }
-  };
-  processError(error);
-  return fieldErrors;
-}
-const _parse = (_Err) => (schema, value, _ctx, _params) => {
-  const ctx = _ctx ? Object.assign(_ctx, { async: false }) : { async: false };
-  const result = schema._zod.run({ value, issues: [] }, ctx);
-  if (result instanceof Promise) {
-    throw new $ZodAsyncError();
-  }
-  if (result.issues.length) {
-    const e = new ((_params == null ? void 0 : _params.Err) ?? _Err)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())));
-    captureStackTrace(e, _params == null ? void 0 : _params.callee);
-    throw e;
-  }
-  return result.value;
-};
-const _parseAsync = (_Err) => async (schema, value, _ctx, params) => {
-  const ctx = _ctx ? Object.assign(_ctx, { async: true }) : { async: true };
-  let result = schema._zod.run({ value, issues: [] }, ctx);
-  if (result instanceof Promise)
-    result = await result;
-  if (result.issues.length) {
-    const e = new ((params == null ? void 0 : params.Err) ?? _Err)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())));
-    captureStackTrace(e, params == null ? void 0 : params.callee);
-    throw e;
-  }
-  return result.value;
-};
-const _safeParse = (_Err) => (schema, value, _ctx) => {
-  const ctx = _ctx ? { ..._ctx, async: false } : { async: false };
-  const result = schema._zod.run({ value, issues: [] }, ctx);
-  if (result instanceof Promise) {
-    throw new $ZodAsyncError();
-  }
-  return result.issues.length ? {
-    success: false,
-    error: new (_Err ?? $ZodError)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
-  } : { success: true, data: result.value };
-};
-const safeParse$1 = /* @__PURE__ */ _safeParse($ZodRealError);
-const _safeParseAsync = (_Err) => async (schema, value, _ctx) => {
-  const ctx = _ctx ? Object.assign(_ctx, { async: true }) : { async: true };
-  let result = schema._zod.run({ value, issues: [] }, ctx);
-  if (result instanceof Promise)
-    result = await result;
-  return result.issues.length ? {
-    success: false,
-    error: new _Err(result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
-  } : { success: true, data: result.value };
-};
-const safeParseAsync$1 = /* @__PURE__ */ _safeParseAsync($ZodRealError);
-const _encode = (_Err) => (schema, value, _ctx) => {
-  const ctx = _ctx ? Object.assign(_ctx, { direction: "backward" }) : { direction: "backward" };
-  return _parse(_Err)(schema, value, ctx);
-};
-const _decode = (_Err) => (schema, value, _ctx) => {
-  return _parse(_Err)(schema, value, _ctx);
-};
-const _encodeAsync = (_Err) => async (schema, value, _ctx) => {
-  const ctx = _ctx ? Object.assign(_ctx, { direction: "backward" }) : { direction: "backward" };
-  return _parseAsync(_Err)(schema, value, ctx);
-};
-const _decodeAsync = (_Err) => async (schema, value, _ctx) => {
-  return _parseAsync(_Err)(schema, value, _ctx);
-};
-const _safeEncode = (_Err) => (schema, value, _ctx) => {
-  const ctx = _ctx ? Object.assign(_ctx, { direction: "backward" }) : { direction: "backward" };
-  return _safeParse(_Err)(schema, value, ctx);
-};
-const _safeDecode = (_Err) => (schema, value, _ctx) => {
-  return _safeParse(_Err)(schema, value, _ctx);
-};
-const _safeEncodeAsync = (_Err) => async (schema, value, _ctx) => {
-  const ctx = _ctx ? Object.assign(_ctx, { direction: "backward" }) : { direction: "backward" };
-  return _safeParseAsync(_Err)(schema, value, ctx);
-};
-const _safeDecodeAsync = (_Err) => async (schema, value, _ctx) => {
-  return _safeParseAsync(_Err)(schema, value, _ctx);
-};
-const cuid = /^[cC][^\s-]{8,}$/;
-const cuid2 = /^[0-9a-z]+$/;
-const ulid = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$/;
-const xid = /^[0-9a-vA-V]{20}$/;
-const ksuid = /^[A-Za-z0-9]{27}$/;
-const nanoid = /^[a-zA-Z0-9_-]{21}$/;
-const duration$1 = /^P(?:(\d+W)|(?!.*W)(?=\d|T\d)(\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+([.,]\d+)?S)?)?)$/;
-const guid = /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
-const uuid = (version2) => {
-  if (!version2)
-    return /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/;
-  return new RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${version2}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`);
-};
-const email = /^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$/;
-const _emoji$1 = `^(\\p{Extended_Pictographic}|\\p{Emoji_Component})+$`;
-function emoji() {
-  return new RegExp(_emoji$1, "u");
-}
-const ipv4 = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$/;
-const ipv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$/;
-const cidrv4 = /^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\/([0-9]|[1-2][0-9]|3[0-2])$/;
-const cidrv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|::|([0-9a-fA-F]{1,4})?::([0-9a-fA-F]{1,4}:?){0,6})\/(12[0-8]|1[01][0-9]|[1-9]?[0-9])$/;
-const base64 = /^$|^(?:[0-9a-zA-Z+/]{4})*(?:(?:[0-9a-zA-Z+/]{2}==)|(?:[0-9a-zA-Z+/]{3}=))?$/;
-const base64url = /^[A-Za-z0-9_-]*$/;
-const e164 = /^\+[1-9]\d{6,14}$/;
-const dateSource = `(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))`;
-const date$1 = /* @__PURE__ */ new RegExp(`^${dateSource}$`);
-function timeSource(args) {
-  const hhmm = `(?:[01]\\d|2[0-3]):[0-5]\\d`;
-  const regex = typeof args.precision === "number" ? args.precision === -1 ? `${hhmm}` : args.precision === 0 ? `${hhmm}:[0-5]\\d` : `${hhmm}:[0-5]\\d\\.\\d{${args.precision}}` : `${hhmm}(?::[0-5]\\d(?:\\.\\d+)?)?`;
-  return regex;
-}
-function time$1(args) {
-  return new RegExp(`^${timeSource(args)}$`);
-}
-function datetime$1(args) {
-  const time2 = timeSource({ precision: args.precision });
-  const opts = ["Z"];
-  if (args.local)
-    opts.push("");
-  if (args.offset)
-    opts.push(`([+-](?:[01]\\d|2[0-3]):[0-5]\\d)`);
-  const timeRegex = `${time2}(?:${opts.join("|")})`;
-  return new RegExp(`^${dateSource}T(?:${timeRegex})$`);
-}
-const string$1 = (params) => {
-  const regex = params ? `[\\s\\S]{${(params == null ? void 0 : params.minimum) ?? 0},${(params == null ? void 0 : params.maximum) ?? ""}}` : `[\\s\\S]*`;
-  return new RegExp(`^${regex}$`);
-};
-const boolean$1 = /^(?:true|false)$/i;
-const lowercase = /^[^A-Z]*$/;
-const uppercase = /^[^a-z]*$/;
-const $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
-  var _a2;
-  inst._zod ?? (inst._zod = {});
-  inst._zod.def = def;
-  (_a2 = inst._zod).onattach ?? (_a2.onattach = []);
-});
-const $ZodCheckMaxLength = /* @__PURE__ */ $constructor("$ZodCheckMaxLength", (inst, def) => {
-  var _a2;
-  $ZodCheck.init(inst, def);
-  (_a2 = inst._zod.def).when ?? (_a2.when = (payload) => {
-    const val = payload.value;
-    return !nullish(val) && val.length !== void 0;
-  });
-  inst._zod.onattach.push((inst2) => {
-    const curr = inst2._zod.bag.maximum ?? Number.POSITIVE_INFINITY;
-    if (def.maximum < curr)
-      inst2._zod.bag.maximum = def.maximum;
-  });
-  inst._zod.check = (payload) => {
-    const input = payload.value;
-    const length = input.length;
-    if (length <= def.maximum)
-      return;
-    const origin = getLengthableOrigin(input);
-    payload.issues.push({
-      origin,
-      code: "too_big",
-      maximum: def.maximum,
-      inclusive: true,
-      input,
-      inst,
-      continue: !def.abort
-    });
-  };
-});
-const $ZodCheckMinLength = /* @__PURE__ */ $constructor("$ZodCheckMinLength", (inst, def) => {
-  var _a2;
-  $ZodCheck.init(inst, def);
-  (_a2 = inst._zod.def).when ?? (_a2.when = (payload) => {
-    const val = payload.value;
-    return !nullish(val) && val.length !== void 0;
-  });
-  inst._zod.onattach.push((inst2) => {
-    const curr = inst2._zod.bag.minimum ?? Number.NEGATIVE_INFINITY;
-    if (def.minimum > curr)
-      inst2._zod.bag.minimum = def.minimum;
-  });
-  inst._zod.check = (payload) => {
-    const input = payload.value;
-    const length = input.length;
-    if (length >= def.minimum)
-      return;
-    const origin = getLengthableOrigin(input);
-    payload.issues.push({
-      origin,
-      code: "too_small",
-      minimum: def.minimum,
-      inclusive: true,
-      input,
-      inst,
-      continue: !def.abort
-    });
-  };
-});
-const $ZodCheckLengthEquals = /* @__PURE__ */ $constructor("$ZodCheckLengthEquals", (inst, def) => {
-  var _a2;
-  $ZodCheck.init(inst, def);
-  (_a2 = inst._zod.def).when ?? (_a2.when = (payload) => {
-    const val = payload.value;
-    return !nullish(val) && val.length !== void 0;
-  });
-  inst._zod.onattach.push((inst2) => {
-    const bag = inst2._zod.bag;
-    bag.minimum = def.length;
-    bag.maximum = def.length;
-    bag.length = def.length;
-  });
-  inst._zod.check = (payload) => {
-    const input = payload.value;
-    const length = input.length;
-    if (length === def.length)
-      return;
-    const origin = getLengthableOrigin(input);
-    const tooBig = length > def.length;
-    payload.issues.push({
-      origin,
-      ...tooBig ? { code: "too_big", maximum: def.length } : { code: "too_small", minimum: def.length },
-      inclusive: true,
-      exact: true,
-      input: payload.value,
-      inst,
-      continue: !def.abort
-    });
-  };
-});
-const $ZodCheckStringFormat = /* @__PURE__ */ $constructor("$ZodCheckStringFormat", (inst, def) => {
-  var _a2, _b;
-  $ZodCheck.init(inst, def);
-  inst._zod.onattach.push((inst2) => {
-    const bag = inst2._zod.bag;
-    bag.format = def.format;
-    if (def.pattern) {
-      bag.patterns ?? (bag.patterns = /* @__PURE__ */ new Set());
-      bag.patterns.add(def.pattern);
-    }
-  });
-  if (def.pattern)
-    (_a2 = inst._zod).check ?? (_a2.check = (payload) => {
-      def.pattern.lastIndex = 0;
-      if (def.pattern.test(payload.value))
-        return;
-      payload.issues.push({
-        origin: "string",
-        code: "invalid_format",
-        format: def.format,
-        input: payload.value,
-        ...def.pattern ? { pattern: def.pattern.toString() } : {},
-        inst,
-        continue: !def.abort
-      });
-    });
-  else
-    (_b = inst._zod).check ?? (_b.check = () => {
-    });
-});
-const $ZodCheckRegex = /* @__PURE__ */ $constructor("$ZodCheckRegex", (inst, def) => {
-  $ZodCheckStringFormat.init(inst, def);
-  inst._zod.check = (payload) => {
-    def.pattern.lastIndex = 0;
-    if (def.pattern.test(payload.value))
-      return;
-    payload.issues.push({
-      origin: "string",
-      code: "invalid_format",
-      format: "regex",
-      input: payload.value,
-      pattern: def.pattern.toString(),
-      inst,
-      continue: !def.abort
-    });
-  };
-});
-const $ZodCheckLowerCase = /* @__PURE__ */ $constructor("$ZodCheckLowerCase", (inst, def) => {
-  def.pattern ?? (def.pattern = lowercase);
-  $ZodCheckStringFormat.init(inst, def);
-});
-const $ZodCheckUpperCase = /* @__PURE__ */ $constructor("$ZodCheckUpperCase", (inst, def) => {
-  def.pattern ?? (def.pattern = uppercase);
-  $ZodCheckStringFormat.init(inst, def);
-});
-const $ZodCheckIncludes = /* @__PURE__ */ $constructor("$ZodCheckIncludes", (inst, def) => {
-  $ZodCheck.init(inst, def);
-  const escapedRegex = escapeRegex(def.includes);
-  const pattern = new RegExp(typeof def.position === "number" ? `^.{${def.position}}${escapedRegex}` : escapedRegex);
-  def.pattern = pattern;
-  inst._zod.onattach.push((inst2) => {
-    const bag = inst2._zod.bag;
-    bag.patterns ?? (bag.patterns = /* @__PURE__ */ new Set());
-    bag.patterns.add(pattern);
-  });
-  inst._zod.check = (payload) => {
-    if (payload.value.includes(def.includes, def.position))
-      return;
-    payload.issues.push({
-      origin: "string",
-      code: "invalid_format",
-      format: "includes",
-      includes: def.includes,
-      input: payload.value,
-      inst,
-      continue: !def.abort
-    });
-  };
-});
-const $ZodCheckStartsWith = /* @__PURE__ */ $constructor("$ZodCheckStartsWith", (inst, def) => {
-  $ZodCheck.init(inst, def);
-  const pattern = new RegExp(`^${escapeRegex(def.prefix)}.*`);
-  def.pattern ?? (def.pattern = pattern);
-  inst._zod.onattach.push((inst2) => {
-    const bag = inst2._zod.bag;
-    bag.patterns ?? (bag.patterns = /* @__PURE__ */ new Set());
-    bag.patterns.add(pattern);
-  });
-  inst._zod.check = (payload) => {
-    if (payload.value.startsWith(def.prefix))
-      return;
-    payload.issues.push({
-      origin: "string",
-      code: "invalid_format",
-      format: "starts_with",
-      prefix: def.prefix,
-      input: payload.value,
-      inst,
-      continue: !def.abort
-    });
-  };
-});
-const $ZodCheckEndsWith = /* @__PURE__ */ $constructor("$ZodCheckEndsWith", (inst, def) => {
-  $ZodCheck.init(inst, def);
-  const pattern = new RegExp(`.*${escapeRegex(def.suffix)}$`);
-  def.pattern ?? (def.pattern = pattern);
-  inst._zod.onattach.push((inst2) => {
-    const bag = inst2._zod.bag;
-    bag.patterns ?? (bag.patterns = /* @__PURE__ */ new Set());
-    bag.patterns.add(pattern);
-  });
-  inst._zod.check = (payload) => {
-    if (payload.value.endsWith(def.suffix))
-      return;
-    payload.issues.push({
-      origin: "string",
-      code: "invalid_format",
-      format: "ends_with",
-      suffix: def.suffix,
-      input: payload.value,
-      inst,
-      continue: !def.abort
-    });
-  };
-});
-const $ZodCheckOverwrite = /* @__PURE__ */ $constructor("$ZodCheckOverwrite", (inst, def) => {
-  $ZodCheck.init(inst, def);
-  inst._zod.check = (payload) => {
-    payload.value = def.tx(payload.value);
-  };
-});
-class Doc {
-  constructor(args = []) {
-    this.content = [];
-    this.indent = 0;
-    if (this)
-      this.args = args;
-  }
-  indented(fn) {
-    this.indent += 1;
-    fn(this);
-    this.indent -= 1;
-  }
-  write(arg) {
-    if (typeof arg === "function") {
-      arg(this, { execution: "sync" });
-      arg(this, { execution: "async" });
-      return;
-    }
-    const content = arg;
-    const lines = content.split("\n").filter((x) => x);
-    const minIndent = Math.min(...lines.map((x) => x.length - x.trimStart().length));
-    const dedented = lines.map((x) => x.slice(minIndent)).map((x) => " ".repeat(this.indent * 2) + x);
-    for (const line of dedented) {
-      this.content.push(line);
-    }
-  }
-  compile() {
-    const F = Function;
-    const args = this == null ? void 0 : this.args;
-    const content = (this == null ? void 0 : this.content) ?? [``];
-    const lines = [...content.map((x) => `  ${x}`)];
-    return new F(...args, lines.join("\n"));
-  }
-}
-const version = {
-  major: 4,
-  minor: 3,
-  patch: 6
-};
-const $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
-  var _a3;
-  var _a2;
-  inst ?? (inst = {});
-  inst._zod.def = def;
-  inst._zod.bag = inst._zod.bag || {};
-  inst._zod.version = version;
-  const checks = [...inst._zod.def.checks ?? []];
-  if (inst._zod.traits.has("$ZodCheck")) {
-    checks.unshift(inst);
-  }
-  for (const ch of checks) {
-    for (const fn of ch._zod.onattach) {
-      fn(inst);
-    }
-  }
-  if (checks.length === 0) {
-    (_a2 = inst._zod).deferred ?? (_a2.deferred = []);
-    (_a3 = inst._zod.deferred) == null ? void 0 : _a3.push(() => {
-      inst._zod.run = inst._zod.parse;
-    });
-  } else {
-    const runChecks = (payload, checks2, ctx) => {
-      let isAborted = aborted(payload);
-      let asyncResult;
-      for (const ch of checks2) {
-        if (ch._zod.def.when) {
-          const shouldRun = ch._zod.def.when(payload);
-          if (!shouldRun)
-            continue;
-        } else if (isAborted) {
-          continue;
-        }
-        const currLen = payload.issues.length;
-        const _ = ch._zod.check(payload);
-        if (_ instanceof Promise && (ctx == null ? void 0 : ctx.async) === false) {
-          throw new $ZodAsyncError();
-        }
-        if (asyncResult || _ instanceof Promise) {
-          asyncResult = (asyncResult ?? Promise.resolve()).then(async () => {
-            await _;
-            const nextLen = payload.issues.length;
-            if (nextLen === currLen)
-              return;
-            if (!isAborted)
-              isAborted = aborted(payload, currLen);
-          });
-        } else {
-          const nextLen = payload.issues.length;
-          if (nextLen === currLen)
-            continue;
-          if (!isAborted)
-            isAborted = aborted(payload, currLen);
-        }
-      }
-      if (asyncResult) {
-        return asyncResult.then(() => {
-          return payload;
-        });
-      }
-      return payload;
-    };
-    const handleCanaryResult = (canary, payload, ctx) => {
-      if (aborted(canary)) {
-        canary.aborted = true;
-        return canary;
-      }
-      const checkResult = runChecks(payload, checks, ctx);
-      if (checkResult instanceof Promise) {
-        if (ctx.async === false)
-          throw new $ZodAsyncError();
-        return checkResult.then((checkResult2) => inst._zod.parse(checkResult2, ctx));
-      }
-      return inst._zod.parse(checkResult, ctx);
-    };
-    inst._zod.run = (payload, ctx) => {
-      if (ctx.skipChecks) {
-        return inst._zod.parse(payload, ctx);
-      }
-      if (ctx.direction === "backward") {
-        const canary = inst._zod.parse({ value: payload.value, issues: [] }, { ...ctx, skipChecks: true });
-        if (canary instanceof Promise) {
-          return canary.then((canary2) => {
-            return handleCanaryResult(canary2, payload, ctx);
-          });
-        }
-        return handleCanaryResult(canary, payload, ctx);
-      }
-      const result = inst._zod.parse(payload, ctx);
-      if (result instanceof Promise) {
-        if (ctx.async === false)
-          throw new $ZodAsyncError();
-        return result.then((result2) => runChecks(result2, checks, ctx));
-      }
-      return runChecks(result, checks, ctx);
-    };
-  }
-  defineLazy(inst, "~standard", () => ({
-    validate: (value) => {
-      var _a4;
-      try {
-        const r = safeParse$1(inst, value);
-        return r.success ? { value: r.data } : { issues: (_a4 = r.error) == null ? void 0 : _a4.issues };
-      } catch (_) {
-        return safeParseAsync$1(inst, value).then((r) => {
-          var _a5;
-          return r.success ? { value: r.data } : { issues: (_a5 = r.error) == null ? void 0 : _a5.issues };
-        });
-      }
-    },
-    vendor: "zod",
-    version: 1
-  }));
-});
-const $ZodString = /* @__PURE__ */ $constructor("$ZodString", (inst, def) => {
-  var _a2;
-  $ZodType.init(inst, def);
-  inst._zod.pattern = [...((_a2 = inst == null ? void 0 : inst._zod.bag) == null ? void 0 : _a2.patterns) ?? []].pop() ?? string$1(inst._zod.bag);
-  inst._zod.parse = (payload, _) => {
-    if (def.coerce)
-      try {
-        payload.value = String(payload.value);
-      } catch (_2) {
-      }
-    if (typeof payload.value === "string")
-      return payload;
-    payload.issues.push({
-      expected: "string",
-      code: "invalid_type",
-      input: payload.value,
-      inst
-    });
-    return payload;
-  };
-});
-const $ZodStringFormat = /* @__PURE__ */ $constructor("$ZodStringFormat", (inst, def) => {
-  $ZodCheckStringFormat.init(inst, def);
-  $ZodString.init(inst, def);
-});
-const $ZodGUID = /* @__PURE__ */ $constructor("$ZodGUID", (inst, def) => {
-  def.pattern ?? (def.pattern = guid);
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodUUID = /* @__PURE__ */ $constructor("$ZodUUID", (inst, def) => {
-  if (def.version) {
-    const versionMap = {
-      v1: 1,
-      v2: 2,
-      v3: 3,
-      v4: 4,
-      v5: 5,
-      v6: 6,
-      v7: 7,
-      v8: 8
-    };
-    const v = versionMap[def.version];
-    if (v === void 0)
-      throw new Error(`Invalid UUID version: "${def.version}"`);
-    def.pattern ?? (def.pattern = uuid(v));
-  } else
-    def.pattern ?? (def.pattern = uuid());
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodEmail = /* @__PURE__ */ $constructor("$ZodEmail", (inst, def) => {
-  def.pattern ?? (def.pattern = email);
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodURL = /* @__PURE__ */ $constructor("$ZodURL", (inst, def) => {
-  $ZodStringFormat.init(inst, def);
-  inst._zod.check = (payload) => {
-    try {
-      const trimmed = payload.value.trim();
-      const url = new URL(trimmed);
-      if (def.hostname) {
-        def.hostname.lastIndex = 0;
-        if (!def.hostname.test(url.hostname)) {
-          payload.issues.push({
-            code: "invalid_format",
-            format: "url",
-            note: "Invalid hostname",
-            pattern: def.hostname.source,
-            input: payload.value,
-            inst,
-            continue: !def.abort
-          });
-        }
-      }
-      if (def.protocol) {
-        def.protocol.lastIndex = 0;
-        if (!def.protocol.test(url.protocol.endsWith(":") ? url.protocol.slice(0, -1) : url.protocol)) {
-          payload.issues.push({
-            code: "invalid_format",
-            format: "url",
-            note: "Invalid protocol",
-            pattern: def.protocol.source,
-            input: payload.value,
-            inst,
-            continue: !def.abort
-          });
-        }
-      }
-      if (def.normalize) {
-        payload.value = url.href;
-      } else {
-        payload.value = trimmed;
-      }
-      return;
-    } catch (_) {
-      payload.issues.push({
-        code: "invalid_format",
-        format: "url",
-        input: payload.value,
-        inst,
-        continue: !def.abort
-      });
-    }
-  };
-});
-const $ZodEmoji = /* @__PURE__ */ $constructor("$ZodEmoji", (inst, def) => {
-  def.pattern ?? (def.pattern = emoji());
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodNanoID = /* @__PURE__ */ $constructor("$ZodNanoID", (inst, def) => {
-  def.pattern ?? (def.pattern = nanoid);
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodCUID = /* @__PURE__ */ $constructor("$ZodCUID", (inst, def) => {
-  def.pattern ?? (def.pattern = cuid);
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodCUID2 = /* @__PURE__ */ $constructor("$ZodCUID2", (inst, def) => {
-  def.pattern ?? (def.pattern = cuid2);
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodULID = /* @__PURE__ */ $constructor("$ZodULID", (inst, def) => {
-  def.pattern ?? (def.pattern = ulid);
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodXID = /* @__PURE__ */ $constructor("$ZodXID", (inst, def) => {
-  def.pattern ?? (def.pattern = xid);
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodKSUID = /* @__PURE__ */ $constructor("$ZodKSUID", (inst, def) => {
-  def.pattern ?? (def.pattern = ksuid);
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodISODateTime = /* @__PURE__ */ $constructor("$ZodISODateTime", (inst, def) => {
-  def.pattern ?? (def.pattern = datetime$1(def));
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodISODate = /* @__PURE__ */ $constructor("$ZodISODate", (inst, def) => {
-  def.pattern ?? (def.pattern = date$1);
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodISOTime = /* @__PURE__ */ $constructor("$ZodISOTime", (inst, def) => {
-  def.pattern ?? (def.pattern = time$1(def));
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodISODuration = /* @__PURE__ */ $constructor("$ZodISODuration", (inst, def) => {
-  def.pattern ?? (def.pattern = duration$1);
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodIPv4 = /* @__PURE__ */ $constructor("$ZodIPv4", (inst, def) => {
-  def.pattern ?? (def.pattern = ipv4);
-  $ZodStringFormat.init(inst, def);
-  inst._zod.bag.format = `ipv4`;
-});
-const $ZodIPv6 = /* @__PURE__ */ $constructor("$ZodIPv6", (inst, def) => {
-  def.pattern ?? (def.pattern = ipv6);
-  $ZodStringFormat.init(inst, def);
-  inst._zod.bag.format = `ipv6`;
-  inst._zod.check = (payload) => {
-    try {
-      new URL(`http://[${payload.value}]`);
-    } catch {
-      payload.issues.push({
-        code: "invalid_format",
-        format: "ipv6",
-        input: payload.value,
-        inst,
-        continue: !def.abort
-      });
-    }
-  };
-});
-const $ZodCIDRv4 = /* @__PURE__ */ $constructor("$ZodCIDRv4", (inst, def) => {
-  def.pattern ?? (def.pattern = cidrv4);
-  $ZodStringFormat.init(inst, def);
-});
-const $ZodCIDRv6 = /* @__PURE__ */ $constructor("$ZodCIDRv6", (inst, def) => {
-  def.pattern ?? (def.pattern = cidrv6);
-  $ZodStringFormat.init(inst, def);
-  inst._zod.check = (payload) => {
-    const parts = payload.value.split("/");
-    try {
-      if (parts.length !== 2)
-        throw new Error();
-      const [address, prefix] = parts;
-      if (!prefix)
-        throw new Error();
-      const prefixNum = Number(prefix);
-      if (`${prefixNum}` !== prefix)
-        throw new Error();
-      if (prefixNum < 0 || prefixNum > 128)
-        throw new Error();
-      new URL(`http://[${address}]`);
-    } catch {
-      payload.issues.push({
-        code: "invalid_format",
-        format: "cidrv6",
-        input: payload.value,
-        inst,
-        continue: !def.abort
-      });
-    }
-  };
-});
-function isValidBase64(data) {
-  if (data === "")
-    return true;
-  if (data.length % 4 !== 0)
-    return false;
-  try {
-    atob(data);
-    return true;
-  } catch {
-    return false;
-  }
-}
-const $ZodBase64 = /* @__PURE__ */ $constructor("$ZodBase64", (inst, def) => {
-  def.pattern ?? (def.pattern = base64);
-  $ZodStringFormat.init(inst, def);
-  inst._zod.bag.contentEncoding = "base64";
-  inst._zod.check = (payload) => {
-    if (isValidBase64(payload.value))
-      return;
-    payload.issues.push({
-      code: "invalid_format",
-      format: "base64",
-      input: payload.value,
-      inst,
-      continue: !def.abort
-    });
-  };
-});
-function isValidBase64URL(data) {
-  if (!base64url.test(data))
-    return false;
-  const base642 = data.replace(/[-_]/g, (c) => c === "-" ? "+" : "/");
-  const padded = base642.padEnd(Math.ceil(base642.length / 4) * 4, "=");
-  return isValidBase64(padded);
-}
-const $ZodBase64URL = /* @__PURE__ */ $constructor("$ZodBase64URL", (inst, def) => {
-  def.pattern ?? (def.pattern = base64url);
-  $ZodStringFormat.init(inst, def);
-  inst._zod.bag.contentEncoding = "base64url";
-  inst._zod.check = (payload) => {
-    if (isValidBase64URL(payload.value))
-      return;
-    payload.issues.push({
-      code: "invalid_format",
-      format: "base64url",
-      input: payload.value,
-      inst,
-      continue: !def.abort
-    });
-  };
-});
-const $ZodE164 = /* @__PURE__ */ $constructor("$ZodE164", (inst, def) => {
-  def.pattern ?? (def.pattern = e164);
-  $ZodStringFormat.init(inst, def);
-});
-function isValidJWT(token, algorithm = null) {
-  try {
-    const tokensParts = token.split(".");
-    if (tokensParts.length !== 3)
-      return false;
-    const [header] = tokensParts;
-    if (!header)
-      return false;
-    const parsedHeader = JSON.parse(atob(header));
-    if ("typ" in parsedHeader && (parsedHeader == null ? void 0 : parsedHeader.typ) !== "JWT")
-      return false;
-    if (!parsedHeader.alg)
-      return false;
-    if (algorithm && (!("alg" in parsedHeader) || parsedHeader.alg !== algorithm))
-      return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-const $ZodJWT = /* @__PURE__ */ $constructor("$ZodJWT", (inst, def) => {
-  $ZodStringFormat.init(inst, def);
-  inst._zod.check = (payload) => {
-    if (isValidJWT(payload.value, def.alg))
-      return;
-    payload.issues.push({
-      code: "invalid_format",
-      format: "jwt",
-      input: payload.value,
-      inst,
-      continue: !def.abort
-    });
-  };
-});
-const $ZodBoolean = /* @__PURE__ */ $constructor("$ZodBoolean", (inst, def) => {
-  $ZodType.init(inst, def);
-  inst._zod.pattern = boolean$1;
-  inst._zod.parse = (payload, _ctx) => {
-    if (def.coerce)
-      try {
-        payload.value = Boolean(payload.value);
-      } catch (_) {
-      }
-    const input = payload.value;
-    if (typeof input === "boolean")
-      return payload;
-    payload.issues.push({
-      expected: "boolean",
-      code: "invalid_type",
-      input,
-      inst
-    });
-    return payload;
-  };
-});
-const $ZodUnknown = /* @__PURE__ */ $constructor("$ZodUnknown", (inst, def) => {
-  $ZodType.init(inst, def);
-  inst._zod.parse = (payload) => payload;
-});
-const $ZodNever = /* @__PURE__ */ $constructor("$ZodNever", (inst, def) => {
-  $ZodType.init(inst, def);
-  inst._zod.parse = (payload, _ctx) => {
-    payload.issues.push({
-      expected: "never",
-      code: "invalid_type",
-      input: payload.value,
-      inst
-    });
-    return payload;
-  };
-});
-function handleArrayResult(result, final, index) {
-  if (result.issues.length) {
-    final.issues.push(...prefixIssues(index, result.issues));
-  }
-  final.value[index] = result.value;
-}
-const $ZodArray = /* @__PURE__ */ $constructor("$ZodArray", (inst, def) => {
-  $ZodType.init(inst, def);
-  inst._zod.parse = (payload, ctx) => {
-    const input = payload.value;
-    if (!Array.isArray(input)) {
-      payload.issues.push({
-        expected: "array",
-        code: "invalid_type",
-        input,
-        inst
-      });
-      return payload;
-    }
-    payload.value = Array(input.length);
-    const proms = [];
-    for (let i = 0; i < input.length; i++) {
-      const item = input[i];
-      const result = def.element._zod.run({
-        value: item,
-        issues: []
-      }, ctx);
-      if (result instanceof Promise) {
-        proms.push(result.then((result2) => handleArrayResult(result2, payload, i)));
-      } else {
-        handleArrayResult(result, payload, i);
-      }
-    }
-    if (proms.length) {
-      return Promise.all(proms).then(() => payload);
-    }
-    return payload;
-  };
-});
-function handlePropertyResult(result, final, key, input, isOptionalOut) {
-  if (result.issues.length) {
-    if (isOptionalOut && !(key in input)) {
-      return;
-    }
-    final.issues.push(...prefixIssues(key, result.issues));
-  }
-  if (result.value === void 0) {
-    if (key in input) {
-      final.value[key] = void 0;
-    }
-  } else {
-    final.value[key] = result.value;
-  }
-}
-function normalizeDef(def) {
-  var _a2, _b, _c, _d;
-  const keys = Object.keys(def.shape);
-  for (const k of keys) {
-    if (!((_d = (_c = (_b = (_a2 = def.shape) == null ? void 0 : _a2[k]) == null ? void 0 : _b._zod) == null ? void 0 : _c.traits) == null ? void 0 : _d.has("$ZodType"))) {
-      throw new Error(`Invalid element at key "${k}": expected a Zod schema`);
-    }
-  }
-  const okeys = optionalKeys(def.shape);
-  return {
-    ...def,
-    keys,
-    keySet: new Set(keys),
-    numKeys: keys.length,
-    optionalKeys: new Set(okeys)
-  };
-}
-function handleCatchall(proms, input, payload, ctx, def, inst) {
-  const unrecognized = [];
-  const keySet = def.keySet;
-  const _catchall = def.catchall._zod;
-  const t = _catchall.def.type;
-  const isOptionalOut = _catchall.optout === "optional";
-  for (const key in input) {
-    if (keySet.has(key))
-      continue;
-    if (t === "never") {
-      unrecognized.push(key);
-      continue;
-    }
-    const r = _catchall.run({ value: input[key], issues: [] }, ctx);
-    if (r instanceof Promise) {
-      proms.push(r.then((r2) => handlePropertyResult(r2, payload, key, input, isOptionalOut)));
-    } else {
-      handlePropertyResult(r, payload, key, input, isOptionalOut);
-    }
-  }
-  if (unrecognized.length) {
-    payload.issues.push({
-      code: "unrecognized_keys",
-      keys: unrecognized,
-      input,
-      inst
-    });
-  }
-  if (!proms.length)
-    return payload;
-  return Promise.all(proms).then(() => {
-    return payload;
-  });
-}
-const $ZodObject = /* @__PURE__ */ $constructor("$ZodObject", (inst, def) => {
-  $ZodType.init(inst, def);
-  const desc = Object.getOwnPropertyDescriptor(def, "shape");
-  if (!(desc == null ? void 0 : desc.get)) {
-    const sh = def.shape;
-    Object.defineProperty(def, "shape", {
-      get: () => {
-        const newSh = { ...sh };
-        Object.defineProperty(def, "shape", {
-          value: newSh
-        });
-        return newSh;
-      }
-    });
-  }
-  const _normalized = cached(() => normalizeDef(def));
-  defineLazy(inst._zod, "propValues", () => {
-    const shape = def.shape;
-    const propValues = {};
-    for (const key in shape) {
-      const field = shape[key]._zod;
-      if (field.values) {
-        propValues[key] ?? (propValues[key] = /* @__PURE__ */ new Set());
-        for (const v of field.values)
-          propValues[key].add(v);
-      }
-    }
-    return propValues;
-  });
-  const isObject$1 = isObject;
-  const catchall = def.catchall;
-  let value;
-  inst._zod.parse = (payload, ctx) => {
-    value ?? (value = _normalized.value);
-    const input = payload.value;
-    if (!isObject$1(input)) {
-      payload.issues.push({
-        expected: "object",
-        code: "invalid_type",
-        input,
-        inst
-      });
-      return payload;
-    }
-    payload.value = {};
-    const proms = [];
-    const shape = value.shape;
-    for (const key of value.keys) {
-      const el = shape[key];
-      const isOptionalOut = el._zod.optout === "optional";
-      const r = el._zod.run({ value: input[key], issues: [] }, ctx);
-      if (r instanceof Promise) {
-        proms.push(r.then((r2) => handlePropertyResult(r2, payload, key, input, isOptionalOut)));
-      } else {
-        handlePropertyResult(r, payload, key, input, isOptionalOut);
-      }
-    }
-    if (!catchall) {
-      return proms.length ? Promise.all(proms).then(() => payload) : payload;
-    }
-    return handleCatchall(proms, input, payload, ctx, _normalized.value, inst);
-  };
-});
-const $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) => {
-  $ZodObject.init(inst, def);
-  const superParse = inst._zod.parse;
-  const _normalized = cached(() => normalizeDef(def));
-  const generateFastpass = (shape) => {
-    var _a2;
-    const doc = new Doc(["shape", "payload", "ctx"]);
-    const normalized = _normalized.value;
-    const parseStr = (key) => {
-      const k = esc(key);
-      return `shape[${k}]._zod.run({ value: input[${k}], issues: [] }, ctx)`;
-    };
-    doc.write(`const input = payload.value;`);
-    const ids = /* @__PURE__ */ Object.create(null);
-    let counter = 0;
-    for (const key of normalized.keys) {
-      ids[key] = `key_${counter++}`;
-    }
-    doc.write(`const newResult = {};`);
-    for (const key of normalized.keys) {
-      const id = ids[key];
-      const k = esc(key);
-      const schema = shape[key];
-      const isOptionalOut = ((_a2 = schema == null ? void 0 : schema._zod) == null ? void 0 : _a2.optout) === "optional";
-      doc.write(`const ${id} = ${parseStr(key)};`);
-      if (isOptionalOut) {
-        doc.write(`
-        if (${id}.issues.length) {
-          if (${k} in input) {
-            payload.issues = payload.issues.concat(${id}.issues.map(iss => ({
-              ...iss,
-              path: iss.path ? [${k}, ...iss.path] : [${k}]
-            })));
-          }
-        }
-        
-        if (${id}.value === undefined) {
-          if (${k} in input) {
-            newResult[${k}] = undefined;
-          }
-        } else {
-          newResult[${k}] = ${id}.value;
-        }
-        
-      `);
-      } else {
-        doc.write(`
-        if (${id}.issues.length) {
-          payload.issues = payload.issues.concat(${id}.issues.map(iss => ({
-            ...iss,
-            path: iss.path ? [${k}, ...iss.path] : [${k}]
-          })));
-        }
-        
-        if (${id}.value === undefined) {
-          if (${k} in input) {
-            newResult[${k}] = undefined;
-          }
-        } else {
-          newResult[${k}] = ${id}.value;
-        }
-        
-      `);
-      }
-    }
-    doc.write(`payload.value = newResult;`);
-    doc.write(`return payload;`);
-    const fn = doc.compile();
-    return (payload, ctx) => fn(shape, payload, ctx);
-  };
-  let fastpass;
-  const isObject$1 = isObject;
-  const jit = !globalConfig.jitless;
-  const allowsEval$1 = allowsEval;
-  const fastEnabled = jit && allowsEval$1.value;
-  const catchall = def.catchall;
-  let value;
-  inst._zod.parse = (payload, ctx) => {
-    value ?? (value = _normalized.value);
-    const input = payload.value;
-    if (!isObject$1(input)) {
-      payload.issues.push({
-        expected: "object",
-        code: "invalid_type",
-        input,
-        inst
-      });
-      return payload;
-    }
-    if (jit && fastEnabled && (ctx == null ? void 0 : ctx.async) === false && ctx.jitless !== true) {
-      if (!fastpass)
-        fastpass = generateFastpass(def.shape);
-      payload = fastpass(payload, ctx);
-      if (!catchall)
-        return payload;
-      return handleCatchall([], input, payload, ctx, value, inst);
-    }
-    return superParse(payload, ctx);
-  };
-});
-function handleUnionResults(results, final, inst, ctx) {
-  for (const result of results) {
-    if (result.issues.length === 0) {
-      final.value = result.value;
-      return final;
-    }
-  }
-  const nonaborted = results.filter((r) => !aborted(r));
-  if (nonaborted.length === 1) {
-    final.value = nonaborted[0].value;
-    return nonaborted[0];
-  }
-  final.issues.push({
-    code: "invalid_union",
-    input: final.value,
-    inst,
-    errors: results.map((result) => result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
-  });
-  return final;
-}
-const $ZodUnion = /* @__PURE__ */ $constructor("$ZodUnion", (inst, def) => {
-  $ZodType.init(inst, def);
-  defineLazy(inst._zod, "optin", () => def.options.some((o) => o._zod.optin === "optional") ? "optional" : void 0);
-  defineLazy(inst._zod, "optout", () => def.options.some((o) => o._zod.optout === "optional") ? "optional" : void 0);
-  defineLazy(inst._zod, "values", () => {
-    if (def.options.every((o) => o._zod.values)) {
-      return new Set(def.options.flatMap((option) => Array.from(option._zod.values)));
-    }
-    return void 0;
-  });
-  defineLazy(inst._zod, "pattern", () => {
-    if (def.options.every((o) => o._zod.pattern)) {
-      const patterns = def.options.map((o) => o._zod.pattern);
-      return new RegExp(`^(${patterns.map((p) => cleanRegex(p.source)).join("|")})$`);
-    }
-    return void 0;
-  });
-  const single = def.options.length === 1;
-  const first = def.options[0]._zod.run;
-  inst._zod.parse = (payload, ctx) => {
-    if (single) {
-      return first(payload, ctx);
-    }
-    let async = false;
-    const results = [];
-    for (const option of def.options) {
-      const result = option._zod.run({
-        value: payload.value,
-        issues: []
-      }, ctx);
-      if (result instanceof Promise) {
-        results.push(result);
-        async = true;
-      } else {
-        if (result.issues.length === 0)
-          return result;
-        results.push(result);
-      }
-    }
-    if (!async)
-      return handleUnionResults(results, payload, inst, ctx);
-    return Promise.all(results).then((results2) => {
-      return handleUnionResults(results2, payload, inst, ctx);
-    });
-  };
-});
-const $ZodIntersection = /* @__PURE__ */ $constructor("$ZodIntersection", (inst, def) => {
-  $ZodType.init(inst, def);
-  inst._zod.parse = (payload, ctx) => {
-    const input = payload.value;
-    const left = def.left._zod.run({ value: input, issues: [] }, ctx);
-    const right = def.right._zod.run({ value: input, issues: [] }, ctx);
-    const async = left instanceof Promise || right instanceof Promise;
-    if (async) {
-      return Promise.all([left, right]).then(([left2, right2]) => {
-        return handleIntersectionResults(payload, left2, right2);
-      });
-    }
-    return handleIntersectionResults(payload, left, right);
-  };
-});
-function mergeValues(a, b) {
-  if (a === b) {
-    return { valid: true, data: a };
-  }
-  if (a instanceof Date && b instanceof Date && +a === +b) {
-    return { valid: true, data: a };
-  }
-  if (isPlainObject(a) && isPlainObject(b)) {
-    const bKeys = Object.keys(b);
-    const sharedKeys = Object.keys(a).filter((key) => bKeys.indexOf(key) !== -1);
-    const newObj = { ...a, ...b };
-    for (const key of sharedKeys) {
-      const sharedValue = mergeValues(a[key], b[key]);
-      if (!sharedValue.valid) {
-        return {
-          valid: false,
-          mergeErrorPath: [key, ...sharedValue.mergeErrorPath]
-        };
-      }
-      newObj[key] = sharedValue.data;
-    }
-    return { valid: true, data: newObj };
-  }
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) {
-      return { valid: false, mergeErrorPath: [] };
-    }
-    const newArray = [];
-    for (let index = 0; index < a.length; index++) {
-      const itemA = a[index];
-      const itemB = b[index];
-      const sharedValue = mergeValues(itemA, itemB);
-      if (!sharedValue.valid) {
-        return {
-          valid: false,
-          mergeErrorPath: [index, ...sharedValue.mergeErrorPath]
-        };
-      }
-      newArray.push(sharedValue.data);
-    }
-    return { valid: true, data: newArray };
-  }
-  return { valid: false, mergeErrorPath: [] };
-}
-function handleIntersectionResults(result, left, right) {
-  const unrecKeys = /* @__PURE__ */ new Map();
-  let unrecIssue;
-  for (const iss of left.issues) {
-    if (iss.code === "unrecognized_keys") {
-      unrecIssue ?? (unrecIssue = iss);
-      for (const k of iss.keys) {
-        if (!unrecKeys.has(k))
-          unrecKeys.set(k, {});
-        unrecKeys.get(k).l = true;
-      }
-    } else {
-      result.issues.push(iss);
-    }
-  }
-  for (const iss of right.issues) {
-    if (iss.code === "unrecognized_keys") {
-      for (const k of iss.keys) {
-        if (!unrecKeys.has(k))
-          unrecKeys.set(k, {});
-        unrecKeys.get(k).r = true;
-      }
-    } else {
-      result.issues.push(iss);
-    }
-  }
-  const bothKeys = [...unrecKeys].filter(([, f]) => f.l && f.r).map(([k]) => k);
-  if (bothKeys.length && unrecIssue) {
-    result.issues.push({ ...unrecIssue, keys: bothKeys });
-  }
-  if (aborted(result))
-    return result;
-  const merged = mergeValues(left.value, right.value);
-  if (!merged.valid) {
-    throw new Error(`Unmergable intersection. Error path: ${JSON.stringify(merged.mergeErrorPath)}`);
-  }
-  result.value = merged.data;
-  return result;
-}
-const $ZodEnum = /* @__PURE__ */ $constructor("$ZodEnum", (inst, def) => {
-  $ZodType.init(inst, def);
-  const values = getEnumValues(def.entries);
-  const valuesSet = new Set(values);
-  inst._zod.values = valuesSet;
-  inst._zod.pattern = new RegExp(`^(${values.filter((k) => propertyKeyTypes.has(typeof k)).map((o) => typeof o === "string" ? escapeRegex(o) : o.toString()).join("|")})$`);
-  inst._zod.parse = (payload, _ctx) => {
-    const input = payload.value;
-    if (valuesSet.has(input)) {
-      return payload;
-    }
-    payload.issues.push({
-      code: "invalid_value",
-      values,
-      input,
-      inst
-    });
-    return payload;
-  };
-});
-const $ZodTransform = /* @__PURE__ */ $constructor("$ZodTransform", (inst, def) => {
-  $ZodType.init(inst, def);
-  inst._zod.parse = (payload, ctx) => {
-    if (ctx.direction === "backward") {
-      throw new $ZodEncodeError(inst.constructor.name);
-    }
-    const _out = def.transform(payload.value, payload);
-    if (ctx.async) {
-      const output = _out instanceof Promise ? _out : Promise.resolve(_out);
-      return output.then((output2) => {
-        payload.value = output2;
-        return payload;
-      });
-    }
-    if (_out instanceof Promise) {
-      throw new $ZodAsyncError();
-    }
-    payload.value = _out;
-    return payload;
-  };
-});
-function handleOptionalResult(result, input) {
-  if (result.issues.length && input === void 0) {
-    return { issues: [], value: void 0 };
-  }
-  return result;
-}
-const $ZodOptional = /* @__PURE__ */ $constructor("$ZodOptional", (inst, def) => {
-  $ZodType.init(inst, def);
-  inst._zod.optin = "optional";
-  inst._zod.optout = "optional";
-  defineLazy(inst._zod, "values", () => {
-    return def.innerType._zod.values ? /* @__PURE__ */ new Set([...def.innerType._zod.values, void 0]) : void 0;
-  });
-  defineLazy(inst._zod, "pattern", () => {
-    const pattern = def.innerType._zod.pattern;
-    return pattern ? new RegExp(`^(${cleanRegex(pattern.source)})?$`) : void 0;
-  });
-  inst._zod.parse = (payload, ctx) => {
-    if (def.innerType._zod.optin === "optional") {
-      const result = def.innerType._zod.run(payload, ctx);
-      if (result instanceof Promise)
-        return result.then((r) => handleOptionalResult(r, payload.value));
-      return handleOptionalResult(result, payload.value);
-    }
-    if (payload.value === void 0) {
-      return payload;
-    }
-    return def.innerType._zod.run(payload, ctx);
-  };
-});
-const $ZodExactOptional = /* @__PURE__ */ $constructor("$ZodExactOptional", (inst, def) => {
-  $ZodOptional.init(inst, def);
-  defineLazy(inst._zod, "values", () => def.innerType._zod.values);
-  defineLazy(inst._zod, "pattern", () => def.innerType._zod.pattern);
-  inst._zod.parse = (payload, ctx) => {
-    return def.innerType._zod.run(payload, ctx);
-  };
-});
-const $ZodNullable = /* @__PURE__ */ $constructor("$ZodNullable", (inst, def) => {
-  $ZodType.init(inst, def);
-  defineLazy(inst._zod, "optin", () => def.innerType._zod.optin);
-  defineLazy(inst._zod, "optout", () => def.innerType._zod.optout);
-  defineLazy(inst._zod, "pattern", () => {
-    const pattern = def.innerType._zod.pattern;
-    return pattern ? new RegExp(`^(${cleanRegex(pattern.source)}|null)$`) : void 0;
-  });
-  defineLazy(inst._zod, "values", () => {
-    return def.innerType._zod.values ? /* @__PURE__ */ new Set([...def.innerType._zod.values, null]) : void 0;
-  });
-  inst._zod.parse = (payload, ctx) => {
-    if (payload.value === null)
-      return payload;
-    return def.innerType._zod.run(payload, ctx);
-  };
-});
-const $ZodDefault = /* @__PURE__ */ $constructor("$ZodDefault", (inst, def) => {
-  $ZodType.init(inst, def);
-  inst._zod.optin = "optional";
-  defineLazy(inst._zod, "values", () => def.innerType._zod.values);
-  inst._zod.parse = (payload, ctx) => {
-    if (ctx.direction === "backward") {
-      return def.innerType._zod.run(payload, ctx);
-    }
-    if (payload.value === void 0) {
-      payload.value = def.defaultValue;
-      return payload;
-    }
-    const result = def.innerType._zod.run(payload, ctx);
-    if (result instanceof Promise) {
-      return result.then((result2) => handleDefaultResult(result2, def));
-    }
-    return handleDefaultResult(result, def);
-  };
-});
-function handleDefaultResult(payload, def) {
-  if (payload.value === void 0) {
-    payload.value = def.defaultValue;
-  }
-  return payload;
-}
-const $ZodPrefault = /* @__PURE__ */ $constructor("$ZodPrefault", (inst, def) => {
-  $ZodType.init(inst, def);
-  inst._zod.optin = "optional";
-  defineLazy(inst._zod, "values", () => def.innerType._zod.values);
-  inst._zod.parse = (payload, ctx) => {
-    if (ctx.direction === "backward") {
-      return def.innerType._zod.run(payload, ctx);
-    }
-    if (payload.value === void 0) {
-      payload.value = def.defaultValue;
-    }
-    return def.innerType._zod.run(payload, ctx);
-  };
-});
-const $ZodNonOptional = /* @__PURE__ */ $constructor("$ZodNonOptional", (inst, def) => {
-  $ZodType.init(inst, def);
-  defineLazy(inst._zod, "values", () => {
-    const v = def.innerType._zod.values;
-    return v ? new Set([...v].filter((x) => x !== void 0)) : void 0;
-  });
-  inst._zod.parse = (payload, ctx) => {
-    const result = def.innerType._zod.run(payload, ctx);
-    if (result instanceof Promise) {
-      return result.then((result2) => handleNonOptionalResult(result2, inst));
-    }
-    return handleNonOptionalResult(result, inst);
-  };
-});
-function handleNonOptionalResult(payload, inst) {
-  if (!payload.issues.length && payload.value === void 0) {
-    payload.issues.push({
-      code: "invalid_type",
-      expected: "nonoptional",
-      input: payload.value,
-      inst
-    });
-  }
-  return payload;
-}
-const $ZodCatch = /* @__PURE__ */ $constructor("$ZodCatch", (inst, def) => {
-  $ZodType.init(inst, def);
-  defineLazy(inst._zod, "optin", () => def.innerType._zod.optin);
-  defineLazy(inst._zod, "optout", () => def.innerType._zod.optout);
-  defineLazy(inst._zod, "values", () => def.innerType._zod.values);
-  inst._zod.parse = (payload, ctx) => {
-    if (ctx.direction === "backward") {
-      return def.innerType._zod.run(payload, ctx);
-    }
-    const result = def.innerType._zod.run(payload, ctx);
-    if (result instanceof Promise) {
-      return result.then((result2) => {
-        payload.value = result2.value;
-        if (result2.issues.length) {
-          payload.value = def.catchValue({
-            ...payload,
-            error: {
-              issues: result2.issues.map((iss) => finalizeIssue(iss, ctx, config()))
-            },
-            input: payload.value
-          });
-          payload.issues = [];
-        }
-        return payload;
-      });
-    }
-    payload.value = result.value;
-    if (result.issues.length) {
-      payload.value = def.catchValue({
-        ...payload,
-        error: {
-          issues: result.issues.map((iss) => finalizeIssue(iss, ctx, config()))
-        },
-        input: payload.value
-      });
-      payload.issues = [];
-    }
-    return payload;
-  };
-});
-const $ZodPipe = /* @__PURE__ */ $constructor("$ZodPipe", (inst, def) => {
-  $ZodType.init(inst, def);
-  defineLazy(inst._zod, "values", () => def.in._zod.values);
-  defineLazy(inst._zod, "optin", () => def.in._zod.optin);
-  defineLazy(inst._zod, "optout", () => def.out._zod.optout);
-  defineLazy(inst._zod, "propValues", () => def.in._zod.propValues);
-  inst._zod.parse = (payload, ctx) => {
-    if (ctx.direction === "backward") {
-      const right = def.out._zod.run(payload, ctx);
-      if (right instanceof Promise) {
-        return right.then((right2) => handlePipeResult(right2, def.in, ctx));
-      }
-      return handlePipeResult(right, def.in, ctx);
-    }
-    const left = def.in._zod.run(payload, ctx);
-    if (left instanceof Promise) {
-      return left.then((left2) => handlePipeResult(left2, def.out, ctx));
-    }
-    return handlePipeResult(left, def.out, ctx);
-  };
-});
-function handlePipeResult(left, next, ctx) {
-  if (left.issues.length) {
-    left.aborted = true;
-    return left;
-  }
-  return next._zod.run({ value: left.value, issues: left.issues }, ctx);
-}
-const $ZodReadonly = /* @__PURE__ */ $constructor("$ZodReadonly", (inst, def) => {
-  $ZodType.init(inst, def);
-  defineLazy(inst._zod, "propValues", () => def.innerType._zod.propValues);
-  defineLazy(inst._zod, "values", () => def.innerType._zod.values);
-  defineLazy(inst._zod, "optin", () => {
-    var _a2, _b;
-    return (_b = (_a2 = def.innerType) == null ? void 0 : _a2._zod) == null ? void 0 : _b.optin;
-  });
-  defineLazy(inst._zod, "optout", () => {
-    var _a2, _b;
-    return (_b = (_a2 = def.innerType) == null ? void 0 : _a2._zod) == null ? void 0 : _b.optout;
-  });
-  inst._zod.parse = (payload, ctx) => {
-    if (ctx.direction === "backward") {
-      return def.innerType._zod.run(payload, ctx);
-    }
-    const result = def.innerType._zod.run(payload, ctx);
-    if (result instanceof Promise) {
-      return result.then(handleReadonlyResult);
-    }
-    return handleReadonlyResult(result);
-  };
-});
-function handleReadonlyResult(payload) {
-  payload.value = Object.freeze(payload.value);
-  return payload;
-}
-const $ZodCustom = /* @__PURE__ */ $constructor("$ZodCustom", (inst, def) => {
-  $ZodCheck.init(inst, def);
-  $ZodType.init(inst, def);
-  inst._zod.parse = (payload, _) => {
-    return payload;
-  };
-  inst._zod.check = (payload) => {
-    const input = payload.value;
-    const r = def.fn(input);
-    if (r instanceof Promise) {
-      return r.then((r2) => handleRefineResult(r2, payload, input, inst));
-    }
-    handleRefineResult(r, payload, input, inst);
-    return;
-  };
-});
-function handleRefineResult(result, payload, input, inst) {
-  if (!result) {
-    const _iss = {
-      code: "custom",
-      input,
-      inst,
-      // incorporates params.error into issue reporting
-      path: [...inst._zod.def.path ?? []],
-      // incorporates params.error into issue reporting
-      continue: !inst._zod.def.abort
-      // params: inst._zod.def.params,
-    };
-    if (inst._zod.def.params)
-      _iss.params = inst._zod.def.params;
-    payload.issues.push(issue(_iss));
-  }
-}
-var _a;
-class $ZodRegistry {
-  constructor() {
-    this._map = /* @__PURE__ */ new WeakMap();
-    this._idmap = /* @__PURE__ */ new Map();
-  }
-  add(schema, ..._meta) {
-    const meta = _meta[0];
-    this._map.set(schema, meta);
-    if (meta && typeof meta === "object" && "id" in meta) {
-      this._idmap.set(meta.id, schema);
-    }
-    return this;
-  }
-  clear() {
-    this._map = /* @__PURE__ */ new WeakMap();
-    this._idmap = /* @__PURE__ */ new Map();
-    return this;
-  }
-  remove(schema) {
-    const meta = this._map.get(schema);
-    if (meta && typeof meta === "object" && "id" in meta) {
-      this._idmap.delete(meta.id);
-    }
-    this._map.delete(schema);
-    return this;
-  }
-  get(schema) {
-    const p = schema._zod.parent;
-    if (p) {
-      const pm = { ...this.get(p) ?? {} };
-      delete pm.id;
-      const f = { ...pm, ...this._map.get(schema) };
-      return Object.keys(f).length ? f : void 0;
-    }
-    return this._map.get(schema);
-  }
-  has(schema) {
-    return this._map.has(schema);
-  }
-}
-function registry() {
-  return new $ZodRegistry();
-}
-(_a = globalThis).__zod_globalRegistry ?? (_a.__zod_globalRegistry = registry());
-const globalRegistry = globalThis.__zod_globalRegistry;
-// @__NO_SIDE_EFFECTS__
-function _string(Class, params) {
-  return new Class({
-    type: "string",
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _email(Class, params) {
-  return new Class({
-    type: "string",
-    format: "email",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _guid(Class, params) {
-  return new Class({
-    type: "string",
-    format: "guid",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _uuid(Class, params) {
-  return new Class({
-    type: "string",
-    format: "uuid",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _uuidv4(Class, params) {
-  return new Class({
-    type: "string",
-    format: "uuid",
-    check: "string_format",
-    abort: false,
-    version: "v4",
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _uuidv6(Class, params) {
-  return new Class({
-    type: "string",
-    format: "uuid",
-    check: "string_format",
-    abort: false,
-    version: "v6",
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _uuidv7(Class, params) {
-  return new Class({
-    type: "string",
-    format: "uuid",
-    check: "string_format",
-    abort: false,
-    version: "v7",
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _url(Class, params) {
-  return new Class({
-    type: "string",
-    format: "url",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _emoji(Class, params) {
-  return new Class({
-    type: "string",
-    format: "emoji",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _nanoid(Class, params) {
-  return new Class({
-    type: "string",
-    format: "nanoid",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _cuid(Class, params) {
-  return new Class({
-    type: "string",
-    format: "cuid",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _cuid2(Class, params) {
-  return new Class({
-    type: "string",
-    format: "cuid2",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _ulid(Class, params) {
-  return new Class({
-    type: "string",
-    format: "ulid",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _xid(Class, params) {
-  return new Class({
-    type: "string",
-    format: "xid",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _ksuid(Class, params) {
-  return new Class({
-    type: "string",
-    format: "ksuid",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _ipv4(Class, params) {
-  return new Class({
-    type: "string",
-    format: "ipv4",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _ipv6(Class, params) {
-  return new Class({
-    type: "string",
-    format: "ipv6",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _cidrv4(Class, params) {
-  return new Class({
-    type: "string",
-    format: "cidrv4",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _cidrv6(Class, params) {
-  return new Class({
-    type: "string",
-    format: "cidrv6",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _base64(Class, params) {
-  return new Class({
-    type: "string",
-    format: "base64",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _base64url(Class, params) {
-  return new Class({
-    type: "string",
-    format: "base64url",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _e164(Class, params) {
-  return new Class({
-    type: "string",
-    format: "e164",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _jwt(Class, params) {
-  return new Class({
-    type: "string",
-    format: "jwt",
-    check: "string_format",
-    abort: false,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _isoDateTime(Class, params) {
-  return new Class({
-    type: "string",
-    format: "datetime",
-    check: "string_format",
-    offset: false,
-    local: false,
-    precision: null,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _isoDate(Class, params) {
-  return new Class({
-    type: "string",
-    format: "date",
-    check: "string_format",
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _isoTime(Class, params) {
-  return new Class({
-    type: "string",
-    format: "time",
-    check: "string_format",
-    precision: null,
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _isoDuration(Class, params) {
-  return new Class({
-    type: "string",
-    format: "duration",
-    check: "string_format",
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _boolean(Class, params) {
-  return new Class({
-    type: "boolean",
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _unknown(Class) {
-  return new Class({
-    type: "unknown"
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _never(Class, params) {
-  return new Class({
-    type: "never",
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _maxLength(maximum, params) {
-  const ch = new $ZodCheckMaxLength({
-    check: "max_length",
-    ...normalizeParams(params),
-    maximum
-  });
-  return ch;
-}
-// @__NO_SIDE_EFFECTS__
-function _minLength(minimum, params) {
-  return new $ZodCheckMinLength({
-    check: "min_length",
-    ...normalizeParams(params),
-    minimum
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _length(length, params) {
-  return new $ZodCheckLengthEquals({
-    check: "length_equals",
-    ...normalizeParams(params),
-    length
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _regex(pattern, params) {
-  return new $ZodCheckRegex({
-    check: "string_format",
-    format: "regex",
-    ...normalizeParams(params),
-    pattern
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _lowercase(params) {
-  return new $ZodCheckLowerCase({
-    check: "string_format",
-    format: "lowercase",
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _uppercase(params) {
-  return new $ZodCheckUpperCase({
-    check: "string_format",
-    format: "uppercase",
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _includes(includes, params) {
-  return new $ZodCheckIncludes({
-    check: "string_format",
-    format: "includes",
-    ...normalizeParams(params),
-    includes
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _startsWith(prefix, params) {
-  return new $ZodCheckStartsWith({
-    check: "string_format",
-    format: "starts_with",
-    ...normalizeParams(params),
-    prefix
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _endsWith(suffix, params) {
-  return new $ZodCheckEndsWith({
-    check: "string_format",
-    format: "ends_with",
-    ...normalizeParams(params),
-    suffix
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _overwrite(tx) {
-  return new $ZodCheckOverwrite({
-    check: "overwrite",
-    tx
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _normalize(form) {
-  return /* @__PURE__ */ _overwrite((input) => input.normalize(form));
-}
-// @__NO_SIDE_EFFECTS__
-function _trim() {
-  return /* @__PURE__ */ _overwrite((input) => input.trim());
-}
-// @__NO_SIDE_EFFECTS__
-function _toLowerCase() {
-  return /* @__PURE__ */ _overwrite((input) => input.toLowerCase());
-}
-// @__NO_SIDE_EFFECTS__
-function _toUpperCase() {
-  return /* @__PURE__ */ _overwrite((input) => input.toUpperCase());
-}
-// @__NO_SIDE_EFFECTS__
-function _slugify() {
-  return /* @__PURE__ */ _overwrite((input) => slugify(input));
-}
-// @__NO_SIDE_EFFECTS__
-function _array(Class, element, params) {
-  return new Class({
-    type: "array",
-    element,
-    // get element() {
-    //   return element;
-    // },
-    ...normalizeParams(params)
-  });
-}
-// @__NO_SIDE_EFFECTS__
-function _refine(Class, fn, _params) {
-  const schema = new Class({
-    type: "custom",
-    check: "custom",
-    fn,
-    ...normalizeParams(_params)
-  });
-  return schema;
-}
-// @__NO_SIDE_EFFECTS__
-function _superRefine(fn) {
-  const ch = /* @__PURE__ */ _check((payload) => {
-    payload.addIssue = (issue$1) => {
-      if (typeof issue$1 === "string") {
-        payload.issues.push(issue(issue$1, payload.value, ch._zod.def));
-      } else {
-        const _issue = issue$1;
-        if (_issue.fatal)
-          _issue.continue = false;
-        _issue.code ?? (_issue.code = "custom");
-        _issue.input ?? (_issue.input = payload.value);
-        _issue.inst ?? (_issue.inst = ch);
-        _issue.continue ?? (_issue.continue = !ch._zod.def.abort);
-        payload.issues.push(issue(_issue));
-      }
-    };
-    return fn(payload.value, payload);
-  });
-  return ch;
-}
-// @__NO_SIDE_EFFECTS__
-function _check(fn, params) {
-  const ch = new $ZodCheck({
-    check: "custom",
-    ...normalizeParams(params)
-  });
-  ch._zod.check = fn;
-  return ch;
-}
-function initializeContext(params) {
-  let target = (params == null ? void 0 : params.target) ?? "draft-2020-12";
-  if (target === "draft-4")
-    target = "draft-04";
-  if (target === "draft-7")
-    target = "draft-07";
-  return {
-    processors: params.processors ?? {},
-    metadataRegistry: (params == null ? void 0 : params.metadata) ?? globalRegistry,
-    target,
-    unrepresentable: (params == null ? void 0 : params.unrepresentable) ?? "throw",
-    override: (params == null ? void 0 : params.override) ?? (() => {
-    }),
-    io: (params == null ? void 0 : params.io) ?? "output",
-    counter: 0,
-    seen: /* @__PURE__ */ new Map(),
-    cycles: (params == null ? void 0 : params.cycles) ?? "ref",
-    reused: (params == null ? void 0 : params.reused) ?? "inline",
-    external: (params == null ? void 0 : params.external) ?? void 0
-  };
-}
-function process$1(schema, ctx, _params = { path: [], schemaPath: [] }) {
-  var _a3, _b;
-  var _a2;
-  const def = schema._zod.def;
-  const seen = ctx.seen.get(schema);
-  if (seen) {
-    seen.count++;
-    const isCycle = _params.schemaPath.includes(schema);
-    if (isCycle) {
-      seen.cycle = _params.path;
-    }
-    return seen.schema;
-  }
-  const result = { schema: {}, count: 1, cycle: void 0, path: _params.path };
-  ctx.seen.set(schema, result);
-  const overrideSchema = (_b = (_a3 = schema._zod).toJSONSchema) == null ? void 0 : _b.call(_a3);
-  if (overrideSchema) {
-    result.schema = overrideSchema;
-  } else {
-    const params = {
-      ..._params,
-      schemaPath: [..._params.schemaPath, schema],
-      path: _params.path
-    };
-    if (schema._zod.processJSONSchema) {
-      schema._zod.processJSONSchema(ctx, result.schema, params);
-    } else {
-      const _json = result.schema;
-      const processor = ctx.processors[def.type];
-      if (!processor) {
-        throw new Error(`[toJSONSchema]: Non-representable type encountered: ${def.type}`);
-      }
-      processor(schema, ctx, _json, params);
-    }
-    const parent = schema._zod.parent;
-    if (parent) {
-      if (!result.ref)
-        result.ref = parent;
-      process$1(parent, ctx, params);
-      ctx.seen.get(parent).isParent = true;
-    }
-  }
-  const meta = ctx.metadataRegistry.get(schema);
-  if (meta)
-    Object.assign(result.schema, meta);
-  if (ctx.io === "input" && isTransforming(schema)) {
-    delete result.schema.examples;
-    delete result.schema.default;
-  }
-  if (ctx.io === "input" && result.schema._prefault)
-    (_a2 = result.schema).default ?? (_a2.default = result.schema._prefault);
-  delete result.schema._prefault;
-  const _result = ctx.seen.get(schema);
-  return _result.schema;
-}
-function extractDefs(ctx, schema) {
-  var _a2, _b, _c, _d;
-  const root = ctx.seen.get(schema);
-  if (!root)
-    throw new Error("Unprocessed schema. This is a bug in Zod.");
-  const idToSchema = /* @__PURE__ */ new Map();
-  for (const entry of ctx.seen.entries()) {
-    const id = (_a2 = ctx.metadataRegistry.get(entry[0])) == null ? void 0 : _a2.id;
-    if (id) {
-      const existing = idToSchema.get(id);
-      if (existing && existing !== entry[0]) {
-        throw new Error(`Duplicate schema id "${id}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
-      }
-      idToSchema.set(id, entry[0]);
-    }
-  }
-  const makeURI = (entry) => {
-    var _a3;
-    const defsSegment = ctx.target === "draft-2020-12" ? "$defs" : "definitions";
-    if (ctx.external) {
-      const externalId = (_a3 = ctx.external.registry.get(entry[0])) == null ? void 0 : _a3.id;
-      const uriGenerator = ctx.external.uri ?? ((id2) => id2);
-      if (externalId) {
-        return { ref: uriGenerator(externalId) };
-      }
-      const id = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
-      entry[1].defId = id;
-      return { defId: id, ref: `${uriGenerator("__shared")}#/${defsSegment}/${id}` };
-    }
-    if (entry[1] === root) {
-      return { ref: "#" };
-    }
-    const uriPrefix = `#`;
-    const defUriPrefix = `${uriPrefix}/${defsSegment}/`;
-    const defId = entry[1].schema.id ?? `__schema${ctx.counter++}`;
-    return { defId, ref: defUriPrefix + defId };
-  };
-  const extractToDef = (entry) => {
-    if (entry[1].schema.$ref) {
-      return;
-    }
-    const seen = entry[1];
-    const { ref, defId } = makeURI(entry);
-    seen.def = { ...seen.schema };
-    if (defId)
-      seen.defId = defId;
-    const schema2 = seen.schema;
-    for (const key in schema2) {
-      delete schema2[key];
-    }
-    schema2.$ref = ref;
-  };
-  if (ctx.cycles === "throw") {
-    for (const entry of ctx.seen.entries()) {
-      const seen = entry[1];
-      if (seen.cycle) {
-        throw new Error(`Cycle detected: #/${(_b = seen.cycle) == null ? void 0 : _b.join("/")}/<root>
-
-Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.`);
-      }
-    }
-  }
-  for (const entry of ctx.seen.entries()) {
-    const seen = entry[1];
-    if (schema === entry[0]) {
-      extractToDef(entry);
-      continue;
-    }
-    if (ctx.external) {
-      const ext = (_c = ctx.external.registry.get(entry[0])) == null ? void 0 : _c.id;
-      if (schema !== entry[0] && ext) {
-        extractToDef(entry);
-        continue;
-      }
-    }
-    const id = (_d = ctx.metadataRegistry.get(entry[0])) == null ? void 0 : _d.id;
-    if (id) {
-      extractToDef(entry);
-      continue;
-    }
-    if (seen.cycle) {
-      extractToDef(entry);
-      continue;
-    }
-    if (seen.count > 1) {
-      if (ctx.reused === "ref") {
-        extractToDef(entry);
-        continue;
-      }
-    }
-  }
-}
-function finalize(ctx, schema) {
-  var _a2, _b, _c;
-  const root = ctx.seen.get(schema);
-  if (!root)
-    throw new Error("Unprocessed schema. This is a bug in Zod.");
-  const flattenRef = (zodSchema) => {
-    const seen = ctx.seen.get(zodSchema);
-    if (seen.ref === null)
-      return;
-    const schema2 = seen.def ?? seen.schema;
-    const _cached = { ...schema2 };
-    const ref = seen.ref;
-    seen.ref = null;
-    if (ref) {
-      flattenRef(ref);
-      const refSeen = ctx.seen.get(ref);
-      const refSchema = refSeen.schema;
-      if (refSchema.$ref && (ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0")) {
-        schema2.allOf = schema2.allOf ?? [];
-        schema2.allOf.push(refSchema);
-      } else {
-        Object.assign(schema2, refSchema);
-      }
-      Object.assign(schema2, _cached);
-      const isParentRef = zodSchema._zod.parent === ref;
-      if (isParentRef) {
-        for (const key in schema2) {
-          if (key === "$ref" || key === "allOf")
-            continue;
-          if (!(key in _cached)) {
-            delete schema2[key];
-          }
-        }
-      }
-      if (refSchema.$ref && refSeen.def) {
-        for (const key in schema2) {
-          if (key === "$ref" || key === "allOf")
-            continue;
-          if (key in refSeen.def && JSON.stringify(schema2[key]) === JSON.stringify(refSeen.def[key])) {
-            delete schema2[key];
-          }
-        }
-      }
-    }
-    const parent = zodSchema._zod.parent;
-    if (parent && parent !== ref) {
-      flattenRef(parent);
-      const parentSeen = ctx.seen.get(parent);
-      if (parentSeen == null ? void 0 : parentSeen.schema.$ref) {
-        schema2.$ref = parentSeen.schema.$ref;
-        if (parentSeen.def) {
-          for (const key in schema2) {
-            if (key === "$ref" || key === "allOf")
-              continue;
-            if (key in parentSeen.def && JSON.stringify(schema2[key]) === JSON.stringify(parentSeen.def[key])) {
-              delete schema2[key];
-            }
-          }
-        }
-      }
-    }
-    ctx.override({
-      zodSchema,
-      jsonSchema: schema2,
-      path: seen.path ?? []
-    });
-  };
-  for (const entry of [...ctx.seen.entries()].reverse()) {
-    flattenRef(entry[0]);
-  }
-  const result = {};
-  if (ctx.target === "draft-2020-12") {
-    result.$schema = "https://json-schema.org/draft/2020-12/schema";
-  } else if (ctx.target === "draft-07") {
-    result.$schema = "http://json-schema.org/draft-07/schema#";
-  } else if (ctx.target === "draft-04") {
-    result.$schema = "http://json-schema.org/draft-04/schema#";
-  } else if (ctx.target === "openapi-3.0") ;
-  else ;
-  if ((_a2 = ctx.external) == null ? void 0 : _a2.uri) {
-    const id = (_b = ctx.external.registry.get(schema)) == null ? void 0 : _b.id;
-    if (!id)
-      throw new Error("Schema is missing an `id` property");
-    result.$id = ctx.external.uri(id);
-  }
-  Object.assign(result, root.def ?? root.schema);
-  const defs = ((_c = ctx.external) == null ? void 0 : _c.defs) ?? {};
-  for (const entry of ctx.seen.entries()) {
-    const seen = entry[1];
-    if (seen.def && seen.defId) {
-      defs[seen.defId] = seen.def;
-    }
-  }
-  if (ctx.external) ;
-  else {
-    if (Object.keys(defs).length > 0) {
-      if (ctx.target === "draft-2020-12") {
-        result.$defs = defs;
-      } else {
-        result.definitions = defs;
-      }
-    }
-  }
-  try {
-    const finalized = JSON.parse(JSON.stringify(result));
-    Object.defineProperty(finalized, "~standard", {
-      value: {
-        ...schema["~standard"],
-        jsonSchema: {
-          input: createStandardJSONSchemaMethod(schema, "input", ctx.processors),
-          output: createStandardJSONSchemaMethod(schema, "output", ctx.processors)
-        }
-      },
-      enumerable: false,
-      writable: false
-    });
-    return finalized;
-  } catch (_err) {
-    throw new Error("Error converting schema to JSON.");
-  }
-}
-function isTransforming(_schema, _ctx) {
-  const ctx = _ctx ?? { seen: /* @__PURE__ */ new Set() };
-  if (ctx.seen.has(_schema))
-    return false;
-  ctx.seen.add(_schema);
-  const def = _schema._zod.def;
-  if (def.type === "transform")
-    return true;
-  if (def.type === "array")
-    return isTransforming(def.element, ctx);
-  if (def.type === "set")
-    return isTransforming(def.valueType, ctx);
-  if (def.type === "lazy")
-    return isTransforming(def.getter(), ctx);
-  if (def.type === "promise" || def.type === "optional" || def.type === "nonoptional" || def.type === "nullable" || def.type === "readonly" || def.type === "default" || def.type === "prefault") {
-    return isTransforming(def.innerType, ctx);
-  }
-  if (def.type === "intersection") {
-    return isTransforming(def.left, ctx) || isTransforming(def.right, ctx);
-  }
-  if (def.type === "record" || def.type === "map") {
-    return isTransforming(def.keyType, ctx) || isTransforming(def.valueType, ctx);
-  }
-  if (def.type === "pipe") {
-    return isTransforming(def.in, ctx) || isTransforming(def.out, ctx);
-  }
-  if (def.type === "object") {
-    for (const key in def.shape) {
-      if (isTransforming(def.shape[key], ctx))
-        return true;
-    }
-    return false;
-  }
-  if (def.type === "union") {
-    for (const option of def.options) {
-      if (isTransforming(option, ctx))
-        return true;
-    }
-    return false;
-  }
-  if (def.type === "tuple") {
-    for (const item of def.items) {
-      if (isTransforming(item, ctx))
-        return true;
-    }
-    if (def.rest && isTransforming(def.rest, ctx))
-      return true;
-    return false;
-  }
-  return false;
-}
-const createToJSONSchemaMethod = (schema, processors = {}) => (params) => {
-  const ctx = initializeContext({ ...params, processors });
-  process$1(schema, ctx);
-  extractDefs(ctx, schema);
-  return finalize(ctx, schema);
-};
-const createStandardJSONSchemaMethod = (schema, io, processors = {}) => (params) => {
-  const { libraryOptions, target } = params ?? {};
-  const ctx = initializeContext({ ...libraryOptions ?? {}, target, io, processors });
-  process$1(schema, ctx);
-  extractDefs(ctx, schema);
-  return finalize(ctx, schema);
-};
-const formatMap = {
-  guid: "uuid",
-  url: "uri",
-  datetime: "date-time",
-  json_string: "json-string",
-  regex: ""
-  // do not set
-};
-const stringProcessor = (schema, ctx, _json, _params) => {
-  const json = _json;
-  json.type = "string";
-  const { minimum, maximum, format, patterns, contentEncoding } = schema._zod.bag;
-  if (typeof minimum === "number")
-    json.minLength = minimum;
-  if (typeof maximum === "number")
-    json.maxLength = maximum;
-  if (format) {
-    json.format = formatMap[format] ?? format;
-    if (json.format === "")
-      delete json.format;
-    if (format === "time") {
-      delete json.format;
-    }
-  }
-  if (contentEncoding)
-    json.contentEncoding = contentEncoding;
-  if (patterns && patterns.size > 0) {
-    const regexes = [...patterns];
-    if (regexes.length === 1)
-      json.pattern = regexes[0].source;
-    else if (regexes.length > 1) {
-      json.allOf = [
-        ...regexes.map((regex) => ({
-          ...ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0" ? { type: "string" } : {},
-          pattern: regex.source
-        }))
-      ];
-    }
-  }
-};
-const booleanProcessor = (_schema, _ctx, json, _params) => {
-  json.type = "boolean";
-};
-const neverProcessor = (_schema, _ctx, json, _params) => {
-  json.not = {};
-};
-const unknownProcessor = (_schema, _ctx, _json, _params) => {
-};
-const enumProcessor = (schema, _ctx, json, _params) => {
-  const def = schema._zod.def;
-  const values = getEnumValues(def.entries);
-  if (values.every((v) => typeof v === "number"))
-    json.type = "number";
-  if (values.every((v) => typeof v === "string"))
-    json.type = "string";
-  json.enum = values;
-};
-const customProcessor = (_schema, ctx, _json, _params) => {
-  if (ctx.unrepresentable === "throw") {
-    throw new Error("Custom types cannot be represented in JSON Schema");
-  }
-};
-const transformProcessor = (_schema, ctx, _json, _params) => {
-  if (ctx.unrepresentable === "throw") {
-    throw new Error("Transforms cannot be represented in JSON Schema");
-  }
-};
-const arrayProcessor = (schema, ctx, _json, params) => {
-  const json = _json;
-  const def = schema._zod.def;
-  const { minimum, maximum } = schema._zod.bag;
-  if (typeof minimum === "number")
-    json.minItems = minimum;
-  if (typeof maximum === "number")
-    json.maxItems = maximum;
-  json.type = "array";
-  json.items = process$1(def.element, ctx, { ...params, path: [...params.path, "items"] });
-};
-const objectProcessor = (schema, ctx, _json, params) => {
-  var _a2;
-  const json = _json;
-  const def = schema._zod.def;
-  json.type = "object";
-  json.properties = {};
-  const shape = def.shape;
-  for (const key in shape) {
-    json.properties[key] = process$1(shape[key], ctx, {
-      ...params,
-      path: [...params.path, "properties", key]
-    });
-  }
-  const allKeys = new Set(Object.keys(shape));
-  const requiredKeys = new Set([...allKeys].filter((key) => {
-    const v = def.shape[key]._zod;
-    if (ctx.io === "input") {
-      return v.optin === void 0;
-    } else {
-      return v.optout === void 0;
-    }
-  }));
-  if (requiredKeys.size > 0) {
-    json.required = Array.from(requiredKeys);
-  }
-  if (((_a2 = def.catchall) == null ? void 0 : _a2._zod.def.type) === "never") {
-    json.additionalProperties = false;
-  } else if (!def.catchall) {
-    if (ctx.io === "output")
-      json.additionalProperties = false;
-  } else if (def.catchall) {
-    json.additionalProperties = process$1(def.catchall, ctx, {
-      ...params,
-      path: [...params.path, "additionalProperties"]
-    });
-  }
-};
-const unionProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  const isExclusive = def.inclusive === false;
-  const options = def.options.map((x, i) => process$1(x, ctx, {
-    ...params,
-    path: [...params.path, isExclusive ? "oneOf" : "anyOf", i]
-  }));
-  if (isExclusive) {
-    json.oneOf = options;
-  } else {
-    json.anyOf = options;
-  }
-};
-const intersectionProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  const a = process$1(def.left, ctx, {
-    ...params,
-    path: [...params.path, "allOf", 0]
-  });
-  const b = process$1(def.right, ctx, {
-    ...params,
-    path: [...params.path, "allOf", 1]
-  });
-  const isSimpleIntersection = (val) => "allOf" in val && Object.keys(val).length === 1;
-  const allOf = [
-    ...isSimpleIntersection(a) ? a.allOf : [a],
-    ...isSimpleIntersection(b) ? b.allOf : [b]
-  ];
-  json.allOf = allOf;
-};
-const nullableProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  const inner = process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  if (ctx.target === "openapi-3.0") {
-    seen.ref = def.innerType;
-    json.nullable = true;
-  } else {
-    json.anyOf = [inner, { type: "null" }];
-  }
-};
-const nonoptionalProcessor = (schema, ctx, _json, params) => {
-  const def = schema._zod.def;
-  process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = def.innerType;
-};
-const defaultProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = def.innerType;
-  json.default = JSON.parse(JSON.stringify(def.defaultValue));
-};
-const prefaultProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = def.innerType;
-  if (ctx.io === "input")
-    json._prefault = JSON.parse(JSON.stringify(def.defaultValue));
-};
-const catchProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = def.innerType;
-  let catchValue;
-  try {
-    catchValue = def.catchValue(void 0);
-  } catch {
-    throw new Error("Dynamic catch values are not supported in JSON Schema");
-  }
-  json.default = catchValue;
-};
-const pipeProcessor = (schema, ctx, _json, params) => {
-  const def = schema._zod.def;
-  const innerType = ctx.io === "input" ? def.in._zod.def.type === "transform" ? def.out : def.in : def.out;
-  process$1(innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = innerType;
-};
-const readonlyProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
-  process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = def.innerType;
-  json.readOnly = true;
-};
-const optionalProcessor = (schema, ctx, _json, params) => {
-  const def = schema._zod.def;
-  process$1(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
-  seen.ref = def.innerType;
-};
-const ZodISODateTime = /* @__PURE__ */ $constructor("ZodISODateTime", (inst, def) => {
-  $ZodISODateTime.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-function datetime(params) {
-  return /* @__PURE__ */ _isoDateTime(ZodISODateTime, params);
-}
-const ZodISODate = /* @__PURE__ */ $constructor("ZodISODate", (inst, def) => {
-  $ZodISODate.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-function date(params) {
-  return /* @__PURE__ */ _isoDate(ZodISODate, params);
-}
-const ZodISOTime = /* @__PURE__ */ $constructor("ZodISOTime", (inst, def) => {
-  $ZodISOTime.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-function time(params) {
-  return /* @__PURE__ */ _isoTime(ZodISOTime, params);
-}
-const ZodISODuration = /* @__PURE__ */ $constructor("ZodISODuration", (inst, def) => {
-  $ZodISODuration.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-function duration(params) {
-  return /* @__PURE__ */ _isoDuration(ZodISODuration, params);
-}
-const initializer = (inst, issues) => {
-  $ZodError.init(inst, issues);
-  inst.name = "ZodError";
-  Object.defineProperties(inst, {
-    format: {
-      value: (mapper) => formatError(inst, mapper)
-      // enumerable: false,
-    },
-    flatten: {
-      value: (mapper) => flattenError(inst, mapper)
-      // enumerable: false,
-    },
-    addIssue: {
-      value: (issue2) => {
-        inst.issues.push(issue2);
-        inst.message = JSON.stringify(inst.issues, jsonStringifyReplacer, 2);
-      }
-      // enumerable: false,
-    },
-    addIssues: {
-      value: (issues2) => {
-        inst.issues.push(...issues2);
-        inst.message = JSON.stringify(inst.issues, jsonStringifyReplacer, 2);
-      }
-      // enumerable: false,
-    },
-    isEmpty: {
-      get() {
-        return inst.issues.length === 0;
-      }
-      // enumerable: false,
-    }
-  });
-};
-const ZodRealError = $constructor("ZodError", initializer, {
-  Parent: Error
-});
-const parse = /* @__PURE__ */ _parse(ZodRealError);
-const parseAsync = /* @__PURE__ */ _parseAsync(ZodRealError);
-const safeParse = /* @__PURE__ */ _safeParse(ZodRealError);
-const safeParseAsync = /* @__PURE__ */ _safeParseAsync(ZodRealError);
-const encode = /* @__PURE__ */ _encode(ZodRealError);
-const decode = /* @__PURE__ */ _decode(ZodRealError);
-const encodeAsync = /* @__PURE__ */ _encodeAsync(ZodRealError);
-const decodeAsync = /* @__PURE__ */ _decodeAsync(ZodRealError);
-const safeEncode = /* @__PURE__ */ _safeEncode(ZodRealError);
-const safeDecode = /* @__PURE__ */ _safeDecode(ZodRealError);
-const safeEncodeAsync = /* @__PURE__ */ _safeEncodeAsync(ZodRealError);
-const safeDecodeAsync = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
-const ZodType = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
-  $ZodType.init(inst, def);
-  Object.assign(inst["~standard"], {
-    jsonSchema: {
-      input: createStandardJSONSchemaMethod(inst, "input"),
-      output: createStandardJSONSchemaMethod(inst, "output")
-    }
-  });
-  inst.toJSONSchema = createToJSONSchemaMethod(inst, {});
-  inst.def = def;
-  inst.type = def.type;
-  Object.defineProperty(inst, "_def", { value: def });
-  inst.check = (...checks) => {
-    return inst.clone(mergeDefs(def, {
-      checks: [
-        ...def.checks ?? [],
-        ...checks.map((ch) => typeof ch === "function" ? { _zod: { check: ch, def: { check: "custom" }, onattach: [] } } : ch)
-      ]
-    }), {
-      parent: true
-    });
-  };
-  inst.with = inst.check;
-  inst.clone = (def2, params) => clone(inst, def2, params);
-  inst.brand = () => inst;
-  inst.register = (reg, meta) => {
-    reg.add(inst, meta);
-    return inst;
-  };
-  inst.parse = (data, params) => parse(inst, data, params, { callee: inst.parse });
-  inst.safeParse = (data, params) => safeParse(inst, data, params);
-  inst.parseAsync = async (data, params) => parseAsync(inst, data, params, { callee: inst.parseAsync });
-  inst.safeParseAsync = async (data, params) => safeParseAsync(inst, data, params);
-  inst.spa = inst.safeParseAsync;
-  inst.encode = (data, params) => encode(inst, data, params);
-  inst.decode = (data, params) => decode(inst, data, params);
-  inst.encodeAsync = async (data, params) => encodeAsync(inst, data, params);
-  inst.decodeAsync = async (data, params) => decodeAsync(inst, data, params);
-  inst.safeEncode = (data, params) => safeEncode(inst, data, params);
-  inst.safeDecode = (data, params) => safeDecode(inst, data, params);
-  inst.safeEncodeAsync = async (data, params) => safeEncodeAsync(inst, data, params);
-  inst.safeDecodeAsync = async (data, params) => safeDecodeAsync(inst, data, params);
-  inst.refine = (check, params) => inst.check(refine(check, params));
-  inst.superRefine = (refinement) => inst.check(superRefine(refinement));
-  inst.overwrite = (fn) => inst.check(/* @__PURE__ */ _overwrite(fn));
-  inst.optional = () => optional(inst);
-  inst.exactOptional = () => exactOptional(inst);
-  inst.nullable = () => nullable(inst);
-  inst.nullish = () => optional(nullable(inst));
-  inst.nonoptional = (params) => nonoptional(inst, params);
-  inst.array = () => array(inst);
-  inst.or = (arg) => union([inst, arg]);
-  inst.and = (arg) => intersection(inst, arg);
-  inst.transform = (tx) => pipe(inst, transform(tx));
-  inst.default = (def2) => _default(inst, def2);
-  inst.prefault = (def2) => prefault(inst, def2);
-  inst.catch = (params) => _catch(inst, params);
-  inst.pipe = (target) => pipe(inst, target);
-  inst.readonly = () => readonly(inst);
-  inst.describe = (description) => {
-    const cl = inst.clone();
-    globalRegistry.add(cl, { description });
-    return cl;
-  };
-  Object.defineProperty(inst, "description", {
-    get() {
-      var _a2;
-      return (_a2 = globalRegistry.get(inst)) == null ? void 0 : _a2.description;
-    },
-    configurable: true
-  });
-  inst.meta = (...args) => {
-    if (args.length === 0) {
-      return globalRegistry.get(inst);
-    }
-    const cl = inst.clone();
-    globalRegistry.add(cl, args[0]);
-    return cl;
-  };
-  inst.isOptional = () => inst.safeParse(void 0).success;
-  inst.isNullable = () => inst.safeParse(null).success;
-  inst.apply = (fn) => fn(inst);
-  return inst;
-});
-const _ZodString = /* @__PURE__ */ $constructor("_ZodString", (inst, def) => {
-  $ZodString.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => stringProcessor(inst, ctx, json);
-  const bag = inst._zod.bag;
-  inst.format = bag.format ?? null;
-  inst.minLength = bag.minimum ?? null;
-  inst.maxLength = bag.maximum ?? null;
-  inst.regex = (...args) => inst.check(/* @__PURE__ */ _regex(...args));
-  inst.includes = (...args) => inst.check(/* @__PURE__ */ _includes(...args));
-  inst.startsWith = (...args) => inst.check(/* @__PURE__ */ _startsWith(...args));
-  inst.endsWith = (...args) => inst.check(/* @__PURE__ */ _endsWith(...args));
-  inst.min = (...args) => inst.check(/* @__PURE__ */ _minLength(...args));
-  inst.max = (...args) => inst.check(/* @__PURE__ */ _maxLength(...args));
-  inst.length = (...args) => inst.check(/* @__PURE__ */ _length(...args));
-  inst.nonempty = (...args) => inst.check(/* @__PURE__ */ _minLength(1, ...args));
-  inst.lowercase = (params) => inst.check(/* @__PURE__ */ _lowercase(params));
-  inst.uppercase = (params) => inst.check(/* @__PURE__ */ _uppercase(params));
-  inst.trim = () => inst.check(/* @__PURE__ */ _trim());
-  inst.normalize = (...args) => inst.check(/* @__PURE__ */ _normalize(...args));
-  inst.toLowerCase = () => inst.check(/* @__PURE__ */ _toLowerCase());
-  inst.toUpperCase = () => inst.check(/* @__PURE__ */ _toUpperCase());
-  inst.slugify = () => inst.check(/* @__PURE__ */ _slugify());
-});
-const ZodString = /* @__PURE__ */ $constructor("ZodString", (inst, def) => {
-  $ZodString.init(inst, def);
-  _ZodString.init(inst, def);
-  inst.email = (params) => inst.check(/* @__PURE__ */ _email(ZodEmail, params));
-  inst.url = (params) => inst.check(/* @__PURE__ */ _url(ZodURL, params));
-  inst.jwt = (params) => inst.check(/* @__PURE__ */ _jwt(ZodJWT, params));
-  inst.emoji = (params) => inst.check(/* @__PURE__ */ _emoji(ZodEmoji, params));
-  inst.guid = (params) => inst.check(/* @__PURE__ */ _guid(ZodGUID, params));
-  inst.uuid = (params) => inst.check(/* @__PURE__ */ _uuid(ZodUUID, params));
-  inst.uuidv4 = (params) => inst.check(/* @__PURE__ */ _uuidv4(ZodUUID, params));
-  inst.uuidv6 = (params) => inst.check(/* @__PURE__ */ _uuidv6(ZodUUID, params));
-  inst.uuidv7 = (params) => inst.check(/* @__PURE__ */ _uuidv7(ZodUUID, params));
-  inst.nanoid = (params) => inst.check(/* @__PURE__ */ _nanoid(ZodNanoID, params));
-  inst.guid = (params) => inst.check(/* @__PURE__ */ _guid(ZodGUID, params));
-  inst.cuid = (params) => inst.check(/* @__PURE__ */ _cuid(ZodCUID, params));
-  inst.cuid2 = (params) => inst.check(/* @__PURE__ */ _cuid2(ZodCUID2, params));
-  inst.ulid = (params) => inst.check(/* @__PURE__ */ _ulid(ZodULID, params));
-  inst.base64 = (params) => inst.check(/* @__PURE__ */ _base64(ZodBase64, params));
-  inst.base64url = (params) => inst.check(/* @__PURE__ */ _base64url(ZodBase64URL, params));
-  inst.xid = (params) => inst.check(/* @__PURE__ */ _xid(ZodXID, params));
-  inst.ksuid = (params) => inst.check(/* @__PURE__ */ _ksuid(ZodKSUID, params));
-  inst.ipv4 = (params) => inst.check(/* @__PURE__ */ _ipv4(ZodIPv4, params));
-  inst.ipv6 = (params) => inst.check(/* @__PURE__ */ _ipv6(ZodIPv6, params));
-  inst.cidrv4 = (params) => inst.check(/* @__PURE__ */ _cidrv4(ZodCIDRv4, params));
-  inst.cidrv6 = (params) => inst.check(/* @__PURE__ */ _cidrv6(ZodCIDRv6, params));
-  inst.e164 = (params) => inst.check(/* @__PURE__ */ _e164(ZodE164, params));
-  inst.datetime = (params) => inst.check(datetime(params));
-  inst.date = (params) => inst.check(date(params));
-  inst.time = (params) => inst.check(time(params));
-  inst.duration = (params) => inst.check(duration(params));
-});
-function string(params) {
-  return /* @__PURE__ */ _string(ZodString, params);
-}
-const ZodStringFormat = /* @__PURE__ */ $constructor("ZodStringFormat", (inst, def) => {
-  $ZodStringFormat.init(inst, def);
-  _ZodString.init(inst, def);
-});
-const ZodEmail = /* @__PURE__ */ $constructor("ZodEmail", (inst, def) => {
-  $ZodEmail.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodGUID = /* @__PURE__ */ $constructor("ZodGUID", (inst, def) => {
-  $ZodGUID.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodUUID = /* @__PURE__ */ $constructor("ZodUUID", (inst, def) => {
-  $ZodUUID.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodURL = /* @__PURE__ */ $constructor("ZodURL", (inst, def) => {
-  $ZodURL.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodEmoji = /* @__PURE__ */ $constructor("ZodEmoji", (inst, def) => {
-  $ZodEmoji.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodNanoID = /* @__PURE__ */ $constructor("ZodNanoID", (inst, def) => {
-  $ZodNanoID.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodCUID = /* @__PURE__ */ $constructor("ZodCUID", (inst, def) => {
-  $ZodCUID.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodCUID2 = /* @__PURE__ */ $constructor("ZodCUID2", (inst, def) => {
-  $ZodCUID2.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodULID = /* @__PURE__ */ $constructor("ZodULID", (inst, def) => {
-  $ZodULID.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodXID = /* @__PURE__ */ $constructor("ZodXID", (inst, def) => {
-  $ZodXID.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodKSUID = /* @__PURE__ */ $constructor("ZodKSUID", (inst, def) => {
-  $ZodKSUID.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodIPv4 = /* @__PURE__ */ $constructor("ZodIPv4", (inst, def) => {
-  $ZodIPv4.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodIPv6 = /* @__PURE__ */ $constructor("ZodIPv6", (inst, def) => {
-  $ZodIPv6.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodCIDRv4 = /* @__PURE__ */ $constructor("ZodCIDRv4", (inst, def) => {
-  $ZodCIDRv4.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodCIDRv6 = /* @__PURE__ */ $constructor("ZodCIDRv6", (inst, def) => {
-  $ZodCIDRv6.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodBase64 = /* @__PURE__ */ $constructor("ZodBase64", (inst, def) => {
-  $ZodBase64.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodBase64URL = /* @__PURE__ */ $constructor("ZodBase64URL", (inst, def) => {
-  $ZodBase64URL.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodE164 = /* @__PURE__ */ $constructor("ZodE164", (inst, def) => {
-  $ZodE164.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodJWT = /* @__PURE__ */ $constructor("ZodJWT", (inst, def) => {
-  $ZodJWT.init(inst, def);
-  ZodStringFormat.init(inst, def);
-});
-const ZodBoolean = /* @__PURE__ */ $constructor("ZodBoolean", (inst, def) => {
-  $ZodBoolean.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => booleanProcessor(inst, ctx, json);
-});
-function boolean(params) {
-  return /* @__PURE__ */ _boolean(ZodBoolean, params);
-}
-const ZodUnknown = /* @__PURE__ */ $constructor("ZodUnknown", (inst, def) => {
-  $ZodUnknown.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => unknownProcessor();
-});
-function unknown() {
-  return /* @__PURE__ */ _unknown(ZodUnknown);
-}
-const ZodNever = /* @__PURE__ */ $constructor("ZodNever", (inst, def) => {
-  $ZodNever.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => neverProcessor(inst, ctx, json);
-});
-function never(params) {
-  return /* @__PURE__ */ _never(ZodNever, params);
-}
-const ZodArray = /* @__PURE__ */ $constructor("ZodArray", (inst, def) => {
-  $ZodArray.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => arrayProcessor(inst, ctx, json, params);
-  inst.element = def.element;
-  inst.min = (minLength, params) => inst.check(/* @__PURE__ */ _minLength(minLength, params));
-  inst.nonempty = (params) => inst.check(/* @__PURE__ */ _minLength(1, params));
-  inst.max = (maxLength, params) => inst.check(/* @__PURE__ */ _maxLength(maxLength, params));
-  inst.length = (len, params) => inst.check(/* @__PURE__ */ _length(len, params));
-  inst.unwrap = () => inst.element;
-});
-function array(element, params) {
-  return /* @__PURE__ */ _array(ZodArray, element, params);
-}
-const ZodObject = /* @__PURE__ */ $constructor("ZodObject", (inst, def) => {
-  $ZodObjectJIT.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => objectProcessor(inst, ctx, json, params);
-  defineLazy(inst, "shape", () => {
-    return def.shape;
-  });
-  inst.keyof = () => _enum(Object.keys(inst._zod.def.shape));
-  inst.catchall = (catchall) => inst.clone({ ...inst._zod.def, catchall });
-  inst.passthrough = () => inst.clone({ ...inst._zod.def, catchall: unknown() });
-  inst.loose = () => inst.clone({ ...inst._zod.def, catchall: unknown() });
-  inst.strict = () => inst.clone({ ...inst._zod.def, catchall: never() });
-  inst.strip = () => inst.clone({ ...inst._zod.def, catchall: void 0 });
-  inst.extend = (incoming) => {
-    return extend(inst, incoming);
-  };
-  inst.safeExtend = (incoming) => {
-    return safeExtend(inst, incoming);
-  };
-  inst.merge = (other) => merge(inst, other);
-  inst.pick = (mask) => pick(inst, mask);
-  inst.omit = (mask) => omit(inst, mask);
-  inst.partial = (...args) => partial(ZodOptional, inst, args[0]);
-  inst.required = (...args) => required(ZodNonOptional, inst, args[0]);
-});
-function object(shape, params) {
-  const def = {
-    type: "object",
-    shape: shape ?? {},
-    ...normalizeParams(params)
-  };
-  return new ZodObject(def);
-}
-const ZodUnion = /* @__PURE__ */ $constructor("ZodUnion", (inst, def) => {
-  $ZodUnion.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => unionProcessor(inst, ctx, json, params);
-  inst.options = def.options;
-});
-function union(options, params) {
-  return new ZodUnion({
-    type: "union",
-    options,
-    ...normalizeParams(params)
-  });
-}
-const ZodIntersection = /* @__PURE__ */ $constructor("ZodIntersection", (inst, def) => {
-  $ZodIntersection.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => intersectionProcessor(inst, ctx, json, params);
-});
-function intersection(left, right) {
-  return new ZodIntersection({
-    type: "intersection",
-    left,
-    right
-  });
-}
-const ZodEnum = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
-  $ZodEnum.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => enumProcessor(inst, ctx, json);
-  inst.enum = def.entries;
-  inst.options = Object.values(def.entries);
-  const keys = new Set(Object.keys(def.entries));
-  inst.extract = (values, params) => {
-    const newEntries = {};
-    for (const value of values) {
-      if (keys.has(value)) {
-        newEntries[value] = def.entries[value];
-      } else
-        throw new Error(`Key ${value} not found in enum`);
-    }
-    return new ZodEnum({
-      ...def,
-      checks: [],
-      ...normalizeParams(params),
-      entries: newEntries
-    });
-  };
-  inst.exclude = (values, params) => {
-    const newEntries = { ...def.entries };
-    for (const value of values) {
-      if (keys.has(value)) {
-        delete newEntries[value];
-      } else
-        throw new Error(`Key ${value} not found in enum`);
-    }
-    return new ZodEnum({
-      ...def,
-      checks: [],
-      ...normalizeParams(params),
-      entries: newEntries
-    });
-  };
-});
-function _enum(values, params) {
-  const entries = Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values;
-  return new ZodEnum({
-    type: "enum",
-    entries,
-    ...normalizeParams(params)
-  });
-}
-const ZodTransform = /* @__PURE__ */ $constructor("ZodTransform", (inst, def) => {
-  $ZodTransform.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => transformProcessor(inst, ctx);
-  inst._zod.parse = (payload, _ctx) => {
-    if (_ctx.direction === "backward") {
-      throw new $ZodEncodeError(inst.constructor.name);
-    }
-    payload.addIssue = (issue$1) => {
-      if (typeof issue$1 === "string") {
-        payload.issues.push(issue(issue$1, payload.value, def));
-      } else {
-        const _issue = issue$1;
-        if (_issue.fatal)
-          _issue.continue = false;
-        _issue.code ?? (_issue.code = "custom");
-        _issue.input ?? (_issue.input = payload.value);
-        _issue.inst ?? (_issue.inst = inst);
-        payload.issues.push(issue(_issue));
-      }
-    };
-    const output = def.transform(payload.value, payload);
-    if (output instanceof Promise) {
-      return output.then((output2) => {
-        payload.value = output2;
-        return payload;
-      });
-    }
-    payload.value = output;
-    return payload;
-  };
-});
-function transform(fn) {
-  return new ZodTransform({
-    type: "transform",
-    transform: fn
-  });
-}
-const ZodOptional = /* @__PURE__ */ $constructor("ZodOptional", (inst, def) => {
-  $ZodOptional.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => optionalProcessor(inst, ctx, json, params);
-  inst.unwrap = () => inst._zod.def.innerType;
-});
-function optional(innerType) {
-  return new ZodOptional({
-    type: "optional",
-    innerType
-  });
-}
-const ZodExactOptional = /* @__PURE__ */ $constructor("ZodExactOptional", (inst, def) => {
-  $ZodExactOptional.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => optionalProcessor(inst, ctx, json, params);
-  inst.unwrap = () => inst._zod.def.innerType;
-});
-function exactOptional(innerType) {
-  return new ZodExactOptional({
-    type: "optional",
-    innerType
-  });
-}
-const ZodNullable = /* @__PURE__ */ $constructor("ZodNullable", (inst, def) => {
-  $ZodNullable.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => nullableProcessor(inst, ctx, json, params);
-  inst.unwrap = () => inst._zod.def.innerType;
-});
-function nullable(innerType) {
-  return new ZodNullable({
-    type: "nullable",
-    innerType
-  });
-}
-const ZodDefault = /* @__PURE__ */ $constructor("ZodDefault", (inst, def) => {
-  $ZodDefault.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => defaultProcessor(inst, ctx, json, params);
-  inst.unwrap = () => inst._zod.def.innerType;
-  inst.removeDefault = inst.unwrap;
-});
-function _default(innerType, defaultValue) {
-  return new ZodDefault({
-    type: "default",
-    innerType,
-    get defaultValue() {
-      return typeof defaultValue === "function" ? defaultValue() : shallowClone(defaultValue);
-    }
-  });
-}
-const ZodPrefault = /* @__PURE__ */ $constructor("ZodPrefault", (inst, def) => {
-  $ZodPrefault.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => prefaultProcessor(inst, ctx, json, params);
-  inst.unwrap = () => inst._zod.def.innerType;
-});
-function prefault(innerType, defaultValue) {
-  return new ZodPrefault({
-    type: "prefault",
-    innerType,
-    get defaultValue() {
-      return typeof defaultValue === "function" ? defaultValue() : shallowClone(defaultValue);
-    }
-  });
-}
-const ZodNonOptional = /* @__PURE__ */ $constructor("ZodNonOptional", (inst, def) => {
-  $ZodNonOptional.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => nonoptionalProcessor(inst, ctx, json, params);
-  inst.unwrap = () => inst._zod.def.innerType;
-});
-function nonoptional(innerType, params) {
-  return new ZodNonOptional({
-    type: "nonoptional",
-    innerType,
-    ...normalizeParams(params)
-  });
-}
-const ZodCatch = /* @__PURE__ */ $constructor("ZodCatch", (inst, def) => {
-  $ZodCatch.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => catchProcessor(inst, ctx, json, params);
-  inst.unwrap = () => inst._zod.def.innerType;
-  inst.removeCatch = inst.unwrap;
-});
-function _catch(innerType, catchValue) {
-  return new ZodCatch({
-    type: "catch",
-    innerType,
-    catchValue: typeof catchValue === "function" ? catchValue : () => catchValue
-  });
-}
-const ZodPipe = /* @__PURE__ */ $constructor("ZodPipe", (inst, def) => {
-  $ZodPipe.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => pipeProcessor(inst, ctx, json, params);
-  inst.in = def.in;
-  inst.out = def.out;
-});
-function pipe(in_, out) {
-  return new ZodPipe({
-    type: "pipe",
-    in: in_,
-    out
-    // ...util.normalizeParams(params),
-  });
-}
-const ZodReadonly = /* @__PURE__ */ $constructor("ZodReadonly", (inst, def) => {
-  $ZodReadonly.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => readonlyProcessor(inst, ctx, json, params);
-  inst.unwrap = () => inst._zod.def.innerType;
-});
-function readonly(innerType) {
-  return new ZodReadonly({
-    type: "readonly",
-    innerType
-  });
-}
-const ZodCustom = /* @__PURE__ */ $constructor("ZodCustom", (inst, def) => {
-  $ZodCustom.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => customProcessor(inst, ctx);
-});
-function refine(fn, _params = {}) {
-  return /* @__PURE__ */ _refine(ZodCustom, fn, _params);
-}
-function superRefine(fn) {
-  return /* @__PURE__ */ _superRefine(fn);
-}
-const roleSchema = _enum(["ADMIN", "EMPLOYEE"]);
-const loginInputSchema = object({
-  username: string().trim().min(1).max(50),
-  password: string().min(1).max(200)
-});
-object({
-  success: boolean(),
-  message: string().optional(),
-  user: object({
-    id: string(),
-    username: string(),
+import "dotenv/config";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { CorrespondentDirection, CommissionMode, CorrespondentTransactionStatus, CorrespondentReconciliationStatus, CorrespondentOcrStatus, CorrespondentClosureStatus, SaleStatus, CashSessionStatus, PaymentMethod, CashMovementType, InventoryMovementType, PurchaseStatus, Role, PrismaClient } from "@prisma/client";
+import { z } from "zod";
+import { mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+const roleSchema = z.enum(["ADMIN", "EMPLOYEE"]);
+const loginInputSchema = z.object({
+  username: z.string().trim().min(1).max(50),
+  password: z.string().min(1).max(200)
+});
+z.object({
+  success: z.boolean(),
+  message: z.string().optional(),
+  user: z.object({
+    id: z.string(),
+    username: z.string(),
     role: roleSchema,
-    name: string().optional()
+    name: z.string().optional()
   }).optional()
 });
-const createUserInputSchema = object({
-  newUsername: string().trim().min(3).max(50),
-  newPassword: string().min(6).max(200),
-  adminUsername: string().trim().min(1).max(50)
+const createUserInputSchema = z.object({
+  name: z.string().trim().min(2).max(120).optional(),
+  newUsername: z.string().trim().min(3).max(50),
+  newPassword: z.string().min(6).max(200),
+  role: roleSchema.optional().default("EMPLOYEE")
 });
+const paymentMethodSchema = z.enum(["CASH", "CARD", "TRANSFER"]);
+const saleItemInputSchema = z.object({
+  productId: z.string().uuid("productId invalido"),
+  qty: z.number().int("La cantidad debe ser entera").positive("La cantidad debe ser mayor a 0")
+});
+const createSaleSchema = z.object({
+  customer: z.string().trim().max(120).optional().default("Consumidor final"),
+  paymentMethod: paymentMethodSchema.optional().default("CASH"),
+  amountPaid: z.number().min(0).optional(),
+  items: z.array(saleItemInputSchema).min(1, "La venta debe tener al menos un item"),
+  clientTotal: z.number().min(0).optional()
+});
+z.discriminatedUnion("success", [
+  z.object({
+    success: z.literal(true),
+    saleId: z.string().uuid(),
+    invoiceNumber: z.string(),
+    total: z.number(),
+    amountPaid: z.number(),
+    changeAmount: z.number()
+  }),
+  z.object({
+    success: z.literal(false),
+    message: z.string()
+  })
+]);
+const correspondentTransactionStatusSchema = z.enum(["REGISTERED", "VOIDED"]);
+const correspondentTransactionSourceSchema = z.enum(["MANUAL", "IMAGE", "FILE_IMPORT", "API"]);
+const correspondentEvidenceInputSchema = z.object({
+  fileName: z.string().trim().min(1).max(180),
+  mimeType: z.string().trim().max(120).optional(),
+  dataBase64: z.string().min(1),
+  ocrRawText: z.string().trim().max(1e4).optional()
+});
+const createCorrespondentTransactionSchema = z.object({
+  platformId: z.string().uuid("platformId invalido"),
+  typeId: z.string().uuid("typeId invalido"),
+  amount: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  commissionAmount: z.number().int("La comision debe ser entera").min(0).optional(),
+  externalReference: z.string().trim().max(120).optional().nullable(),
+  customerName: z.string().trim().max(120).optional().nullable(),
+  customerDocument: z.string().trim().max(40).optional().nullable(),
+  targetAccount: z.string().trim().max(60).optional().nullable(),
+  targetPhone: z.string().trim().max(30).optional().nullable(),
+  performedAt: z.string().datetime("Fecha de operacion invalida"),
+  note: z.string().trim().max(300).optional().nullable(),
+  rawExtractedText: z.string().trim().max(1e4).optional().nullable(),
+  source: correspondentTransactionSourceSchema.optional().default("MANUAL"),
+  evidence: correspondentEvidenceInputSchema.optional()
+});
+const listCorrespondentTransactionsSchema = z.object({
+  dateFrom: z.string().datetime().optional(),
+  dateTo: z.string().datetime().optional(),
+  platformId: z.string().uuid().optional(),
+  userId: z.string().uuid().optional(),
+  status: correspondentTransactionStatusSchema.optional(),
+  search: z.string().trim().max(80).optional()
+}).optional().default({});
+const listCorrespondentClosuresSchema = z.object({
+  businessDate: z.string().datetime().optional()
+}).optional().default({});
+const createCorrespondentClosureSchema = z.object({
+  platformId: z.string().uuid("platformId invalido"),
+  businessDate: z.string().datetime("Fecha de cierre invalida"),
+  reportedBalance: z.number().int("El valor reportado debe ser entero").min(0),
+  note: z.string().trim().max(300).optional().nullable()
+});
+const sharedCorrespondentTypes = [
+  { code: "RETIRO", name: "Retiro", direction: CorrespondentDirection.OUT, requiresCustomerDocument: true, requiresExternalReference: true, sortOrder: 10 },
+  { code: "DEPOSITO", name: "Deposito", direction: CorrespondentDirection.IN, requiresCustomerDocument: true, requiresExternalReference: true, sortOrder: 20 },
+  { code: "CONSIGNACION", name: "Consignacion", direction: CorrespondentDirection.IN, requiresCustomerDocument: true, requiresExternalReference: true, sortOrder: 30 },
+  { code: "RECAUDO", name: "Recaudo", direction: CorrespondentDirection.IN, requiresExternalReference: true, sortOrder: 40 },
+  { code: "PAGO", name: "Pago", direction: CorrespondentDirection.IN, requiresExternalReference: true, sortOrder: 50 },
+  { code: "RECARGA", name: "Recarga", direction: CorrespondentDirection.IN, sortOrder: 60 },
+  { code: "CONSULTA", name: "Consulta", direction: CorrespondentDirection.NEUTRAL, sortOrder: 70 },
+  { code: "GIRO_ENVIO", name: "Giro envio", direction: CorrespondentDirection.IN, requiresCustomerDocument: true, requiresExternalReference: true, sortOrder: 80 },
+  { code: "GIRO_PAGO", name: "Giro pago", direction: CorrespondentDirection.OUT, requiresCustomerDocument: true, requiresExternalReference: true, sortOrder: 90 }
+];
+const correspondentSeedCatalog = [
+  {
+    code: "PUNTORED",
+    name: "Puntored",
+    requiresEvidence: true,
+    supportsOcr: true,
+    supportsFileImport: true,
+    types: sharedCorrespondentTypes
+  },
+  {
+    code: "PTM",
+    name: "PTM",
+    requiresEvidence: true,
+    supportsOcr: true,
+    supportsFileImport: true,
+    types: sharedCorrespondentTypes
+  },
+  {
+    code: "CBOGOTA",
+    name: "Corresponsal Bogota",
+    requiresEvidence: true,
+    supportsOcr: true,
+    types: sharedCorrespondentTypes
+  },
+  {
+    code: "BANCOLOMBIA",
+    name: "Corresponsal Bancolombia",
+    requiresEvidence: true,
+    supportsOcr: true,
+    types: [
+      ...sharedCorrespondentTypes,
+      { code: "NEQUI_RETIRO", name: "Nequi retiro", direction: CorrespondentDirection.OUT, requiresExternalReference: true, sortOrder: 95 },
+      { code: "NEQUI_DEPOSITO", name: "Nequi deposito", direction: CorrespondentDirection.IN, requiresExternalReference: true, sortOrder: 96 }
+    ]
+  },
+  {
+    code: "COOPENESSA",
+    name: "Coopenessa",
+    requiresEvidence: true,
+    supportsOcr: false,
+    types: sharedCorrespondentTypes
+  }
+];
+function money$2(value) {
+  return Math.round(value);
+}
+function startOfDay(date = /* @__PURE__ */ new Date()) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+function endOfDay(date = /* @__PURE__ */ new Date()) {
+  const next = startOfDay(date);
+  next.setDate(next.getDate() + 1);
+  return next;
+}
+function normalizeBusinessDate(value) {
+  if (!value)
+    return startOfDay(/* @__PURE__ */ new Date());
+  return startOfDay(new Date(value));
+}
+function sanitizeFileName(value) {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+function serializeJson(value) {
+  return JSON.stringify(value ?? null);
+}
+async function ensureCorrespondentSchemaIfNeeded(prismaClient) {
+  const statements = [
+    `PRAGMA foreign_keys = ON;`,
+    `CREATE TABLE IF NOT EXISTS "CorrespondentPlatform" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "code" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "isActive" BOOLEAN NOT NULL DEFAULT true,
+      "requiresEvidence" BOOLEAN NOT NULL DEFAULT false,
+      "supportsOcr" BOOLEAN NOT NULL DEFAULT false,
+      "supportsFileImport" BOOLEAN NOT NULL DEFAULT false,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentPlatform_code_key" ON "CorrespondentPlatform"("code");`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentPlatform_name_key" ON "CorrespondentPlatform"("name");`,
+    `CREATE TABLE IF NOT EXISTS "CorrespondentTransactionType" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "platformId" TEXT NOT NULL,
+      "code" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "direction" TEXT NOT NULL DEFAULT 'NEUTRAL',
+      "isActive" BOOLEAN NOT NULL DEFAULT true,
+      "requiresCustomerDocument" BOOLEAN NOT NULL DEFAULT false,
+      "requiresExternalReference" BOOLEAN NOT NULL DEFAULT false,
+      "allowsCommissionOverride" BOOLEAN NOT NULL DEFAULT true,
+      "sortOrder" INTEGER NOT NULL DEFAULT 0,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "CorrespondentTransactionType_platformId_fkey" FOREIGN KEY ("platformId") REFERENCES "CorrespondentPlatform" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    );`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentTransactionType_platformId_code_key" ON "CorrespondentTransactionType"("platformId", "code");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentTransactionType_platformId_idx" ON "CorrespondentTransactionType"("platformId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentTransactionType_isActive_idx" ON "CorrespondentTransactionType"("isActive");`,
+    `CREATE TABLE IF NOT EXISTS "CorrespondentCommissionRule" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "platformId" TEXT NOT NULL,
+      "typeId" TEXT,
+      "mode" TEXT NOT NULL DEFAULT 'NONE',
+      "value" REAL NOT NULL DEFAULT 0,
+      "minAmount" INTEGER,
+      "maxAmount" INTEGER,
+      "isActive" BOOLEAN NOT NULL DEFAULT true,
+      "validFrom" DATETIME,
+      "validTo" DATETIME,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "CorrespondentCommissionRule_platformId_fkey" FOREIGN KEY ("platformId") REFERENCES "CorrespondentPlatform" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "CorrespondentCommissionRule_typeId_fkey" FOREIGN KEY ("typeId") REFERENCES "CorrespondentTransactionType" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    );`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentCommissionRule_platformId_idx" ON "CorrespondentCommissionRule"("platformId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentCommissionRule_typeId_idx" ON "CorrespondentCommissionRule"("typeId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentCommissionRule_isActive_idx" ON "CorrespondentCommissionRule"("isActive");`,
+    `CREATE TABLE IF NOT EXISTS "CorrespondentDailyClosure" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "platformId" TEXT NOT NULL,
+      "cashSessionId" TEXT,
+      "businessDate" DATETIME NOT NULL,
+      "totalIn" INTEGER NOT NULL DEFAULT 0,
+      "totalOut" INTEGER NOT NULL DEFAULT 0,
+      "totalCommission" INTEGER NOT NULL DEFAULT 0,
+      "transactionsCount" INTEGER NOT NULL DEFAULT 0,
+      "expectedBalance" INTEGER NOT NULL DEFAULT 0,
+      "reportedBalance" INTEGER NOT NULL,
+      "differenceAmount" INTEGER NOT NULL DEFAULT 0,
+      "status" TEXT NOT NULL DEFAULT 'CLOSED',
+      "note" TEXT,
+      "closedByUserId" TEXT NOT NULL,
+      "closedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "CorrespondentDailyClosure_platformId_fkey" FOREIGN KEY ("platformId") REFERENCES "CorrespondentPlatform" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+      CONSTRAINT "CorrespondentDailyClosure_cashSessionId_fkey" FOREIGN KEY ("cashSessionId") REFERENCES "CashSession" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT "CorrespondentDailyClosure_closedByUserId_fkey" FOREIGN KEY ("closedByUserId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+    );`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentDailyClosure_platformId_businessDate_key" ON "CorrespondentDailyClosure"("platformId", "businessDate");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_platformId_idx" ON "CorrespondentDailyClosure"("platformId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_cashSessionId_idx" ON "CorrespondentDailyClosure"("cashSessionId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_businessDate_idx" ON "CorrespondentDailyClosure"("businessDate");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_closedByUserId_idx" ON "CorrespondentDailyClosure"("closedByUserId");`,
+    `CREATE TABLE IF NOT EXISTS "CorrespondentTransaction" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "platformId" TEXT NOT NULL,
+      "typeId" TEXT NOT NULL,
+      "cashSessionId" TEXT,
+      "cashRegisterId" TEXT,
+      "registeredByUserId" TEXT NOT NULL,
+      "reviewedByUserId" TEXT,
+      "dailyClosureId" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'REGISTERED',
+      "source" TEXT NOT NULL DEFAULT 'MANUAL',
+      "ocrStatus" TEXT NOT NULL DEFAULT 'NOT_REQUESTED',
+      "reconciliationStatus" TEXT NOT NULL DEFAULT 'PENDING',
+      "externalReference" TEXT,
+      "customerName" TEXT,
+      "customerDocument" TEXT,
+      "targetAccount" TEXT,
+      "targetPhone" TEXT,
+      "amount" INTEGER NOT NULL,
+      "commissionAmount" INTEGER NOT NULL DEFAULT 0,
+      "netAmount" INTEGER NOT NULL DEFAULT 0,
+      "performedAt" DATETIME NOT NULL,
+      "note" TEXT,
+      "rawExtractedText" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "CorrespondentTransaction_platformId_fkey" FOREIGN KEY ("platformId") REFERENCES "CorrespondentPlatform" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+      CONSTRAINT "CorrespondentTransaction_typeId_fkey" FOREIGN KEY ("typeId") REFERENCES "CorrespondentTransactionType" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+      CONSTRAINT "CorrespondentTransaction_cashSessionId_fkey" FOREIGN KEY ("cashSessionId") REFERENCES "CashSession" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT "CorrespondentTransaction_cashRegisterId_fkey" FOREIGN KEY ("cashRegisterId") REFERENCES "CashRegister" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT "CorrespondentTransaction_registeredByUserId_fkey" FOREIGN KEY ("registeredByUserId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+      CONSTRAINT "CorrespondentTransaction_reviewedByUserId_fkey" FOREIGN KEY ("reviewedByUserId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT "CorrespondentTransaction_dailyClosureId_fkey" FOREIGN KEY ("dailyClosureId") REFERENCES "CorrespondentDailyClosure" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    );`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_platformId_idx" ON "CorrespondentTransaction"("platformId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_typeId_idx" ON "CorrespondentTransaction"("typeId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_cashSessionId_idx" ON "CorrespondentTransaction"("cashSessionId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_cashRegisterId_idx" ON "CorrespondentTransaction"("cashRegisterId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_registeredByUserId_idx" ON "CorrespondentTransaction"("registeredByUserId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_reviewedByUserId_idx" ON "CorrespondentTransaction"("reviewedByUserId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_dailyClosureId_idx" ON "CorrespondentTransaction"("dailyClosureId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_performedAt_idx" ON "CorrespondentTransaction"("performedAt");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_status_idx" ON "CorrespondentTransaction"("status");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_reconciliationStatus_idx" ON "CorrespondentTransaction"("reconciliationStatus");`,
+    `CREATE TABLE IF NOT EXISTS "CorrespondentEvidence" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "transactionId" TEXT NOT NULL,
+      "fileName" TEXT NOT NULL,
+      "filePath" TEXT NOT NULL,
+      "mimeType" TEXT,
+      "fileSize" INTEGER,
+      "fileHash" TEXT,
+      "ocrRawText" TEXT,
+      "capturedByUserId" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "CorrespondentEvidence_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "CorrespondentTransaction" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT "CorrespondentEvidence_capturedByUserId_fkey" FOREIGN KEY ("capturedByUserId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    );`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentEvidence_transactionId_idx" ON "CorrespondentEvidence"("transactionId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentEvidence_capturedByUserId_idx" ON "CorrespondentEvidence"("capturedByUserId");`,
+    `CREATE TABLE IF NOT EXISTS "CorrespondentAuditLog" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "transactionId" TEXT,
+      "userId" TEXT,
+      "action" TEXT NOT NULL,
+      "context" TEXT,
+      "beforeJson" TEXT,
+      "afterJson" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "CorrespondentAuditLog_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "CorrespondentTransaction" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT "CorrespondentAuditLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    );`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentAuditLog_transactionId_idx" ON "CorrespondentAuditLog"("transactionId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentAuditLog_userId_idx" ON "CorrespondentAuditLog"("userId");`,
+    `CREATE INDEX IF NOT EXISTS "CorrespondentAuditLog_createdAt_idx" ON "CorrespondentAuditLog"("createdAt");`
+  ];
+  for (const statement of statements) {
+    await prismaClient.$executeRawUnsafe(statement);
+  }
+}
+async function seedCorrespondentCatalogIfNeeded(prismaClient) {
+  for (const platformSeed of correspondentSeedCatalog) {
+    const platform = await prismaClient.correspondentPlatform.upsert({
+      where: { code: platformSeed.code },
+      update: {
+        name: platformSeed.name,
+        isActive: true,
+        requiresEvidence: platformSeed.requiresEvidence ?? false,
+        supportsOcr: platformSeed.supportsOcr ?? false,
+        supportsFileImport: platformSeed.supportsFileImport ?? false
+      },
+      create: {
+        code: platformSeed.code,
+        name: platformSeed.name,
+        isActive: true,
+        requiresEvidence: platformSeed.requiresEvidence ?? false,
+        supportsOcr: platformSeed.supportsOcr ?? false,
+        supportsFileImport: platformSeed.supportsFileImport ?? false
+      }
+    });
+    for (const typeSeed of platformSeed.types) {
+      await prismaClient.correspondentTransactionType.upsert({
+        where: {
+          platformId_code: {
+            platformId: platform.id,
+            code: typeSeed.code
+          }
+        },
+        update: {
+          name: typeSeed.name,
+          direction: typeSeed.direction,
+          isActive: true,
+          requiresCustomerDocument: typeSeed.requiresCustomerDocument ?? false,
+          requiresExternalReference: typeSeed.requiresExternalReference ?? false,
+          allowsCommissionOverride: true,
+          sortOrder: typeSeed.sortOrder ?? 0
+        },
+        create: {
+          platformId: platform.id,
+          code: typeSeed.code,
+          name: typeSeed.name,
+          direction: typeSeed.direction,
+          isActive: true,
+          requiresCustomerDocument: typeSeed.requiresCustomerDocument ?? false,
+          requiresExternalReference: typeSeed.requiresExternalReference ?? false,
+          allowsCommissionOverride: true,
+          sortOrder: typeSeed.sortOrder ?? 0
+        }
+      });
+    }
+    const rulesCount = await prismaClient.correspondentCommissionRule.count({
+      where: { platformId: platform.id }
+    });
+    if (rulesCount === 0) {
+      await prismaClient.correspondentCommissionRule.create({
+        data: {
+          platformId: platform.id,
+          mode: CommissionMode.NONE,
+          value: 0,
+          isActive: true
+        }
+      });
+    }
+  }
+}
+async function getActiveCashSessionForUser(prisma2, userId) {
+  return prisma2.cashSession.findFirst({
+    where: { userId, status: "OPEN" },
+    include: { register: true },
+    orderBy: { openedAt: "desc" }
+  });
+}
+async function resolveCommissionAmount(prisma2, platformId, typeId, amount, performedAt) {
+  const rules = await prisma2.correspondentCommissionRule.findMany({
+    where: {
+      platformId,
+      isActive: true,
+      OR: [{ typeId }, { typeId: null }],
+      AND: [
+        { OR: [{ validFrom: null }, { validFrom: { lte: performedAt } }] },
+        { OR: [{ validTo: null }, { validTo: { gte: performedAt } }] },
+        { OR: [{ minAmount: null }, { minAmount: { lte: amount } }] },
+        { OR: [{ maxAmount: null }, { maxAmount: { gte: amount } }] }
+      ]
+    }
+  });
+  const bestRule = rules.sort((a, b) => {
+    var _a, _b;
+    if (a.typeId === typeId && b.typeId !== typeId)
+      return -1;
+    if (a.typeId !== typeId && b.typeId === typeId)
+      return 1;
+    return (((_a = b.validFrom) == null ? void 0 : _a.getTime()) ?? 0) - (((_b = a.validFrom) == null ? void 0 : _b.getTime()) ?? 0);
+  })[0] ?? null;
+  if (!bestRule)
+    return 0;
+  if (bestRule.mode === CommissionMode.FIXED)
+    return money$2(bestRule.value);
+  if (bestRule.mode === CommissionMode.PERCENTAGE)
+    return money$2(amount * bestRule.value / 100);
+  return 0;
+}
+function summarizeCorrespondentTransactions(transactions) {
+  return transactions.reduce(
+    (acc, transaction) => {
+      if (transaction.status === CorrespondentTransactionStatus.VOIDED) {
+        acc.voidedCount += 1;
+        return acc;
+      }
+      acc.transactionsCount += 1;
+      acc.totalCommission += transaction.commissionAmount;
+      acc.withEvidenceCount += transaction.evidences.length > 0 ? 1 : 0;
+      acc.pendingClosureCount += transaction.dailyClosureId ? 0 : 1;
+      if (transaction.type.direction === CorrespondentDirection.IN)
+        acc.totalIn += transaction.amount;
+      if (transaction.type.direction === CorrespondentDirection.OUT)
+        acc.totalOut += transaction.amount;
+      if (transaction.type.direction === CorrespondentDirection.NEUTRAL)
+        acc.neutralCount += 1;
+      return acc;
+    },
+    {
+      totalIn: 0,
+      totalOut: 0,
+      totalCommission: 0,
+      transactionsCount: 0,
+      withEvidenceCount: 0,
+      pendingClosureCount: 0,
+      voidedCount: 0,
+      neutralCount: 0
+    }
+  );
+}
+async function saveCorrespondentEvidence(params) {
+  const normalizedDate = /* @__PURE__ */ new Date();
+  const folder = path.join(
+    params.app.getPath("userData"),
+    "correspondent-evidence",
+    String(normalizedDate.getFullYear()),
+    String(normalizedDate.getMonth() + 1).padStart(2, "0"),
+    String(normalizedDate.getDate()).padStart(2, "0"),
+    params.platformCode.toLowerCase()
+  );
+  await mkdir(folder, { recursive: true });
+  const safeName = sanitizeFileName(params.evidence.fileName);
+  const targetPath = path.join(folder, `${Date.now()}-${safeName}`);
+  const base64Data = params.evidence.dataBase64.includes(",") ? params.evidence.dataBase64.split(",").pop() ?? "" : params.evidence.dataBase64;
+  const fileBuffer = Buffer.from(base64Data, "base64");
+  await writeFile(targetPath, fileBuffer);
+  return {
+    fileName: params.evidence.fileName,
+    filePath: targetPath,
+    mimeType: params.evidence.mimeType ?? null,
+    fileSize: fileBuffer.byteLength,
+    fileHash: createHash("sha256").update(fileBuffer).digest("hex"),
+    ocrRawText: params.evidence.ocrRawText ?? null
+  };
+}
+async function logCorrespondentAction(params) {
+  var _a, _b;
+  await params.prisma.correspondentAuditLog.create({
+    data: {
+      transactionId: params.transactionId ?? null,
+      userId: ((_a = params.currentSessionUser) == null ? void 0 : _a.id) ?? null,
+      action: params.action,
+      context: params.context ?? null,
+      beforeJson: params.beforeJson === void 0 ? null : serializeJson(params.beforeJson),
+      afterJson: params.afterJson === void 0 ? null : serializeJson(params.afterJson)
+    }
+  });
+  await params.prisma.auditLog.create({
+    data: {
+      userId: ((_b = params.currentSessionUser) == null ? void 0 : _b.id) ?? null,
+      module: "correspondent",
+      action: params.action,
+      entity: params.transactionId ? "CorrespondentTransaction" : "CorrespondentDailyClosure",
+      entityId: params.transactionId ?? null,
+      beforeJson: params.beforeJson === void 0 ? null : serializeJson(params.beforeJson),
+      afterJson: params.afterJson === void 0 ? null : serializeJson(params.afterJson)
+    }
+  });
+}
+async function getCorrespondentTransactionsForDay(prisma2, businessDate, platformId) {
+  return prisma2.correspondentTransaction.findMany({
+    where: {
+      platformId,
+      performedAt: {
+        gte: startOfDay(businessDate),
+        lt: endOfDay(businessDate)
+      }
+    },
+    include: {
+      platform: true,
+      type: true,
+      evidences: { select: { id: true } },
+      registeredBy: { select: { id: true, username: true, name: true } },
+      dailyClosure: { select: { id: true, businessDate: true, status: true } }
+    },
+    orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }]
+  });
+}
+function registerCorrespondentIpcHandlers({
+  app: app2,
+  ipcMain: ipcMain2,
+  prisma: prisma2,
+  getCurrentSessionUser
+}) {
+  ipcMain2.handle("correspondent:catalog", async () => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2) {
+      return { success: false, message: "Debes iniciar sesion", platforms: [] };
+    }
+    const platforms = await prisma2.correspondentPlatform.findMany({
+      where: { isActive: true },
+      include: {
+        transactionTypes: {
+          where: { isActive: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+        },
+        commissionRules: {
+          where: { isActive: true },
+          orderBy: [{ validFrom: "desc" }]
+        }
+      },
+      orderBy: { name: "asc" }
+    });
+    return {
+      success: true,
+      platforms: platforms.map((platform) => ({
+        id: platform.id,
+        code: platform.code,
+        name: platform.name,
+        requiresEvidence: platform.requiresEvidence,
+        supportsOcr: platform.supportsOcr,
+        supportsFileImport: platform.supportsFileImport,
+        types: platform.transactionTypes.map((type) => ({
+          id: type.id,
+          code: type.code,
+          name: type.name,
+          direction: type.direction,
+          requiresCustomerDocument: type.requiresCustomerDocument,
+          requiresExternalReference: type.requiresExternalReference
+        })),
+        commissionRules: platform.commissionRules.map((rule) => ({
+          id: rule.id,
+          typeId: rule.typeId,
+          mode: rule.mode,
+          value: rule.value,
+          minAmount: rule.minAmount,
+          maxAmount: rule.maxAmount
+        }))
+      }))
+    };
+  });
+  ipcMain2.handle("correspondent:dashboard", async () => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2) {
+      return { success: false, message: "Debes iniciar sesion" };
+    }
+    const businessDate = startOfDay(/* @__PURE__ */ new Date());
+    const transactions = await getCorrespondentTransactionsForDay(prisma2, businessDate);
+    const summary = summarizeCorrespondentTransactions(transactions);
+    const perPlatformMap = transactions.reduce((acc, transaction) => {
+      const current = acc[transaction.platformId] ?? {
+        platformId: transaction.platformId,
+        platform: transaction.platform.name,
+        totalIn: 0,
+        totalOut: 0,
+        totalCommission: 0,
+        count: 0,
+        pendingClosureCount: 0
+      };
+      if (transaction.status !== CorrespondentTransactionStatus.VOIDED) {
+        current.count += 1;
+        current.totalCommission += transaction.commissionAmount;
+        current.pendingClosureCount += transaction.dailyClosureId ? 0 : 1;
+        if (transaction.type.direction === CorrespondentDirection.IN)
+          current.totalIn += transaction.amount;
+        if (transaction.type.direction === CorrespondentDirection.OUT)
+          current.totalOut += transaction.amount;
+      }
+      acc[transaction.platformId] = current;
+      return acc;
+    }, {});
+    return {
+      success: true,
+      totals: {
+        totalIn: summary.totalIn,
+        totalOut: summary.totalOut,
+        totalCommission: summary.totalCommission,
+        expectedBalance: summary.totalIn - summary.totalOut + summary.totalCommission,
+        transactionsCount: summary.transactionsCount,
+        withEvidenceCount: summary.withEvidenceCount,
+        pendingClosureCount: summary.pendingClosureCount,
+        voidedCount: summary.voidedCount
+      },
+      perPlatform: Object.values(perPlatformMap).sort((a, b) => a.platform.localeCompare(b.platform, "es")),
+      recentTransactions: transactions.slice(0, 10).map((transaction) => ({
+        id: transaction.id,
+        platform: transaction.platform.name,
+        type: transaction.type.name,
+        amount: transaction.amount,
+        commissionAmount: transaction.commissionAmount,
+        externalReference: transaction.externalReference,
+        customerName: transaction.customerName,
+        performedAt: transaction.performedAt.toISOString(),
+        status: transaction.status,
+        registeredBy: transaction.registeredBy.name ?? transaction.registeredBy.username,
+        hasEvidence: transaction.evidences.length > 0
+      }))
+    };
+  });
+  ipcMain2.handle("correspondent:transactions:list", async (_event, payload) => {
+    var _a;
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2) {
+      return { success: false, message: "Debes iniciar sesion", transactions: [] };
+    }
+    const parsed = listCorrespondentTransactionsSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Filtros invalidos", transactions: [] };
+    }
+    const filters = parsed.data;
+    const search = (_a = filters.search) == null ? void 0 : _a.trim();
+    const transactions = await prisma2.correspondentTransaction.findMany({
+      where: {
+        platformId: filters.platformId,
+        registeredByUserId: filters.userId,
+        status: filters.status,
+        performedAt: filters.dateFrom || filters.dateTo ? {
+          ...filters.dateFrom ? { gte: new Date(filters.dateFrom) } : {},
+          ...filters.dateTo ? { lt: endOfDay(new Date(filters.dateTo)) } : {}
+        } : void 0,
+        OR: search ? [
+          { externalReference: { contains: search } },
+          { customerName: { contains: search } },
+          { customerDocument: { contains: search } },
+          { targetAccount: { contains: search } },
+          { targetPhone: { contains: search } },
+          { note: { contains: search } }
+        ] : void 0
+      },
+      include: {
+        platform: true,
+        type: true,
+        registeredBy: { select: { id: true, username: true, name: true } },
+        evidences: { select: { id: true, fileName: true } },
+        dailyClosure: { select: { id: true, status: true } }
+      },
+      orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }],
+      take: 150
+    });
+    return {
+      success: true,
+      transactions: transactions.map((transaction) => {
+        var _a2, _b;
+        return {
+          id: transaction.id,
+          platformId: transaction.platformId,
+          platform: transaction.platform.name,
+          typeId: transaction.typeId,
+          type: transaction.type.name,
+          direction: transaction.type.direction,
+          amount: transaction.amount,
+          commissionAmount: transaction.commissionAmount,
+          netAmount: transaction.netAmount,
+          externalReference: transaction.externalReference,
+          customerName: transaction.customerName,
+          customerDocument: transaction.customerDocument,
+          targetAccount: transaction.targetAccount,
+          targetPhone: transaction.targetPhone,
+          performedAt: transaction.performedAt.toISOString(),
+          status: transaction.status,
+          source: transaction.source,
+          registeredBy: transaction.registeredBy.name ?? transaction.registeredBy.username,
+          note: transaction.note,
+          hasEvidence: transaction.evidences.length > 0,
+          evidenceCount: transaction.evidences.length,
+          closureId: ((_a2 = transaction.dailyClosure) == null ? void 0 : _a2.id) ?? null,
+          closureStatus: ((_b = transaction.dailyClosure) == null ? void 0 : _b.status) ?? null
+        };
+      })
+    };
+  });
+  ipcMain2.handle("correspondent:transaction:create", async (_event, payload) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2) {
+      return { success: false, message: "Debes iniciar sesion para registrar movimientos" };
+    }
+    const parsed = createCorrespondentTransactionSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Datos invalidos para el corresponsal" };
+    }
+    const data = parsed.data;
+    const performedAt = new Date(data.performedAt);
+    const [platform, type, activeCashSession] = await Promise.all([
+      prisma2.correspondentPlatform.findUnique({ where: { id: data.platformId } }),
+      prisma2.correspondentTransactionType.findUnique({ where: { id: data.typeId } }),
+      getActiveCashSessionForUser(prisma2, currentSessionUser2.id)
+    ]);
+    if (!platform || !platform.isActive) {
+      return { success: false, message: "La plataforma seleccionada no esta disponible" };
+    }
+    if (!type || !type.isActive || type.platformId !== platform.id) {
+      return { success: false, message: "El tipo de transaccion no corresponde a la plataforma" };
+    }
+    if (platform.requiresEvidence && !data.evidence) {
+      return { success: false, message: "Esta plataforma requiere evidencia del comprobante" };
+    }
+    if (type.requiresExternalReference && !((_a = data.externalReference) == null ? void 0 : _a.trim())) {
+      return { success: false, message: "La referencia externa es obligatoria para este tipo" };
+    }
+    if (type.requiresCustomerDocument && !((_b = data.customerDocument) == null ? void 0 : _b.trim())) {
+      return { success: false, message: "El documento del cliente es obligatorio para este tipo" };
+    }
+    const duplicate = await prisma2.correspondentTransaction.findFirst({
+      where: {
+        platformId: platform.id,
+        typeId: type.id,
+        amount: data.amount,
+        externalReference: ((_c = data.externalReference) == null ? void 0 : _c.trim()) || null,
+        performedAt: {
+          gte: new Date(performedAt.getTime() - 10 * 60 * 1e3),
+          lte: new Date(performedAt.getTime() + 10 * 60 * 1e3)
+        },
+        status: CorrespondentTransactionStatus.REGISTERED
+      }
+    });
+    if (duplicate) {
+      return { success: false, message: "Parece un duplicado reciente. Verifica antes de registrar." };
+    }
+    const computedCommission = data.commissionAmount ?? await resolveCommissionAmount(prisma2, platform.id, type.id, data.amount, performedAt);
+    const netAmount = type.direction === CorrespondentDirection.OUT ? data.amount - computedCommission : data.amount + computedCommission;
+    const evidencePayload = data.evidence ? await saveCorrespondentEvidence({ app: app2, platformCode: platform.code, evidence: data.evidence }) : null;
+    try {
+      const transaction = await prisma2.correspondentTransaction.create({
+        data: {
+          platformId: platform.id,
+          typeId: type.id,
+          cashSessionId: (activeCashSession == null ? void 0 : activeCashSession.id) ?? null,
+          cashRegisterId: (activeCashSession == null ? void 0 : activeCashSession.registerId) ?? null,
+          registeredByUserId: currentSessionUser2.id,
+          status: CorrespondentTransactionStatus.REGISTERED,
+          source: data.source,
+          ocrStatus: ((_d = data.evidence) == null ? void 0 : _d.ocrRawText) ? CorrespondentOcrStatus.PROCESSED : platform.supportsOcr ? CorrespondentOcrStatus.NEEDS_REVIEW : CorrespondentOcrStatus.NOT_REQUESTED,
+          reconciliationStatus: CorrespondentReconciliationStatus.PENDING,
+          externalReference: ((_e = data.externalReference) == null ? void 0 : _e.trim()) || null,
+          customerName: ((_f = data.customerName) == null ? void 0 : _f.trim()) || null,
+          customerDocument: ((_g = data.customerDocument) == null ? void 0 : _g.trim()) || null,
+          targetAccount: ((_h = data.targetAccount) == null ? void 0 : _h.trim()) || null,
+          targetPhone: ((_i = data.targetPhone) == null ? void 0 : _i.trim()) || null,
+          amount: data.amount,
+          commissionAmount: computedCommission,
+          netAmount,
+          performedAt,
+          note: ((_j = data.note) == null ? void 0 : _j.trim()) || null,
+          rawExtractedText: ((_k = data.rawExtractedText) == null ? void 0 : _k.trim()) || ((_l = data.evidence) == null ? void 0 : _l.ocrRawText) || null,
+          evidences: evidencePayload ? {
+            create: {
+              ...evidencePayload,
+              capturedByUserId: currentSessionUser2.id
+            }
+          } : void 0
+        },
+        include: {
+          platform: true,
+          type: true,
+          evidences: { select: { id: true } }
+        }
+      });
+      await logCorrespondentAction({
+        prisma: prisma2,
+        currentSessionUser: currentSessionUser2,
+        transactionId: transaction.id,
+        action: "create_transaction",
+        afterJson: {
+          platform: transaction.platform.name,
+          type: transaction.type.name,
+          amount: transaction.amount,
+          commissionAmount: transaction.commissionAmount,
+          hasEvidence: transaction.evidences.length > 0
+        }
+      });
+      return {
+        success: true,
+        transaction: {
+          id: transaction.id,
+          platform: transaction.platform.name,
+          type: transaction.type.name,
+          amount: transaction.amount,
+          commissionAmount: transaction.commissionAmount,
+          netAmount: transaction.netAmount,
+          hasEvidence: transaction.evidences.length > 0
+        }
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo registrar la transaccion";
+      return { success: false, message };
+    }
+  });
+  ipcMain2.handle("correspondent:closures:list", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2) {
+      return { success: false, message: "Debes iniciar sesion", closures: [] };
+    }
+    const parsed = listCorrespondentClosuresSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Fecha de cierre invalida", closures: [] };
+    }
+    const businessDate = normalizeBusinessDate(parsed.data.businessDate);
+    const [platforms, closures, transactions] = await Promise.all([
+      prisma2.correspondentPlatform.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" }
+      }),
+      prisma2.correspondentDailyClosure.findMany({
+        where: { businessDate },
+        include: {
+          platform: true,
+          closedBy: { select: { username: true, name: true } }
+        },
+        orderBy: { closedAt: "desc" }
+      }),
+      getCorrespondentTransactionsForDay(prisma2, businessDate)
+    ]);
+    const closureByPlatform = new Map(closures.map((closure) => [closure.platformId, closure]));
+    const transactionsByPlatform = transactions.reduce((acc, transaction) => {
+      acc[transaction.platformId] = [...acc[transaction.platformId] ?? [], transaction];
+      return acc;
+    }, {});
+    return {
+      success: true,
+      businessDate: businessDate.toISOString(),
+      closures: platforms.map((platform) => {
+        const platformTransactions = transactionsByPlatform[platform.id] ?? [];
+        const summary = summarizeCorrespondentTransactions(platformTransactions);
+        const closure = closureByPlatform.get(platform.id) ?? null;
+        return {
+          platformId: platform.id,
+          platform: platform.name,
+          totalIn: summary.totalIn,
+          totalOut: summary.totalOut,
+          totalCommission: summary.totalCommission,
+          expectedBalance: summary.totalIn - summary.totalOut + summary.totalCommission,
+          transactionsCount: summary.transactionsCount,
+          pendingTransactions: summary.pendingClosureCount,
+          closure: closure ? {
+            id: closure.id,
+            reportedBalance: closure.reportedBalance,
+            differenceAmount: closure.differenceAmount,
+            status: closure.status,
+            closedAt: closure.closedAt.toISOString(),
+            closedBy: closure.closedBy.name ?? closure.closedBy.username,
+            note: closure.note
+          } : null
+        };
+      })
+    };
+  });
+  ipcMain2.handle("correspondent:closure:create", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2) {
+      return { success: false, message: "Debes iniciar sesion para cerrar" };
+    }
+    const parsed = createCorrespondentClosureSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Datos invalidos para el cierre" };
+    }
+    const data = parsed.data;
+    const businessDate = normalizeBusinessDate(data.businessDate);
+    const existing = await prisma2.correspondentDailyClosure.findFirst({
+      where: {
+        platformId: data.platformId,
+        businessDate
+      }
+    });
+    if (existing) {
+      return { success: false, message: "La plataforma ya fue cerrada para esa fecha" };
+    }
+    const [platform, transactions, activeCashSession] = await Promise.all([
+      prisma2.correspondentPlatform.findUnique({ where: { id: data.platformId } }),
+      getCorrespondentTransactionsForDay(prisma2, businessDate, data.platformId),
+      getActiveCashSessionForUser(prisma2, currentSessionUser2.id)
+    ]);
+    if (!platform) {
+      return { success: false, message: "Plataforma no encontrada" };
+    }
+    const openTransactions = transactions.filter(
+      (transaction) => transaction.status === CorrespondentTransactionStatus.REGISTERED && !transaction.dailyClosureId
+    );
+    const summary = summarizeCorrespondentTransactions(openTransactions);
+    const expectedBalance = summary.totalIn - summary.totalOut + summary.totalCommission;
+    const differenceAmount = data.reportedBalance - expectedBalance;
+    try {
+      const closure = await prisma2.$transaction(async (tx) => {
+        var _a;
+        const createdClosure = await tx.correspondentDailyClosure.create({
+          data: {
+            platformId: platform.id,
+            cashSessionId: (activeCashSession == null ? void 0 : activeCashSession.id) ?? null,
+            businessDate,
+            totalIn: summary.totalIn,
+            totalOut: summary.totalOut,
+            totalCommission: summary.totalCommission,
+            transactionsCount: summary.transactionsCount,
+            expectedBalance,
+            reportedBalance: data.reportedBalance,
+            differenceAmount,
+            status: differenceAmount === 0 ? CorrespondentClosureStatus.CLOSED : CorrespondentClosureStatus.WITH_DIFFERENCE,
+            note: ((_a = data.note) == null ? void 0 : _a.trim()) || null,
+            closedByUserId: currentSessionUser2.id
+          }
+        });
+        if (openTransactions.length > 0) {
+          await tx.correspondentTransaction.updateMany({
+            where: {
+              id: { in: openTransactions.map((transaction) => transaction.id) }
+            },
+            data: {
+              dailyClosureId: createdClosure.id
+            }
+          });
+        }
+        return createdClosure;
+      });
+      await logCorrespondentAction({
+        prisma: prisma2,
+        currentSessionUser: currentSessionUser2,
+        action: "create_closure",
+        context: `platform:${platform.id};closure:${closure.id}`,
+        afterJson: {
+          platform: platform.name,
+          businessDate: businessDate.toISOString(),
+          expectedBalance,
+          reportedBalance: data.reportedBalance,
+          differenceAmount
+        }
+      });
+      return {
+        success: true,
+        closure: {
+          id: closure.id,
+          expectedBalance,
+          reportedBalance: closure.reportedBalance,
+          differenceAmount: closure.differenceAmount,
+          status: closure.status
+        }
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo cerrar la plataforma";
+      return { success: false, message };
+    }
+  });
+}
+const createProductSchema = z.object({
+  name: z.string({ message: "El nombre es obligatorio" }).trim().min(2, "Mínimo 2 caracteres").max(120, "Máximo 120 caracteres"),
+  barcode: z.string().trim().min(1).max(50).optional().nullable(),
+  sku: z.string().trim().min(1).max(50).optional().nullable(),
+  price: z.number({ message: "El precio es obligatorio" }).positive("El precio debe ser mayor a 0"),
+  cost: z.number().min(0, "El costo no puede ser negativo").optional().default(0),
+  marginPercent: z.number().min(0, "La ganancia no puede ser negativa").optional().default(0),
+  hasTax: z.boolean().optional().default(false),
+  taxRate: z.number().min(0).max(1, "taxRate debe ser entre 0 y 1 (ej: 0.19)").optional().default(0),
+  stock: z.number().int("El stock debe ser un número entero").min(0, "El stock no puede ser negativo").optional().default(0),
+  categoryId: z.string().uuid().optional().nullable(),
+  subcategoryId: z.string().uuid().optional().nullable(),
+  isActive: z.boolean().optional().default(true)
+});
+const updateProductSchema = z.object({
+  id: z.string().uuid("ID de producto inválido"),
+  name: z.string().trim().min(2, "Mínimo 2 caracteres").max(120).optional(),
+  barcode: z.string().trim().min(1).max(50).optional().nullable(),
+  sku: z.string().trim().min(1).max(50).optional().nullable(),
+  price: z.number().positive("El precio debe ser mayor a 0").optional(),
+  cost: z.number().min(0).optional(),
+  marginPercent: z.number().min(0).optional(),
+  hasTax: z.boolean().optional(),
+  taxRate: z.number().min(0).max(1).optional(),
+  stock: z.number().int().min(0).optional(),
+  categoryId: z.string().uuid().optional().nullable(),
+  subcategoryId: z.string().uuid().optional().nullable(),
+  isActive: z.boolean().optional()
+});
+z.object({
+  productId: z.string().uuid("ID de producto inválido"),
+  delta: z.number().int("El ajuste debe ser un número entero").refine((n) => n !== 0, "El ajuste no puede ser 0"),
+  reason: z.string().trim().max(200).optional()
+});
+z.object({
+  barcode: z.string().trim().min(1, "Barcode no puede estar vacío")
+});
+const createCategorySchema = z.object({
+  name: z.string().trim().min(2).max(80)
+});
+const createSubcategorySchema = z.object({
+  categoryId: z.string().uuid(),
+  name: z.string().trim().min(2).max(80)
+});
+const deleteByIdSchema = z.object({
+  id: z.string().uuid()
+});
+const documentTypeSchema = z.enum([
+  "Cédula",
+  "NIT",
+  "Cédula de extranjería",
+  "Pasaporte",
+  "Tarjeta de identidad"
+]);
+const createCustomerSchema = z.object({
+  firstName: z.string().trim().min(2).max(80),
+  lastName: z.string().trim().max(80).optional().default(""),
+  documentType: documentTypeSchema.optional().default("Cédula"),
+  documentNumber: z.string().trim().max(40).optional().nullable(),
+  phone: z.string().trim().regex(/^\d{10}$/).optional().nullable(),
+  email: z.string().trim().email().max(120).optional().nullable(),
+  address: z.string().trim().max(180).optional().nullable(),
+  isActive: z.boolean().optional().default(true)
+});
+const updateCustomerSchema = createCustomerSchema.extend({
+  id: z.string().uuid()
+});
+const createSupplierSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  contactName: z.string().trim().max(120).optional().nullable(),
+  documentType: documentTypeSchema.optional().default("NIT"),
+  documentNumber: z.string().trim().max(40).optional().nullable(),
+  phone: z.string().trim().regex(/^\d{10}$/).optional().nullable(),
+  email: z.string().trim().email().max(120).optional().nullable(),
+  address: z.string().trim().max(180).optional().nullable(),
+  isActive: z.boolean().optional().default(true)
+});
+const updateSupplierSchema = createSupplierSchema.extend({
+  id: z.string().uuid()
+});
+const createPurchaseSchema = z.object({
+  supplierId: z.string().uuid(),
+  purchasedAt: z.string().datetime().optional(),
+  note: z.string().trim().max(300).optional().nullable(),
+  markAsPaid: z.boolean().optional().default(false),
+  items: z.array(
+    z.object({
+      productId: z.string().uuid(),
+      qty: z.number().int().positive(),
+      cost: z.number().positive(),
+      taxRate: z.number().min(0).max(1).optional().default(0.19)
+    })
+  ).min(1)
+});
+const cashPlatformAmountSchema = z.object({
+  platformId: z.string().uuid(),
+  amount: z.number().min(0)
+});
+const openCashSessionSchema = z.object({
+  openingCashAmount: z.number().min(0),
+  note: z.string().trim().max(300).optional().nullable(),
+  cashBreakdown: z.record(z.string(), z.number()).optional().default({}),
+  correspondentBalances: z.array(cashPlatformAmountSchema).optional().default([])
+});
+const closeCashSessionSchema = z.object({
+  sessionId: z.string().uuid(),
+  countedCashAmount: z.number().min(0),
+  note: z.string().trim().max(300).optional().nullable(),
+  cashBreakdown: z.record(z.string(), z.number()).optional().default({}),
+  correspondentBalances: z.array(cashPlatformAmountSchema).optional().default([])
+});
+const businessSettingsSchema = z.object({
+  businessName: z.string().trim().max(120).optional().nullable(),
+  taxId: z.string().trim().max(40).optional().nullable(),
+  address: z.string().trim().max(180).optional().nullable(),
+  city: z.string().trim().max(80).optional().nullable(),
+  invoicePrefix: z.string().trim().max(10).optional().nullable(),
+  defaultTaxRate: z.number().min(0).max(1).optional(),
+  allowNegativeStock: z.boolean().optional(),
+  receiptFooter: z.string().trim().max(400).optional().nullable()
+});
+const salesListFilterSchema = z.object({
+  dateFrom: z.string().datetime().optional(),
+  dateTo: z.string().datetime().optional(),
+  cashierId: z.string().uuid().optional(),
+  status: z.nativeEnum(SaleStatus).optional(),
+  search: z.string().trim().max(80).optional()
+}).optional().default({});
+const saleByIdSchema = z.object({
+  saleId: z.string().uuid()
+});
+function money$1(value) {
+  return Math.round(value);
+}
+const BUSINESS_CITY_SEPARATOR = "|||CITY|||";
+function mergeBusinessAddress(address, city) {
+  const normalizedAddress = (address == null ? void 0 : address.trim()) || "";
+  const normalizedCity = (city == null ? void 0 : city.trim()) || "";
+  if (!normalizedCity)
+    return normalizedAddress || null;
+  return `${normalizedAddress}${BUSINESS_CITY_SEPARATOR}${normalizedCity}`;
+}
+function splitBusinessAddress(rawAddress) {
+  var _a, _b;
+  if (!rawAddress)
+    return { address: "", city: "" };
+  const parts = rawAddress.split(BUSINESS_CITY_SEPARATOR);
+  return {
+    address: ((_a = parts[0]) == null ? void 0 : _a.trim()) || "",
+    city: ((_b = parts[1]) == null ? void 0 : _b.trim()) || ""
+  };
+}
+function calculateSalePrice(cost, marginPercent = 0, hasTax = false, taxRate = 0) {
+  const basePrice = Number(cost || 0) * (1 + Number(marginPercent || 0) / 100);
+  const total = hasTax ? basePrice * (1 + Number(taxRate || 0)) : basePrice;
+  return money$1(total);
+}
+function paymentMethodLabel(value) {
+  if (value === PaymentMethod.CARD)
+    return "Tarjeta";
+  if (value === PaymentMethod.TRANSFER)
+    return "Transferencia";
+  return "Efectivo";
+}
+function buildInvoiceHtml(sale) {
+  const rows = sale.items.map(
+    (item) => `
+        <tr>
+          <td>${item.name}</td>
+          <td style="text-align:center">${item.qty}</td>
+          <td style="text-align:right">$${item.price.toLocaleString("es-CO")}</td>
+          <td style="text-align:right">$${item.lineTotal.toLocaleString("es-CO")}</td>
+        </tr>
+      `
+  ).join("");
+  const businessAddress = [sale.address, sale.city].filter(Boolean).join(" - ");
+  return `
+    <!doctype html>
+    <html lang="es">
+      <head>
+        <meta charset="utf-8" />
+        <title>${sale.invoiceNumber}</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #111827; margin: 24px; }
+          h1, h2, p { margin: 0; }
+          .header { margin-bottom: 16px; }
+          .meta { margin-top: 10px; font-size: 12px; color: #4b5563; line-height: 1.6; }
+          table { width: 100%; border-collapse: collapse; margin-top: 18px; }
+          th, td { border-bottom: 1px solid #e5e7eb; padding: 8px 4px; font-size: 12px; }
+          th { text-transform: uppercase; color: #6b7280; font-size: 11px; }
+          .totals { margin-top: 18px; width: 260px; margin-left: auto; }
+          .totals-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; }
+          .totals-row.total { border-top: 1px solid #d1d5db; padding-top: 8px; font-weight: 700; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${sale.businessName || "Factura de venta"}</h1>
+          <div class="meta">
+            ${sale.taxId ? `<div>NIT: ${sale.taxId}</div>` : ""}
+            ${businessAddress ? `<div>Dirección: ${businessAddress}</div>` : ""}
+            <div>Factura: ${sale.invoiceNumber}</div>
+            <div>Fecha: ${sale.createdAt.toLocaleString("es-CO")}</div>
+            <div>Cliente: ${sale.customer}</div>
+            <div>Cajero: ${sale.cashier.name ?? sale.cashier.username}</div>
+            <div>Pago: ${paymentMethodLabel(sale.paymentMethod)}</div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="text-align:left">Producto</th>
+              <th>Cant.</th>
+              <th style="text-align:right">Precio</th>
+              <th style="text-align:right">Total</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+
+        <div class="totals">
+          <div class="totals-row"><span>Subtotal</span><strong>$${sale.subtotal.toLocaleString("es-CO")}</strong></div>
+          <div class="totals-row"><span>IVA</span><strong>$${sale.tax.toLocaleString("es-CO")}</strong></div>
+          <div class="totals-row total"><span>Total</span><strong>$${sale.total.toLocaleString("es-CO")}</strong></div>
+        </div>
+        ${sale.receiptFooter ? `<p style="margin-top: 20px; font-size: 12px; color: #4b5563;">${sale.receiptFooter}</p>` : ""}
+      </body>
+    </html>
+  `;
+}
+async function ensureAdminSession(getCurrentSessionUser) {
+  const currentSessionUser2 = getCurrentSessionUser();
+  if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
+    throw new Error("Solo admins pueden ejecutar esta accion");
+  }
+  return currentSessionUser2;
+}
+function actorLabel(currentSessionUser2) {
+  var _a;
+  return ((_a = currentSessionUser2 == null ? void 0 : currentSessionUser2.name) == null ? void 0 : _a.trim()) || (currentSessionUser2 == null ? void 0 : currentSessionUser2.username) || "Sistema";
+}
+function buildFullName(firstName, lastName) {
+  return [firstName.trim(), (lastName == null ? void 0 : lastName.trim()) || ""].filter(Boolean).join(" ");
+}
+function buildDocumentValue(documentType, documentNumber) {
+  const normalizedNumber = documentNumber == null ? void 0 : documentNumber.trim();
+  if (!normalizedNumber)
+    return null;
+  return `${documentType || "Cédula"}: ${normalizedNumber}`;
+}
+async function getAuditUserMap(prisma2, entity, entityIds, action, newestFirst = false) {
+  var _a, _b, _c;
+  if (entityIds.length === 0) {
+    return /* @__PURE__ */ new Map();
+  }
+  const logs = await prisma2.auditLog.findMany({
+    where: {
+      entity,
+      action,
+      entityId: { in: entityIds }
+    },
+    include: {
+      user: {
+        select: {
+          name: true,
+          username: true
+        }
+      }
+    },
+    orderBy: { createdAt: newestFirst ? "desc" : "asc" }
+  });
+  const result = /* @__PURE__ */ new Map();
+  for (const log of logs) {
+    if (!log.entityId || result.has(log.entityId))
+      continue;
+    result.set(log.entityId, ((_b = (_a = log.user) == null ? void 0 : _a.name) == null ? void 0 : _b.trim()) || ((_c = log.user) == null ? void 0 : _c.username) || "Sistema");
+  }
+  return result;
+}
+function parseSessionMeta(note) {
+  if (!note)
+    return {};
+  try {
+    return JSON.parse(note);
+  } catch {
+    return {};
+  }
+}
+function stringifySessionMeta(meta) {
+  return JSON.stringify(meta);
+}
+function getSkuPrefix(name, categoryName) {
+  const source = (categoryName || name || "PRD").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+  return (source.slice(0, 3) || "PRD").padEnd(3, "X");
+}
+async function generateSku(prisma2, name, categoryName) {
+  const prefix = getSkuPrefix(name, categoryName);
+  const count = await prisma2.product.count({
+    where: { sku: { startsWith: prefix } }
+  });
+  return `${prefix}-${String(count + 1).padStart(3, "0")}`;
+}
+async function generatePurchaseNumber(prisma2) {
+  const count = await prisma2.purchase.count();
+  return `CP-${String(count + 1).padStart(6, "0")}`;
+}
+async function logAudit(prisma2, currentSessionUser2, module, action, entity, entityId, beforeJson, afterJson) {
+  await prisma2.auditLog.create({
+    data: {
+      userId: (currentSessionUser2 == null ? void 0 : currentSessionUser2.id) ?? null,
+      module,
+      action,
+      entity,
+      entityId: entityId ?? null,
+      beforeJson: beforeJson === void 0 ? null : JSON.stringify(beforeJson),
+      afterJson: afterJson === void 0 ? null : JSON.stringify(afterJson)
+    }
+  });
+}
+function registerBackofficeIpcHandlers({
+  ipcMain: ipcMain2,
+  prisma: prisma2,
+  getCurrentSessionUser,
+  getConnectedAt
+}) {
+  ipcMain2.handle("app:status", async () => ({
+    success: true,
+    connectedAt: getConnectedAt().toISOString(),
+    now: (/* @__PURE__ */ new Date()).toISOString()
+  }));
+  ipcMain2.handle("settings:get", async () => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const settings = await prisma2.businessSettings.findUnique({
+      where: { id: "default" }
+    });
+    const addressParts = splitBusinessAddress(settings == null ? void 0 : settings.address);
+    return {
+      success: true,
+      settings: {
+        businessName: (settings == null ? void 0 : settings.businessName) || "",
+        taxId: (settings == null ? void 0 : settings.taxId) || "",
+        address: addressParts.address,
+        city: addressParts.city,
+        invoicePrefix: (settings == null ? void 0 : settings.invoicePrefix) || "FV",
+        defaultTaxRate: (settings == null ? void 0 : settings.defaultTaxRate) ?? 0.19,
+        allowNegativeStock: (settings == null ? void 0 : settings.allowNegativeStock) ?? false,
+        receiptFooter: (settings == null ? void 0 : settings.receiptFooter) || ""
+      }
+    };
+  });
+  ipcMain2.handle("settings:update", async (_event, payload) => {
+    const currentSessionUser2 = await ensureAdminSession(getCurrentSessionUser);
+    const parsed = businessSettingsSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Configuracion invalida" };
+    const data = parsed.data;
+    await prisma2.businessSettings.upsert({
+      where: { id: "default" },
+      update: {
+        businessName: data.businessName || null,
+        taxId: data.taxId || null,
+        address: mergeBusinessAddress(data.address, data.city),
+        invoicePrefix: data.invoicePrefix || "FV",
+        defaultTaxRate: data.defaultTaxRate ?? 0.19,
+        allowNegativeStock: data.allowNegativeStock ?? false,
+        receiptFooter: data.receiptFooter || null
+      },
+      create: {
+        id: "default",
+        businessName: data.businessName || null,
+        taxId: data.taxId || null,
+        address: mergeBusinessAddress(data.address, data.city),
+        invoicePrefix: data.invoicePrefix || "FV",
+        defaultTaxRate: data.defaultTaxRate ?? 0.19,
+        allowNegativeStock: data.allowNegativeStock ?? false,
+        receiptFooter: data.receiptFooter || null
+      }
+    });
+    await logAudit(prisma2, currentSessionUser2, "settings", "update", "BusinessSettings", "default", void 0, data);
+    return { success: true };
+  });
+  ipcMain2.handle("cash:summary", async () => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const [activeSession, recentSessions, platforms] = await Promise.all([
+      prisma2.cashSession.findFirst({
+        where: { status: CashSessionStatus.OPEN },
+        include: {
+          register: true,
+          user: { select: { username: true, name: true } },
+          sales: {
+            select: {
+              id: true,
+              invoiceNumber: true,
+              customer: true,
+              total: true,
+              paymentMethod: true,
+              createdAt: true
+            },
+            orderBy: { createdAt: "desc" }
+          },
+          movements: {
+            orderBy: { createdAt: "desc" }
+          },
+          correspondentTransactions: {
+            where: { status: "REGISTERED" },
+            include: {
+              platform: { select: { id: true, name: true } },
+              type: { select: { name: true, direction: true } }
+            },
+            orderBy: { performedAt: "desc" }
+          }
+        },
+        orderBy: { openedAt: "desc" }
+      }),
+      prisma2.cashSession.findMany({
+        include: {
+          register: true,
+          user: { select: { username: true, name: true } }
+        },
+        orderBy: { openedAt: "desc" },
+        take: 20
+      }),
+      prisma2.correspondentPlatform.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" }
+      })
+    ]);
+    if (!activeSession) {
+      return {
+        success: true,
+        activeSession: null,
+        recentSessions: recentSessions.map((session) => {
+          var _a;
+          return {
+            id: session.id,
+            registerName: session.register.name,
+            user: session.user.name ?? session.user.username,
+            status: session.status,
+            openedAt: session.openedAt.toISOString(),
+            closedAt: ((_a = session.closedAt) == null ? void 0 : _a.toISOString()) ?? null,
+            openingAmount: session.openingAmount,
+            countedAmount: session.countedAmount,
+            differenceAmount: session.differenceAmount
+          };
+        })
+      };
+    }
+    const sessionMeta = parseSessionMeta(activeSession.note);
+    const opening = sessionMeta.opening ?? {};
+    const closing = sessionMeta.closing ?? {};
+    const openingCorrespondent = opening.correspondentBalances || [];
+    const closingCorrespondent = closing.correspondentBalances || [];
+    const openingMap = new Map(openingCorrespondent.map((item) => [item.platformId, item.amount]));
+    const closingMap = new Map(closingCorrespondent.map((item) => [item.platformId, item.amount]));
+    const salesCash = activeSession.sales.filter((sale) => sale.paymentMethod === PaymentMethod.CASH).reduce((sum, sale) => sum + sale.total, 0);
+    const salesCard = activeSession.sales.filter((sale) => sale.paymentMethod === PaymentMethod.CARD).reduce((sum, sale) => sum + sale.total, 0);
+    const salesTransfer = activeSession.sales.filter((sale) => sale.paymentMethod === PaymentMethod.TRANSFER).reduce((sum, sale) => sum + sale.total, 0);
+    const manualIncome = activeSession.movements.filter((move) => move.type === CashMovementType.INCOME_IN).reduce((sum, move) => sum + move.amount, 0);
+    const manualExpense = activeSession.movements.filter((move) => move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT).reduce((sum, move) => sum + move.amount, 0);
+    const expectedCash = activeSession.openingAmount + salesCash + manualIncome - manualExpense;
+    const correspondentByPlatform = platforms.map((platform) => {
+      const platformTransactions = activeSession.correspondentTransactions.filter(
+        (transaction) => transaction.platform.id === platform.id
+      );
+      const totalIn = platformTransactions.filter((transaction) => transaction.type.direction === CorrespondentDirection.IN).reduce((sum, transaction) => sum + transaction.amount, 0);
+      const totalOut = platformTransactions.filter((transaction) => transaction.type.direction === CorrespondentDirection.OUT).reduce((sum, transaction) => sum + transaction.amount, 0);
+      const totalCommission = platformTransactions.reduce(
+        (sum, transaction) => sum + transaction.commissionAmount,
+        0
+      );
+      const openingAmount = openingMap.get(platform.id) ?? 0;
+      const expectedAmount = openingAmount + totalIn - totalOut + totalCommission;
+      const countedAmount = closingMap.get(platform.id) ?? null;
+      return {
+        platformId: platform.id,
+        platform: platform.name,
+        openingAmount,
+        totalIn,
+        totalOut,
+        totalCommission,
+        expectedAmount,
+        countedAmount,
+        differenceAmount: countedAmount === null ? null : countedAmount - expectedAmount
+      };
+    });
+    return {
+      success: true,
+      activeSession: {
+        id: activeSession.id,
+        registerName: activeSession.register.name,
+        user: activeSession.user.name ?? activeSession.user.username,
+        openedAt: activeSession.openedAt.toISOString(),
+        openingAmount: activeSession.openingAmount,
+        expectedCash,
+        countedCashAmount: activeSession.countedAmount,
+        cashDifferenceAmount: activeSession.countedAmount === null ? null : activeSession.countedAmount - expectedCash,
+        salesCash,
+        salesCard,
+        salesTransfer,
+        manualIncome,
+        manualExpense,
+        openingBreakdown: opening.cashBreakdown ?? {},
+        closingBreakdown: closing.cashBreakdown ?? {},
+        correspondent: correspondentByPlatform,
+        recentActivity: [
+          ...activeSession.sales.map((sale) => ({
+            id: sale.id,
+            createdAt: sale.createdAt.toISOString(),
+            type: "Venta",
+            detail: `${sale.invoiceNumber} - ${sale.customer}`,
+            amount: sale.total
+          })),
+          ...activeSession.correspondentTransactions.map((transaction) => ({
+            id: transaction.id,
+            createdAt: transaction.performedAt.toISOString(),
+            type: "Corresponsal",
+            detail: `${transaction.platform.name} - ${transaction.type.name}`,
+            amount: transaction.amount
+          })),
+          ...activeSession.movements.map((move) => ({
+            id: move.id,
+            createdAt: move.createdAt.toISOString(),
+            type: move.type,
+            detail: move.note || "Movimiento de caja",
+            amount: move.amount
+          }))
+        ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 30)
+      },
+      recentSessions: recentSessions.map((session) => {
+        var _a;
+        return {
+          id: session.id,
+          registerName: session.register.name,
+          user: session.user.name ?? session.user.username,
+          status: session.status,
+          openedAt: session.openedAt.toISOString(),
+          closedAt: ((_a = session.closedAt) == null ? void 0 : _a.toISOString()) ?? null,
+          openingAmount: session.openingAmount,
+          countedAmount: session.countedAmount,
+          differenceAmount: session.differenceAmount
+        };
+      })
+    };
+  });
+  ipcMain2.handle("cash:open", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = openCashSessionSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Datos invalidos para apertura de caja" };
+    const existing = await prisma2.cashSession.findFirst({
+      where: { status: CashSessionStatus.OPEN }
+    });
+    if (existing)
+      return { success: false, message: "Ya existe una caja abierta" };
+    const register = await prisma2.cashRegister.findFirst({
+      where: { isActive: true },
+      orderBy: { createdAt: "asc" }
+    });
+    if (!register)
+      return { success: false, message: "No hay caja activa configurada" };
+    const meta = stringifySessionMeta({
+      opening: {
+        cashBreakdown: parsed.data.cashBreakdown,
+        correspondentBalances: parsed.data.correspondentBalances,
+        note: parsed.data.note || null
+      }
+    });
+    const session = await prisma2.cashSession.create({
+      data: {
+        registerId: register.id,
+        userId: currentSessionUser2.id,
+        status: CashSessionStatus.OPEN,
+        openingAmount: parsed.data.openingCashAmount,
+        expectedAmount: parsed.data.openingCashAmount,
+        note: meta
+      }
+    });
+    await prisma2.cashMovement.create({
+      data: {
+        sessionId: session.id,
+        type: CashMovementType.OPENING,
+        amount: parsed.data.openingCashAmount,
+        note: parsed.data.note || "Apertura de caja"
+      }
+    });
+    return { success: true, sessionId: session.id };
+  });
+  ipcMain2.handle("cash:close", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = closeCashSessionSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Datos invalidos para cierre de caja" };
+    const session = await prisma2.cashSession.findUnique({
+      where: { id: parsed.data.sessionId },
+      include: {
+        sales: true,
+        movements: true,
+        correspondentTransactions: {
+          where: { status: "REGISTERED" },
+          include: {
+            type: { select: { direction: true } }
+          }
+        }
+      }
+    });
+    if (!session || session.status !== CashSessionStatus.OPEN) {
+      return { success: false, message: "La caja seleccionada no está abierta" };
+    }
+    const salesCash = session.sales.filter((sale) => sale.paymentMethod === PaymentMethod.CASH).reduce((sum, sale) => sum + sale.total, 0);
+    const manualIncome = session.movements.filter((move) => move.type === CashMovementType.INCOME_IN).reduce((sum, move) => sum + move.amount, 0);
+    const manualExpense = session.movements.filter((move) => move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT).reduce((sum, move) => sum + move.amount, 0);
+    const expectedCash = session.openingAmount + salesCash + manualIncome - manualExpense;
+    const differenceAmount = parsed.data.countedCashAmount - expectedCash;
+    const previousMeta = parseSessionMeta(session.note);
+    const updatedMeta = stringifySessionMeta({
+      ...previousMeta,
+      closing: {
+        cashBreakdown: parsed.data.cashBreakdown,
+        correspondentBalances: parsed.data.correspondentBalances,
+        note: parsed.data.note || null
+      }
+    });
+    await prisma2.$transaction(async (tx) => {
+      await tx.cashSession.update({
+        where: { id: session.id },
+        data: {
+          status: CashSessionStatus.CLOSED,
+          countedAmount: parsed.data.countedCashAmount,
+          expectedAmount: expectedCash,
+          differenceAmount,
+          note: updatedMeta,
+          closedAt: /* @__PURE__ */ new Date()
+        }
+      });
+      await tx.cashMovement.create({
+        data: {
+          sessionId: session.id,
+          type: CashMovementType.CLOSING,
+          amount: parsed.data.countedCashAmount,
+          note: parsed.data.note || "Cierre de caja"
+        }
+      });
+      if (differenceAmount !== 0) {
+        await tx.cashMovement.create({
+          data: {
+            sessionId: session.id,
+            type: CashMovementType.DIFFERENCE,
+            amount: differenceAmount,
+            note: "Diferencia de cierre"
+          }
+        });
+      }
+    });
+    return { success: true };
+  });
+  ipcMain2.handle("users:list", async () => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion", users: [] };
+    const users = await prisma2.user.findMany({
+      orderBy: [{ role: "asc" }, { username: "asc" }],
+      include: {
+        _count: {
+          select: {
+            sales: true,
+            cashSessions: true
+          }
+        }
+      }
+    });
+    return {
+      success: true,
+      users: users.map((user) => ({
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        role: user.role,
+        isActive: user.isActive,
+        createdAt: user.createdAt.toISOString(),
+        salesCount: user._count.sales,
+        sessionsCount: user._count.cashSessions
+      }))
+    };
+  });
+  ipcMain2.handle("products:categories:list", async () => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2) {
+      return { success: false, message: "Debes iniciar sesion", categories: [] };
+    }
+    const categories = await prisma2.productCategory.findMany({
+      orderBy: { name: "asc" },
+      include: {
+        subcategories: {
+          where: { isActive: true },
+          orderBy: { name: "asc" }
+        }
+      }
+    });
+    return {
+      success: true,
+      categories: categories.map((category) => ({
+        id: category.id,
+        name: category.name,
+        isActive: category.isActive,
+        subcategories: category.subcategories.map((subcategory) => ({
+          id: subcategory.id,
+          name: subcategory.name,
+          isActive: subcategory.isActive
+        }))
+      }))
+    };
+  });
+  ipcMain2.handle("products:list-admin", async () => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2) {
+      return { success: false, message: "Debes iniciar sesion", products: [] };
+    }
+    const products = await prisma2.product.findMany({
+      include: {
+        category: true,
+        subcategory: true
+      },
+      orderBy: { name: "asc" }
+    });
+    const productIds = products.map((product) => product.id);
+    const createdByMap = await getAuditUserMap(prisma2, "Product", productIds, "create");
+    const updatedByMap = await getAuditUserMap(prisma2, "Product", productIds, "update", true);
+    return {
+      success: true,
+      products: products.map((product) => {
+        var _a, _b;
+        return {
+          id: product.id,
+          name: product.name,
+          sku: product.sku,
+          barcode: product.barcode,
+          price: product.price,
+          cost: product.cost,
+          marginPercent: product.marginPercent,
+          hasTax: product.hasTax,
+          taxRate: product.taxRate,
+          stock: product.stock,
+          categoryId: product.categoryId,
+          subcategoryId: product.subcategoryId,
+          categoryName: ((_a = product.category) == null ? void 0 : _a.name) ?? null,
+          subcategoryName: ((_b = product.subcategory) == null ? void 0 : _b.name) ?? null,
+          isActive: product.isActive,
+          createdAt: product.createdAt.toISOString(),
+          updatedAt: product.updatedAt.toISOString(),
+          createdBy: createdByMap.get(product.id) ?? null,
+          updatedBy: updatedByMap.get(product.id) ?? createdByMap.get(product.id) ?? null
+        };
+      })
+    };
+  });
+  ipcMain2.handle("products:create", async (_event, payload) => {
+    var _a;
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = createProductSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Datos invalidos para el producto" };
+    const data = parsed.data;
+    const category = data.categoryId ? await prisma2.productCategory.findUnique({ where: { id: data.categoryId } }) : null;
+    const sku = ((_a = data.sku) == null ? void 0 : _a.trim()) || await generateSku(prisma2, data.name, category == null ? void 0 : category.name);
+    try {
+      const product = await prisma2.$transaction(async (tx) => {
+        const created = await tx.product.create({
+          data: {
+            name: data.name,
+            sku,
+            barcode: data.barcode || null,
+            price: money$1(data.price),
+            cost: money$1(data.cost ?? 0),
+            marginPercent: data.marginPercent ?? 0,
+            hasTax: data.hasTax ?? false,
+            taxRate: data.hasTax ? data.taxRate ?? 0 : 0,
+            stock: data.stock ?? 0,
+            categoryId: data.categoryId ?? null,
+            subcategoryId: data.subcategoryId ?? null,
+            isActive: data.isActive ?? true
+          }
+        });
+        if ((data.stock ?? 0) > 0) {
+          await tx.inventoryMovement.create({
+            data: {
+              productId: created.id,
+              type: InventoryMovementType.MANUAL_IN,
+              qty: data.stock ?? 0,
+              stockBefore: 0,
+              stockAfter: data.stock ?? 0,
+              referenceType: "PRODUCT_CREATE",
+              referenceId: created.id,
+              note: `Stock inicial registrado por ${actorLabel(currentSessionUser2)}`
+            }
+          });
+        }
+        return created;
+      });
+      await logAudit(prisma2, currentSessionUser2, "products", "create", "Product", product.id, void 0, {
+        name: product.name,
+        sku: product.sku
+      });
+      return { success: true, productId: product.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo crear el producto";
+      return { success: false, message };
+    }
+  });
+  ipcMain2.handle("products:update", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = updateProductSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Datos invalidos para actualizar el producto" };
+    const current = await prisma2.product.findUnique({ where: { id: parsed.data.id } });
+    if (!current)
+      return { success: false, message: "Producto no encontrado" };
+    try {
+      await prisma2.$transaction(async (tx) => {
+        await tx.product.update({
+          where: { id: parsed.data.id },
+          data: {
+            name: parsed.data.name ?? current.name,
+            sku: parsed.data.sku ?? current.sku,
+            barcode: parsed.data.barcode === void 0 ? current.barcode : parsed.data.barcode,
+            price: parsed.data.price === void 0 ? current.price : money$1(parsed.data.price),
+            cost: parsed.data.cost === void 0 ? current.cost : money$1(parsed.data.cost),
+            marginPercent: parsed.data.marginPercent ?? current.marginPercent,
+            hasTax: parsed.data.hasTax ?? current.hasTax,
+            taxRate: parsed.data.hasTax === false ? 0 : parsed.data.taxRate ?? current.taxRate,
+            stock: parsed.data.stock ?? current.stock,
+            categoryId: parsed.data.categoryId === void 0 ? current.categoryId : parsed.data.categoryId,
+            subcategoryId: parsed.data.subcategoryId === void 0 ? current.subcategoryId : parsed.data.subcategoryId,
+            isActive: parsed.data.isActive ?? current.isActive
+          }
+        });
+        if (parsed.data.stock !== void 0 && parsed.data.stock !== current.stock) {
+          const delta = parsed.data.stock - current.stock;
+          await tx.inventoryMovement.create({
+            data: {
+              productId: current.id,
+              type: delta > 0 ? InventoryMovementType.ADJUSTMENT_IN : InventoryMovementType.ADJUSTMENT_OUT,
+              qty: Math.abs(delta),
+              stockBefore: current.stock,
+              stockAfter: parsed.data.stock,
+              referenceType: "PRODUCT_EDIT",
+              referenceId: current.id,
+              note: `Ajuste manual por ${actorLabel(currentSessionUser2)}`
+            }
+          });
+        }
+      });
+      await logAudit(prisma2, currentSessionUser2, "products", "update", "Product", current.id, current, parsed.data);
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo actualizar el producto";
+      return { success: false, message };
+    }
+  });
+  ipcMain2.handle("products:delete", async (_event, payload) => {
+    const currentSessionUser2 = await ensureAdminSession(getCurrentSessionUser);
+    const parsed = deleteByIdSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Producto invalido" };
+    const current = await prisma2.product.findUnique({ where: { id: parsed.data.id } });
+    if (!current)
+      return { success: false, message: "Producto no encontrado" };
+    await prisma2.product.update({
+      where: { id: parsed.data.id },
+      data: { isActive: false }
+    });
+    await logAudit(prisma2, currentSessionUser2, "products", "archive", "Product", current.id, current, {
+      isActive: false
+    });
+    return { success: true };
+  });
+  ipcMain2.handle("products:category:create", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = createCategorySchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Categoria invalida" };
+    try {
+      await prisma2.productCategory.create({
+        data: { name: parsed.data.name, isActive: true }
+      });
+      return { success: true };
+    } catch {
+      return { success: false, message: "La categoria ya existe" };
+    }
+  });
+  ipcMain2.handle("products:category:delete", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = deleteByIdSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Categoria invalida" };
+    await prisma2.productCategory.delete({
+      where: { id: parsed.data.id }
+    });
+    return { success: true };
+  });
+  ipcMain2.handle("products:subcategory:create", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = createSubcategorySchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Subcategoria invalida" };
+    try {
+      await prisma2.productSubcategory.create({
+        data: {
+          categoryId: parsed.data.categoryId,
+          name: parsed.data.name,
+          isActive: true
+        }
+      });
+      return { success: true };
+    } catch {
+      return { success: false, message: "La subcategoria ya existe en esa categoria" };
+    }
+  });
+  ipcMain2.handle("products:subcategory:delete", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = deleteByIdSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Subcategoria invalida" };
+    await prisma2.productSubcategory.delete({
+      where: { id: parsed.data.id }
+    });
+    return { success: true };
+  });
+  ipcMain2.handle("customers:list", async () => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion", customers: [] };
+    const customers = await prisma2.customer.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        _count: {
+          select: { sales: true, credits: true }
+        }
+      }
+    });
+    const customerIds = customers.map((customer) => customer.id);
+    const createdByMap = await getAuditUserMap(prisma2, "Customer", customerIds, "create");
+    return {
+      success: true,
+      customers: customers.map((customer) => ({
+        id: customer.id,
+        name: customer.name,
+        document: customer.document,
+        phone: customer.phone,
+        email: customer.email,
+        address: customer.address,
+        isActive: customer.isActive,
+        salesCount: customer._count.sales,
+        creditsCount: customer._count.credits,
+        createdAt: customer.createdAt.toISOString(),
+        createdBy: createdByMap.get(customer.id) ?? null
+      }))
+    };
+  });
+  ipcMain2.handle("customers:create", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = createCustomerSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Datos invalidos para el cliente" };
+    try {
+      const customer = await prisma2.customer.create({
+        data: {
+          name: buildFullName(parsed.data.firstName, parsed.data.lastName),
+          document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
+          phone: parsed.data.phone || null,
+          email: parsed.data.email || null,
+          address: parsed.data.address || null,
+          creditLimit: 0,
+          notes: null,
+          isActive: parsed.data.isActive ?? true
+        }
+      });
+      await logAudit(prisma2, currentSessionUser2, "customers", "create", "Customer", customer.id, void 0, {
+        name: customer.name,
+        document: customer.document
+      });
+      return { success: true, customerId: customer.id };
+    } catch {
+      return { success: false, message: "No se pudo crear el cliente. Verifica documento o correo duplicado." };
+    }
+  });
+  ipcMain2.handle("customers:update", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = updateCustomerSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Datos invalidos para actualizar el cliente" };
+    const current = await prisma2.customer.findUnique({ where: { id: parsed.data.id } });
+    if (!current)
+      return { success: false, message: "Cliente no encontrado" };
+    const nextData = {
+      name: buildFullName(parsed.data.firstName, parsed.data.lastName),
+      document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
+      phone: parsed.data.phone || null,
+      email: parsed.data.email || null,
+      address: parsed.data.address || null,
+      isActive: parsed.data.isActive ?? current.isActive
+    };
+    try {
+      await prisma2.customer.update({
+        where: { id: current.id },
+        data: {
+          ...nextData,
+          creditLimit: 0,
+          notes: null
+        }
+      });
+      await logAudit(prisma2, currentSessionUser2, "customers", "update", "Customer", current.id, current, nextData);
+      return { success: true };
+    } catch {
+      return { success: false, message: "No se pudo actualizar el cliente. Verifica documento o correo duplicado." };
+    }
+  });
+  ipcMain2.handle("suppliers:list", async () => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion", suppliers: [] };
+    const suppliers = await prisma2.supplier.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        _count: {
+          select: { purchases: true }
+        }
+      }
+    });
+    const supplierIds = suppliers.map((supplier) => supplier.id);
+    const createdByMap = await getAuditUserMap(prisma2, "Supplier", supplierIds, "create");
+    return {
+      success: true,
+      suppliers: suppliers.map((supplier) => ({
+        id: supplier.id,
+        name: supplier.name,
+        document: supplier.taxId,
+        phone: supplier.phone,
+        email: supplier.email,
+        address: supplier.address,
+        contactName: supplier.contactName,
+        isActive: supplier.isActive,
+        purchasesCount: supplier._count.purchases,
+        createdAt: supplier.createdAt.toISOString(),
+        createdBy: createdByMap.get(supplier.id) ?? null
+      }))
+    };
+  });
+  ipcMain2.handle("suppliers:create", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = createSupplierSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Datos invalidos para el proveedor" };
+    try {
+      const supplier = await prisma2.supplier.create({
+        data: {
+          name: parsed.data.name,
+          taxId: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
+          phone: parsed.data.phone || null,
+          email: parsed.data.email || null,
+          address: parsed.data.address || null,
+          contactName: parsed.data.contactName || null,
+          isActive: parsed.data.isActive ?? true
+        }
+      });
+      await logAudit(prisma2, currentSessionUser2, "suppliers", "create", "Supplier", supplier.id, void 0, {
+        name: supplier.name,
+        taxId: supplier.taxId
+      });
+      return { success: true, supplierId: supplier.id };
+    } catch {
+      return { success: false, message: "No se pudo crear el proveedor. Verifica documento o correo duplicado." };
+    }
+  });
+  ipcMain2.handle("suppliers:update", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = updateSupplierSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Datos invalidos para actualizar el proveedor" };
+    const current = await prisma2.supplier.findUnique({ where: { id: parsed.data.id } });
+    if (!current)
+      return { success: false, message: "Proveedor no encontrado" };
+    const nextData = {
+      name: parsed.data.name,
+      taxId: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
+      phone: parsed.data.phone || null,
+      email: parsed.data.email || null,
+      address: parsed.data.address || null,
+      contactName: parsed.data.contactName || null,
+      isActive: parsed.data.isActive ?? current.isActive
+    };
+    try {
+      await prisma2.supplier.update({
+        where: { id: current.id },
+        data: nextData
+      });
+      await logAudit(prisma2, currentSessionUser2, "suppliers", "update", "Supplier", current.id, current, nextData);
+      return { success: true };
+    } catch {
+      return { success: false, message: "No se pudo actualizar el proveedor. Verifica documento o correo duplicado." };
+    }
+  });
+  ipcMain2.handle("purchases:list", async () => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion", purchases: [] };
+    const purchases = await prisma2.purchase.findMany({
+      include: {
+        supplier: {
+          select: { name: true }
+        },
+        items: {
+          select: { qty: true }
+        }
+      },
+      orderBy: { purchasedAt: "desc" },
+      take: 200
+    });
+    const purchaseIds = purchases.map((purchase) => purchase.id);
+    const createdByMap = await getAuditUserMap(prisma2, "Purchase", purchaseIds, "create");
+    return {
+      success: true,
+      purchases: purchases.map((purchase) => ({
+        id: purchase.id,
+        number: purchase.number,
+        supplierId: purchase.supplierId,
+        supplier: purchase.supplier.name,
+        status: purchase.status,
+        subtotal: purchase.subtotal,
+        tax: purchase.tax,
+        total: purchase.total,
+        balance: purchase.balance,
+        note: purchase.note,
+        purchasedAt: purchase.purchasedAt.toISOString(),
+        itemsCount: purchase.items.reduce((sum, item) => sum + item.qty, 0),
+        createdBy: createdByMap.get(purchase.id) ?? null
+      }))
+    };
+  });
+  ipcMain2.handle("purchases:get-detail", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = deleteByIdSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Compra invalida" };
+    const purchase = await prisma2.purchase.findUnique({
+      where: { id: parsed.data.id },
+      include: {
+        supplier: true,
+        items: {
+          include: {
+            product: {
+              select: { name: true, sku: true }
+            }
+          },
+          orderBy: { createdAt: "asc" }
+        }
+      }
+    });
+    if (!purchase)
+      return { success: false, message: "Compra no encontrada" };
+    const createdByMap = await getAuditUserMap(prisma2, "Purchase", [purchase.id], "create");
+    return {
+      success: true,
+      purchase: {
+        id: purchase.id,
+        number: purchase.number,
+        supplier: purchase.supplier.name,
+        status: purchase.status,
+        subtotal: purchase.subtotal,
+        tax: purchase.tax,
+        total: purchase.total,
+        balance: purchase.balance,
+        note: purchase.note,
+        purchasedAt: purchase.purchasedAt.toISOString(),
+        createdBy: createdByMap.get(purchase.id) ?? null,
+        items: purchase.items.map((item) => ({
+          id: item.id,
+          productName: item.product.name,
+          productSku: item.product.sku,
+          qty: item.qty,
+          cost: item.cost,
+          taxRate: item.taxRate,
+          subtotal: item.subtotal,
+          total: item.subtotal + money$1(item.subtotal * item.taxRate)
+        }))
+      }
+    };
+  });
+  ipcMain2.handle("purchases:create", async (_event, payload) => {
+    const currentSessionUser2 = await ensureAdminSession(getCurrentSessionUser);
+    const parsed = createPurchaseSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Datos invalidos para la compra" };
+    const supplier = await prisma2.supplier.findUnique({ where: { id: parsed.data.supplierId } });
+    if (!supplier)
+      return { success: false, message: "Proveedor no encontrado" };
+    const productIds = parsed.data.items.map((item) => item.productId);
+    const products = await prisma2.product.findMany({
+      where: {
+        id: { in: productIds },
+        isActive: true
+      }
+    });
+    if (products.length !== productIds.length) {
+      return { success: false, message: "Uno o más productos no están disponibles" };
+    }
+    const productMap = new Map(products.map((product) => [product.id, product]));
+    const normalizedItems = parsed.data.items.map((item) => {
+      const product = productMap.get(item.productId);
+      if (!product) {
+        throw new Error("Producto no encontrado");
+      }
+      const subtotal2 = money$1(item.cost * item.qty);
+      const tax2 = money$1(subtotal2 * (item.taxRate ?? 0));
+      return {
+        product,
+        qty: item.qty,
+        cost: money$1(item.cost),
+        taxRate: item.taxRate ?? 0,
+        subtotal: subtotal2,
+        tax: tax2,
+        total: subtotal2 + tax2
+      };
+    });
+    const subtotal = normalizedItems.reduce((sum, item) => sum + item.subtotal, 0);
+    const tax = normalizedItems.reduce((sum, item) => sum + item.tax, 0);
+    const total = subtotal + tax;
+    const purchasedAt = parsed.data.purchasedAt ? new Date(parsed.data.purchasedAt) : /* @__PURE__ */ new Date();
+    const status = parsed.data.markAsPaid ? PurchaseStatus.PAID : PurchaseStatus.RECEIVED;
+    const balance = parsed.data.markAsPaid ? 0 : total;
+    try {
+      const purchase = await prisma2.$transaction(async (tx) => {
+        const number = await generatePurchaseNumber(tx);
+        const createdPurchase = await tx.purchase.create({
+          data: {
+            supplierId: parsed.data.supplierId,
+            number,
+            status,
+            subtotal,
+            tax,
+            total,
+            balance,
+            note: parsed.data.note || null,
+            purchasedAt,
+            items: {
+              create: normalizedItems.map((item) => ({
+                productId: item.product.id,
+                qty: item.qty,
+                cost: item.cost,
+                taxRate: item.taxRate,
+                subtotal: item.subtotal
+              }))
+            }
+          }
+        });
+        for (const item of normalizedItems) {
+          const nextStock = item.product.stock + item.qty;
+          const weightedCost = nextStock <= 0 ? item.cost : money$1((item.product.stock * item.product.cost + item.subtotal) / nextStock);
+          const nextPrice = calculateSalePrice(
+            weightedCost,
+            item.product.marginPercent,
+            item.product.hasTax,
+            item.product.taxRate
+          );
+          await tx.product.update({
+            where: { id: item.product.id },
+            data: {
+              stock: nextStock,
+              cost: weightedCost,
+              price: nextPrice
+            }
+          });
+          await tx.inventoryMovement.create({
+            data: {
+              productId: item.product.id,
+              type: InventoryMovementType.PURCHASE_IN,
+              qty: item.qty,
+              stockBefore: item.product.stock,
+              stockAfter: nextStock,
+              referenceType: "PURCHASE",
+              referenceId: createdPurchase.id,
+              note: `${createdPurchase.number} - ${supplier.name} - registrado por ${actorLabel(currentSessionUser2)}`
+            }
+          });
+        }
+        return createdPurchase;
+      });
+      await logAudit(prisma2, currentSessionUser2, "purchases", "create", "Purchase", purchase.id, void 0, {
+        number: purchase.number,
+        supplier: supplier.name,
+        total: purchase.total
+      });
+      return { success: true, purchaseId: purchase.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo registrar la compra";
+      return { success: false, message };
+    }
+  });
+  ipcMain2.handle("inventory:list", async () => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion", moves: [] };
+    const moves = await prisma2.inventoryMovement.findMany({
+      include: {
+        product: {
+          select: { id: true, name: true, sku: true }
+        }
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200
+    });
+    return {
+      success: true,
+      moves: moves.map((move) => ({
+        id: move.id,
+        productId: move.productId,
+        productName: move.product.name,
+        productSku: move.product.sku,
+        type: move.type,
+        qty: move.qty,
+        stockBefore: move.stockBefore,
+        stockAfter: move.stockAfter,
+        referenceType: move.referenceType,
+        referenceId: move.referenceId,
+        note: move.note,
+        createdAt: move.createdAt.toISOString()
+      }))
+    };
+  });
+  ipcMain2.handle("sales:list", async (_event, payload) => {
+    var _a;
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion", sales: [] };
+    const parsed = salesListFilterSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Filtros invalidos", sales: [] };
+    const filters = parsed.data;
+    const query = (_a = filters.search) == null ? void 0 : _a.trim();
+    const sales = await prisma2.sale.findMany({
+      where: {
+        createdAt: filters.dateFrom || filters.dateTo ? {
+          ...filters.dateFrom ? { gte: new Date(filters.dateFrom) } : {},
+          ...filters.dateTo ? { lt: new Date(filters.dateTo) } : {}
+        } : void 0,
+        cashierId: filters.cashierId,
+        status: filters.status,
+        OR: query ? [
+          { invoiceNumber: { contains: query } },
+          { customer: { contains: query } }
+        ] : void 0
+      },
+      include: {
+        cashier: {
+          select: { username: true, name: true }
+        },
+        items: {
+          select: { qty: true }
+        }
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200
+    });
+    return {
+      success: true,
+      sales: sales.map((sale) => ({
+        id: sale.id,
+        invoiceNumber: sale.invoiceNumber,
+        customer: sale.customer,
+        paymentMethod: sale.paymentMethod,
+        subtotal: sale.subtotal,
+        tax: sale.tax,
+        total: sale.total,
+        status: sale.status,
+        createdAt: sale.createdAt.toISOString(),
+        cashier: sale.cashier.name ?? sale.cashier.username,
+        itemsCount: sale.items.reduce((sum, item) => sum + item.qty, 0)
+      }))
+    };
+  });
+  ipcMain2.handle("sales:get-detail", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = saleByIdSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Venta invalida" };
+    const sale = await prisma2.sale.findUnique({
+      where: { id: parsed.data.saleId },
+      include: {
+        cashier: {
+          select: { username: true, name: true }
+        },
+        items: {
+          orderBy: { createdAt: "asc" }
+        },
+        payments: true
+      }
+    });
+    if (!sale)
+      return { success: false, message: "Venta no encontrada" };
+    return {
+      success: true,
+      sale: {
+        id: sale.id,
+        invoiceNumber: sale.invoiceNumber,
+        customer: sale.customer,
+        paymentMethod: sale.paymentMethod,
+        subtotal: sale.subtotal,
+        tax: sale.tax,
+        total: sale.total,
+        status: sale.status,
+        createdAt: sale.createdAt.toISOString(),
+        cashier: sale.cashier.name ?? sale.cashier.username,
+        items: sale.items.map((item) => ({
+          id: item.id,
+          name: item.name,
+          qty: item.qty,
+          price: item.price,
+          taxRate: item.taxRate,
+          lineSubtotal: item.lineSubtotal,
+          lineTax: item.lineTax,
+          lineTotal: item.lineTotal
+        })),
+        payments: sale.payments.map((payment) => ({
+          id: payment.id,
+          method: payment.method,
+          amount: payment.amount,
+          reference: payment.reference
+        }))
+      }
+    };
+  });
+  ipcMain2.handle("sales:print-invoice", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    const parsed = saleByIdSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Venta invalida" };
+    const [sale, settings] = await Promise.all([
+      prisma2.sale.findUnique({
+        where: { id: parsed.data.saleId },
+        include: {
+          cashier: { select: { username: true, name: true } },
+          items: { orderBy: { createdAt: "asc" } }
+        }
+      }),
+      prisma2.businessSettings.findUnique({
+        where: { id: "default" }
+      })
+    ]);
+    if (!sale)
+      return { success: false, message: "Venta no encontrada" };
+    const addressParts = splitBusinessAddress(settings == null ? void 0 : settings.address);
+    const html = buildInvoiceHtml({
+      businessName: settings == null ? void 0 : settings.businessName,
+      taxId: settings == null ? void 0 : settings.taxId,
+      address: addressParts.address,
+      city: addressParts.city,
+      receiptFooter: settings == null ? void 0 : settings.receiptFooter,
+      invoiceNumber: sale.invoiceNumber,
+      customer: sale.customer,
+      paymentMethod: sale.paymentMethod,
+      total: sale.total,
+      subtotal: sale.subtotal,
+      tax: sale.tax,
+      createdAt: sale.createdAt,
+      cashier: sale.cashier,
+      items: sale.items.map((item) => ({
+        name: item.name,
+        qty: item.qty,
+        price: item.price,
+        lineTotal: item.lineTotal
+      }))
+    });
+    const printWindow = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        sandbox: false
+      }
+    });
+    await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    return await new Promise((resolve) => {
+      printWindow.webContents.print(
+        {
+          silent: false,
+          printBackground: true
+        },
+        (success, failureReason) => {
+          printWindow.close();
+          if (!success) {
+            resolve({ success: false, message: failureReason || "No se pudo imprimir" });
+            return;
+          }
+          resolve({ success: true });
+        }
+      );
+    });
+  });
+}
 const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname$1, "..");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
@@ -3755,6 +2526,8 @@ const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
 let win = null;
 let prisma;
+let appConnectedAt = /* @__PURE__ */ new Date();
+let currentSessionUser = null;
 function createWindow() {
   win = new BrowserWindow({
     icon: path.join(process.env.VITE_PUBLIC, "mascot.png"),
@@ -3774,20 +2547,60 @@ function createWindow() {
     win.loadFile(path.join(RENDERER_DIST, "index.html"));
   }
 }
-async function seedAdminIfNeeded() {
-  const count = await prisma.user.count();
-  if (count > 0) return;
-  const passwordHash = await bcrypt.hash("admin123", 10);
-  await prisma.user.create({
+function getSeedConfig() {
+  const enabled = (process.env.SEED_ADMIN_ENABLED ?? "false").toLowerCase() === "true";
+  const username = process.env.SEED_ADMIN_USERNAME ?? "admin";
+  const name = process.env.SEED_ADMIN_NAME ?? "Administrador";
+  const password = process.env.SEED_ADMIN_PASSWORD ?? "";
+  const bcryptRounds = Number(process.env.BCRYPT_ROUNDS ?? "10");
+  if (enabled && password.trim().length < 8) {
+    throw new Error("SEED_ADMIN_PASSWORD es obligatorio y debe tener minimo 8 caracteres.");
+  }
+  if (!Number.isFinite(bcryptRounds) || bcryptRounds < 8 || bcryptRounds > 15) {
+    throw new Error("BCRYPT_ROUNDS invalido. Usa un valor entre 8 y 15.");
+  }
+  return { enabled, username, name, password, bcryptRounds };
+}
+async function seedAdminIfNeeded(prismaClient) {
+  const cfg = getSeedConfig();
+  if (!cfg.enabled)
+    return;
+  const adminExists = await prismaClient.user.findFirst({ where: { role: Role.ADMIN } });
+  if (adminExists)
+    return;
+  const passwordHash = await bcrypt.hash(cfg.password, cfg.bcryptRounds);
+  await prismaClient.user.create({
     data: {
-      username: "admin",
-      name: "Administrador",
+      username: cfg.username,
+      name: cfg.name,
       role: Role.ADMIN,
       passwordHash,
       isActive: true
     }
   });
-  console.log("Admin inicial creado: admin / admin123");
+}
+async function seedCoreConfigIfNeeded(prismaClient) {
+  await prismaClient.businessSettings.upsert({
+    where: { id: "default" },
+    update: {},
+    create: {
+      id: "default",
+      businessName: "Mi Miscelanea",
+      currencyCode: "COP",
+      defaultTaxRate: 0.19,
+      invoicePrefix: "FV",
+      lowStockThreshold: 5
+    }
+  });
+  await prismaClient.cashRegister.upsert({
+    where: { name: "Caja principal" },
+    update: {},
+    create: {
+      name: "Caja principal",
+      branchName: "Tienda principal",
+      isActive: true
+    }
+  });
 }
 async function logLoginEvent(params) {
   try {
@@ -3808,11 +2621,54 @@ async function logLoginEvent(params) {
     console.error("Error registrando login:", error);
   }
 }
+function money(value) {
+  return Math.round(value);
+}
+function startOfRange(range) {
+  const now = /* @__PURE__ */ new Date();
+  if (range === "day") {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+  if (range === "week") {
+    const start = new Date(now);
+    const day = start.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    start.setDate(start.getDate() - diff);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+function buildInvoiceNumber(prefix, sequence) {
+  return `${prefix}-${String(sequence).padStart(6, "0")}`;
+}
+async function bootstrapAppData() {
+  await ensureCorrespondentSchemaIfNeeded(prisma);
+  await seedAdminIfNeeded(prisma);
+  await seedCoreConfigIfNeeded(prisma);
+  await seedCorrespondentCatalogIfNeeded(prisma);
+  registerCorrespondentIpcHandlers({
+    app,
+    ipcMain,
+    prisma,
+    getCurrentSessionUser: () => currentSessionUser
+  });
+}
 app.whenReady().then(async () => {
-  process.env.DATABASE_URL = `file:${path.join(app.getPath("userData"), "app.db")}`;
+  const dbPath = path.join(app.getPath("userData"), "app.db").replace(/\\/g, "/");
+  process.env.DATABASE_URL = `file:${dbPath}`;
   prisma = new PrismaClient();
-  await seedAdminIfNeeded();
+  appConnectedAt = /* @__PURE__ */ new Date();
+  registerBackofficeIpcHandlers({
+    ipcMain,
+    prisma,
+    getCurrentSessionUser: () => currentSessionUser,
+    getConnectedAt: () => appConnectedAt
+  });
   createWindow();
+  void bootstrapAppData().catch((error) => {
+    console.error("Error inicializando modulos en segundo plano:", error);
+  });
 });
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
@@ -3827,7 +2683,7 @@ ipcMain.handle("auth:login", async (_event, payload) => {
       success: false,
       reason: "invalid_payload"
     });
-    return { success: false, message: "Datos inválidos" };
+    return { success: false, message: "Datos invalidos" };
   }
   const { username, password } = parsed.data;
   const user = await prisma.user.findUnique({
@@ -3839,7 +2695,7 @@ ipcMain.handle("auth:login", async (_event, payload) => {
       success: false,
       reason: "user_not_found_or_inactive"
     });
-    return { success: false, message: "Usuario o contraseña incorrectos" };
+    return { success: false, message: "Usuario o contrasena incorrectos" };
   }
   const match = await bcrypt.compare(password, user.passwordHash);
   if (!match) {
@@ -3849,46 +2705,285 @@ ipcMain.handle("auth:login", async (_event, payload) => {
       success: false,
       reason: "wrong_password"
     });
-    return { success: false, message: "Usuario o contraseña incorrectos" };
+    return { success: false, message: "Usuario o contrasena incorrectos" };
   }
   await logLoginEvent({
     userId: user.id,
     username,
     success: true
   });
+  currentSessionUser = {
+    id: user.id,
+    username: user.username,
+    name: user.name ?? void 0,
+    role: user.role
+  };
   return {
     success: true,
-    user: {
-      id: user.id,
-      username: user.username,
-      name: user.name ?? void 0,
-      role: user.role
-    }
+    user: currentSessionUser
   };
 });
 ipcMain.handle("auth:createUser", async (_event, payload) => {
   const parsed = createUserInputSchema.safeParse(payload);
-  if (!parsed.success) return { success: false, message: "Datos inválidos" };
-  const { newUsername, newPassword, adminUsername } = parsed.data;
-  const admin = await prisma.user.findUnique({
-    where: { username: adminUsername }
-  });
-  if (!admin || admin.role !== Role.ADMIN) {
+  if (!parsed.success)
+    return { success: false, message: "Datos invalidos" };
+  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
     return { success: false, message: "Solo admins pueden crear usuarios" };
   }
+  const { newUsername, newPassword, name, role } = parsed.data;
   const passwordHash = await bcrypt.hash(newPassword, 10);
   try {
     await prisma.user.create({
       data: {
         username: newUsername,
+        name: (name == null ? void 0 : name.trim()) || null,
         passwordHash,
-        role: Role.EMPLOYEE
+        role: role ?? Role.EMPLOYEE
       }
     });
     return { success: true };
   } catch {
     return { success: false, message: "Usuario duplicado" };
   }
+});
+ipcMain.handle("auth:logout", async () => {
+  currentSessionUser = null;
+  return { success: true };
+});
+ipcMain.handle("products:list", async () => {
+  const products = await prisma.product.findMany({
+    where: { isActive: true, stock: { gt: 0 } },
+    include: {
+      category: true,
+      subcategory: true
+    },
+    orderBy: { name: "asc" }
+  });
+  return products.map((product) => {
+    var _a, _b;
+    return {
+      id: product.id,
+      name: product.name,
+      sku: product.sku,
+      barcode: product.barcode,
+      price: product.price,
+      cost: product.cost,
+      taxRate: product.taxRate,
+      stock: product.stock,
+      category: ((_a = product.category) == null ? void 0 : _a.name) ?? null,
+      subcategory: ((_b = product.subcategory) == null ? void 0 : _b.name) ?? null
+    };
+  });
+});
+ipcMain.handle("sales:create", async (_event, payload) => {
+  if (!currentSessionUser) {
+    return { success: false, message: "Debes iniciar sesion para vender" };
+  }
+  const parsed = createSaleSchema.safeParse(payload);
+  if (!parsed.success) {
+    return { success: false, message: "Datos invalidos para la venta" };
+  }
+  const productIds = parsed.data.items.map((item) => item.productId);
+  const products = await prisma.product.findMany({
+    where: {
+      id: { in: productIds },
+      isActive: true
+    }
+  });
+  if (products.length !== productIds.length) {
+    return { success: false, message: "Uno o mas productos ya no estan disponibles" };
+  }
+  const productMap = new Map(products.map((product) => [product.id, product]));
+  const normalizedItems = parsed.data.items.map((item) => {
+    const product = productMap.get(item.productId);
+    if (!product) {
+      throw new Error("Producto no encontrado");
+    }
+    if (product.stock < item.qty) {
+      throw new Error(`Stock insuficiente para ${product.name}`);
+    }
+    const lineSubtotal = money(product.price * item.qty);
+    const lineTax = money(lineSubtotal * product.taxRate);
+    const lineTotal = lineSubtotal + lineTax;
+    const lineProfit = money((product.price - product.cost) * item.qty);
+    return {
+      product,
+      qty: item.qty,
+      lineSubtotal,
+      lineTax,
+      lineTotal,
+      lineProfit
+    };
+  });
+  const subtotal = normalizedItems.reduce((sum, item) => sum + item.lineSubtotal, 0);
+  const tax = normalizedItems.reduce((sum, item) => sum + item.lineTax, 0);
+  const total = subtotal + tax;
+  const costTotal = normalizedItems.reduce((sum, item) => sum + item.product.cost * item.qty, 0);
+  const profit = normalizedItems.reduce((sum, item) => sum + item.lineProfit, 0);
+  const amountPaid = parsed.data.amountPaid ?? total;
+  const changeAmount = parsed.data.paymentMethod === "CASH" ? Math.max(0, amountPaid - total) : 0;
+  if (parsed.data.clientTotal !== void 0 && Math.abs(parsed.data.clientTotal - total) > 1) {
+    return { success: false, message: "El total enviado no coincide con el calculo del sistema" };
+  }
+  if (parsed.data.paymentMethod === "CASH" && amountPaid < total) {
+    return { success: false, message: "El efectivo recibido no alcanza para cubrir la venta" };
+  }
+  try {
+    const sale = await prisma.$transaction(async (tx) => {
+      const nextSequence = await tx.sale.count() + 1;
+      const businessSettings = await tx.businessSettings.findUnique({
+        where: { id: "default" },
+        select: { invoicePrefix: true }
+      });
+      const invoiceNumber = buildInvoiceNumber((businessSettings == null ? void 0 : businessSettings.invoicePrefix) || "FV", nextSequence);
+      const activeCashSession = await tx.cashSession.findFirst({
+        where: {
+          userId: currentSessionUser.id,
+          status: "OPEN"
+        },
+        orderBy: { openedAt: "desc" }
+      });
+      const createdSale = await tx.sale.create({
+        data: {
+          invoiceNumber,
+          customer: parsed.data.customer,
+          paymentMethod: parsed.data.paymentMethod,
+          subtotal,
+          tax,
+          total,
+          costTotal,
+          profit,
+          cashierId: currentSessionUser.id,
+          cashSessionId: (activeCashSession == null ? void 0 : activeCashSession.id) ?? null,
+          items: {
+            create: normalizedItems.map((item) => ({
+              productId: item.product.id,
+              sku: item.product.sku,
+              barcode: item.product.barcode,
+              name: item.product.name,
+              price: item.product.price,
+              cost: item.product.cost,
+              qty: item.qty,
+              taxRate: item.product.taxRate,
+              lineSubtotal: item.lineSubtotal,
+              lineTax: item.lineTax,
+              lineTotal: item.lineTotal,
+              lineProfit: item.lineProfit
+            }))
+          },
+          payments: {
+            create: {
+              method: parsed.data.paymentMethod,
+              amount: amountPaid
+            }
+          }
+        }
+      });
+      if (activeCashSession && parsed.data.paymentMethod === "CASH") {
+        await tx.cashMovement.create({
+          data: {
+            sessionId: activeCashSession.id,
+            type: CashMovementType.SALE_IN,
+            amount: total,
+            note: createdSale.invoiceNumber
+          }
+        });
+      }
+      for (const item of normalizedItems) {
+        await tx.product.update({
+          where: { id: item.product.id },
+          data: {
+            stock: { decrement: item.qty }
+          }
+        });
+        await tx.inventoryMovement.create({
+          data: {
+            productId: item.product.id,
+            type: InventoryMovementType.SALE_OUT,
+            qty: item.qty,
+            stockBefore: item.product.stock,
+            stockAfter: item.product.stock - item.qty,
+            referenceType: "SALE",
+            referenceId: createdSale.id,
+            note: createdSale.invoiceNumber
+          }
+        });
+      }
+      return createdSale;
+    });
+    return {
+      success: true,
+      saleId: sale.id,
+      invoiceNumber: sale.invoiceNumber,
+      total,
+      amountPaid,
+      changeAmount
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo registrar la venta";
+    return { success: false, message };
+  }
+});
+ipcMain.handle("dashboard:stats", async (_event, range = "day") => {
+  const normalizedRange = ["day", "week", "month"].includes(range) ? range : "day";
+  const startDate = startOfRange(normalizedRange);
+  const sales = await prisma.sale.findMany({
+    where: { createdAt: { gte: startDate } },
+    include: { items: true },
+    orderBy: { createdAt: "desc" }
+  });
+  const revenue = sales.reduce((sum, sale) => sum + sale.total, 0);
+  const profit = sales.reduce((sum, sale) => sum + sale.profit, 0);
+  const tax = sales.reduce((sum, sale) => sum + sale.tax, 0);
+  const averageTicket = sales.length > 0 ? money(revenue / sales.length) : 0;
+  const paymentSummary = sales.reduce((acc, sale) => {
+    acc[sale.paymentMethod] = (acc[sale.paymentMethod] ?? 0) + sale.total;
+    return acc;
+  }, {});
+  const topProductsMap = sales.flatMap((sale) => sale.items).reduce((acc, item) => {
+    const current = acc[item.name] ?? { name: item.name, qty: 0, total: 0 };
+    current.qty += item.qty;
+    current.total += item.lineTotal;
+    acc[item.name] = current;
+    return acc;
+  }, {});
+  const topProducts = Object.values(topProductsMap).sort((a, b) => b.qty - a.qty).slice(0, 5);
+  const lowStock = await prisma.product.findMany({
+    where: { isActive: true },
+    orderBy: [{ stock: "asc" }, { name: "asc" }],
+    take: 5,
+    select: {
+      id: true,
+      name: true,
+      stock: true,
+      sku: true
+    }
+  });
+  return {
+    range: normalizedRange,
+    totals: {
+      salesCount: sales.length,
+      revenue,
+      profit,
+      tax,
+      averageTicket
+    },
+    paymentSummary: [
+      { label: "Efectivo", value: paymentSummary.CASH ?? 0 },
+      { label: "Tarjeta", value: paymentSummary.CARD ?? 0 },
+      { label: "Transferencia", value: paymentSummary.TRANSFER ?? 0 }
+    ],
+    topProducts,
+    recentSales: sales.slice(0, 6).map((sale) => ({
+      id: sale.id,
+      invoiceNumber: sale.invoiceNumber,
+      customer: sale.customer,
+      total: sale.total,
+      createdAt: sale.createdAt.toISOString(),
+      itemsCount: sale.items.length
+    })),
+    lowStock
+  };
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
@@ -3902,5 +2997,6 @@ app.on("quit", async () => {
 export {
   MAIN_DIST,
   RENDERER_DIST,
-  VITE_DEV_SERVER_URL
+  VITE_DEV_SERVER_URL,
+  seedAdminIfNeeded
 };
