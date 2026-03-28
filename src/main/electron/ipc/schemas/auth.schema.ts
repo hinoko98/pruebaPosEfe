@@ -25,9 +25,10 @@ export const loginResultSchema = z.object({
 export type LoginResult = z.infer<typeof loginResultSchema>;
 
 export const createUserInputSchema = z.object({
+  name: z.string().trim().min(2).max(120).optional(),
   newUsername: z.string().trim().min(3).max(50),
   newPassword: z.string().min(6).max(200),
-  adminUsername: z.string().trim().min(1).max(50),
+  role: roleSchema.optional().default("EMPLOYEE"),
 });
 
 export type CreateUserInput = z.infer<typeof createUserInputSchema>;
