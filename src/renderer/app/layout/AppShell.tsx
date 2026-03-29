@@ -1,12 +1,10 @@
-import { useState } from "react";
-import { Outlet, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Outlet } from "react-router-dom";
 
 import Box from "@mui/material/Box";
 import CssBaseline from "@mui/material/CssBaseline";
 import Drawer from "@mui/material/Drawer";
 import Toolbar from "@mui/material/Toolbar";
-
-import { useAuth } from "@/features/auth/hooks/useAuth";
 
 import SideMenu, { MenuItem } from "./SideMenu";
 import AppHeader from "./AppHeader";
@@ -29,22 +27,35 @@ export default function AppShell({
   onSync,
 }: AppShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(true);
+  const [syncLabel, setSyncLabel] = useState(lastSyncText ?? "Cargando...");
 
-  const { logout } = useAuth();
-  const navigate = useNavigate();
+  const refreshSyncStatus = async () => {
+    if (!window.api?.getAppStatus) {
+      setSyncLabel(lastSyncText ?? "Sin datos");
+      return;
+    }
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login", { replace: true });
+    const response = await window.api.getAppStatus();
+    if (!response.success) {
+      setSyncLabel(lastSyncText ?? "Sin datos");
+      return;
+    }
+
+    setSyncLabel(new Date(response.connectedAt).toLocaleString("es-CO"));
   };
+
+  useEffect(() => {
+    void refreshSyncStatus();
+  }, []);
 
   const drawer = (
     <SideMenu
-      title={title}
       menu={menu}
-      onLogout={handleLogout}
-      lastSyncText={lastSyncText}
-      onSync={onSync}
+      lastSyncText={syncLabel}
+      onSync={() => {
+        void refreshSyncStatus();
+        onSync?.();
+      }}
     />
   );
 

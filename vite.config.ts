@@ -6,6 +6,12 @@ import tailwindcss from "@tailwindcss/vite";
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  optimizeDeps: {
+    include: [
+      "@mui/icons-material/VisibilityOutlined",
+      "@mui/icons-material/EditOutlined",
+    ],
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -22,6 +28,7 @@ export default defineConfig({
                 "node:path",
                 "node:os",
                 "node:fs",
+                "node:fs/promises",
                 "node:crypto",
                 // Dependencias pesadas que NO deben empaquetarse
                 "electron",

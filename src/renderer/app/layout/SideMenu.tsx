@@ -9,11 +9,9 @@ import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
 import Collapse from "@mui/material/Collapse";
 import Typography from "@mui/material/Typography";
-import Toolbar from "@mui/material/Toolbar";
 import IconButton from "@mui/material/IconButton";
 
 import HomeIcon from "@mui/icons-material/Home";
-import DescriptionIcon from "@mui/icons-material/Description";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
@@ -22,7 +20,6 @@ import PeopleAltIcon from "@mui/icons-material/PeopleAlt";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import LogoutIcon from "@mui/icons-material/Logout";
 import SyncIcon from "@mui/icons-material/Sync";
 
 export type MenuItem =
@@ -46,15 +43,11 @@ export type MenuItem =
   | { type: "divider" };
 
 export default function SideMenu({
-  title = "POS",
   menu,
-  onLogout,
   lastSyncText,
   onSync,
 }: {
-  title?: string;
   menu: MenuItem[];
-  onLogout: () => void;
   lastSyncText?: string;
   onSync?: () => void;
 }) {
