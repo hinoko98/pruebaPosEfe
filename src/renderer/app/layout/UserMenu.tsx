@@ -14,9 +14,6 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import SettingsIcon from "@mui/icons-material/Settings";
 import SecurityIcon from "@mui/icons-material/Security";
 import PersonIcon from "@mui/icons-material/Person";
-import AppsIcon from "@mui/icons-material/Apps";
-import MonitorIcon from "@mui/icons-material/Monitor";
-import BarChartIcon from "@mui/icons-material/BarChart";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 
 export type Role = "ADMIN" | "EMPLOYEE";
@@ -180,6 +177,7 @@ export function defaultUserMenuItems(
       label: "Configuraciones",
       icon: <SettingsIcon />,
       path: `${basePath}/settings`,
+      roles: ["ADMIN"],
     },
   ];
 }
