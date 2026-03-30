@@ -15,12 +15,14 @@ import {
 } from "@prisma/client";
 
 import { createProductSchema, updateProductSchema } from "../ipc/schemas/product.schema";
+import { APP_PERMISSION_KEYS } from "../../renderer/features/user/app-permissions";
 
 type CurrentSessionUser = {
   id: string;
   username: string;
   role: Role;
   name?: string;
+  permissions?: string[];
 } | null;
 
 type RegisterBackofficeHandlersArgs = {
@@ -178,10 +180,18 @@ function paymentMethodLabel(value: PaymentMethod) {
   return "Efectivo";
 }
 
+function paymentSummaryLabel(
+  payments: Array<{ method: PaymentMethod; amount: number }> | undefined,
+  fallback: PaymentMethod
+) {
+  if (!payments || payments.length <= 1) return paymentMethodLabel(fallback);
+  return payments.map((payment) => `${paymentMethodLabel(payment.method)} $${payment.amount.toLocaleString("es-CO")}`).join(" + ");
+}
+
 function buildInvoiceHtml(sale: {
   invoiceNumber: string;
   customer: string;
-  paymentMethod: PaymentMethod;
+  paymentSummary: string;
   total: number;
   subtotal: number;
   tax: number;
@@ -237,7 +247,7 @@ function buildInvoiceHtml(sale: {
             <div>Fecha: ${sale.createdAt.toLocaleString("es-CO")}</div>
             <div>Cliente: ${sale.customer}</div>
             <div>Cajero: ${sale.cashier.name ?? sale.cashier.username}</div>
-            <div>Pago: ${paymentMethodLabel(sale.paymentMethod)}</div>
+            <div>Pago: ${sale.paymentSummary}</div>
           </div>
         </div>
 
@@ -269,6 +279,27 @@ async function ensureAdminSession(getCurrentSessionUser: () => CurrentSessionUse
   if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
     throw new Error("Solo admins pueden ejecutar esta accion");
   }
+  return currentSessionUser;
+}
+
+function hasSessionPermission(currentSessionUser: CurrentSessionUser, permissionKey?: string) {
+  if (!permissionKey) return true;
+  return Boolean(currentSessionUser?.permissions?.includes(permissionKey));
+}
+
+function ensureSessionPermission(
+  currentSessionUser: CurrentSessionUser,
+  permissionKey: string,
+  message: string
+) {
+  if (!currentSessionUser) {
+    throw new Error("Debes iniciar sesion");
+  }
+
+  if (!hasSessionPermission(currentSessionUser, permissionKey)) {
+    throw new Error(message);
+  }
+
   return currentSessionUser;
 }
 
@@ -772,6 +803,12 @@ export function registerBackofficeIpcHandlers({
     const users = await prisma.user.findMany({
       orderBy: [{ role: "asc" }, { username: "asc" }],
       include: {
+        roleProfile: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         _count: {
           select: {
             sales: true,
@@ -786,8 +823,16 @@ export function registerBackofficeIpcHandlers({
       users: users.map((user) => ({
         id: user.id,
         name: user.name,
+        firstName: user.firstName ?? user.name,
+        lastName: user.lastName,
         username: user.username,
+        documentNumber: user.documentNumber,
+        email: user.email,
+        address: user.address,
+        birthDate: user.birthDate?.toISOString().slice(0, 10) ?? null,
         role: user.role,
+        roleProfileId: user.roleProfile?.id ?? null,
+        roleProfileName: user.roleProfile?.name ?? null,
         isActive: user.isActive,
         createdAt: user.createdAt.toISOString(),
         salesCount: user._count.sales,
@@ -851,6 +896,7 @@ export function registerBackofficeIpcHandlers({
         name: product.name,
         sku: product.sku,
         barcode: product.barcode,
+        unitMeasure: product.unitMeasure,
         price: product.price,
         cost: product.cost,
         marginPercent: product.marginPercent,
@@ -873,6 +919,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("products:create", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.productsCreate)) {
+      return { success: false, message: "Tu rol no puede crear productos" };
+    }
     const parsed = createProductSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Datos invalidos para el producto" };
 
@@ -889,6 +938,7 @@ export function registerBackofficeIpcHandlers({
             name: data.name,
             sku,
             barcode: data.barcode || null,
+            unitMeasure: data.unitMeasure ?? "UNIDAD",
             price: money(data.price),
             cost: money(data.cost ?? 0),
             marginPercent: data.marginPercent ?? 0,
@@ -934,6 +984,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("products:update", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.productsEdit)) {
+      return { success: false, message: "Tu rol no puede editar productos" };
+    }
     const parsed = updateProductSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Datos invalidos para actualizar el producto" };
 
@@ -948,6 +1001,7 @@ export function registerBackofficeIpcHandlers({
             name: parsed.data.name ?? current.name,
             sku: parsed.data.sku ?? current.sku,
             barcode: parsed.data.barcode === undefined ? current.barcode : parsed.data.barcode,
+            unitMeasure: parsed.data.unitMeasure ?? current.unitMeasure,
             price: parsed.data.price === undefined ? current.price : money(parsed.data.price),
             cost: parsed.data.cost === undefined ? current.cost : money(parsed.data.cost),
             marginPercent: parsed.data.marginPercent ?? current.marginPercent,
@@ -989,6 +1043,9 @@ export function registerBackofficeIpcHandlers({
 
   ipcMain.handle("products:delete", async (_event, payload) => {
     const currentSessionUser = await ensureAdminSession(getCurrentSessionUser);
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.productsDelete)) {
+      return { success: false, message: "Tu rol no puede archivar productos" };
+    }
     const parsed = deleteByIdSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Producto invalido" };
 
@@ -1010,6 +1067,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("products:category:create", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.productsEdit)) {
+      return { success: false, message: "Tu rol no puede administrar categorias" };
+    }
     const parsed = createCategorySchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Categoria invalida" };
 
@@ -1026,6 +1086,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("products:category:delete", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.productsEdit)) {
+      return { success: false, message: "Tu rol no puede administrar categorias" };
+    }
     const parsed = deleteByIdSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Categoria invalida" };
 
@@ -1038,6 +1101,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("products:subcategory:create", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.productsEdit)) {
+      return { success: false, message: "Tu rol no puede administrar subcategorias" };
+    }
     const parsed = createSubcategorySchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Subcategoria invalida" };
 
@@ -1058,6 +1124,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("products:subcategory:delete", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.productsEdit)) {
+      return { success: false, message: "Tu rol no puede administrar subcategorias" };
+    }
     const parsed = deleteByIdSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Subcategoria invalida" };
 
@@ -1103,6 +1172,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("customers:create", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.customersCreate)) {
+      return { success: false, message: "Tu rol no puede crear clientes" };
+    }
 
     const parsed = createCustomerSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Datos invalidos para el cliente" };
@@ -1135,6 +1207,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("customers:update", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.customersEdit)) {
+      return { success: false, message: "Tu rol no puede editar clientes" };
+    }
     const parsed = updateCustomerSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Datos invalidos para actualizar el cliente" };
 
@@ -1203,6 +1278,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("suppliers:create", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.suppliersCreate)) {
+      return { success: false, message: "Tu rol no puede crear proveedores" };
+    }
     const parsed = createSupplierSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Datos invalidos para el proveedor" };
 
@@ -1233,6 +1311,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("suppliers:update", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.suppliersEdit)) {
+      return { success: false, message: "Tu rol no puede editar proveedores" };
+    }
     const parsed = updateSupplierSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Datos invalidos para actualizar el proveedor" };
 
@@ -1304,6 +1385,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("purchases:get-detail", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.purchasesDetails)) {
+      return { success: false, message: "Tu rol no puede ver el detalle de compras" };
+    }
 
     const parsed = deleteByIdSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Compra invalida" };
@@ -1357,6 +1441,9 @@ export function registerBackofficeIpcHandlers({
 
   ipcMain.handle("purchases:create", async (_event, payload) => {
     const currentSessionUser = await ensureAdminSession(getCurrentSessionUser);
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.purchasesCreate)) {
+      return { success: false, message: "Tu rol no puede registrar compras" };
+    }
     const parsed = createPurchaseSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Datos invalidos para la compra" };
 
@@ -1630,6 +1717,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("sales:print-invoice", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.salesPrint)) {
+      return { success: false, message: "Tu rol no puede imprimir facturas" };
+    }
 
     const parsed = saleByIdSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Venta invalida" };
@@ -1640,6 +1730,7 @@ export function registerBackofficeIpcHandlers({
         include: {
           cashier: { select: { username: true, name: true } },
           items: { orderBy: { createdAt: "asc" } },
+          payments: true,
         },
       }),
       prisma.businessSettings.findUnique({
@@ -1658,7 +1749,7 @@ export function registerBackofficeIpcHandlers({
       receiptFooter: settings?.receiptFooter,
       invoiceNumber: sale.invoiceNumber,
       customer: sale.customer,
-      paymentMethod: sale.paymentMethod,
+      paymentSummary: paymentSummaryLabel(sale.payments, sale.paymentMethod),
       total: sale.total,
       subtotal: sale.subtotal,
       tax: sale.tax,

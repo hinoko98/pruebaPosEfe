@@ -117,13 +117,21 @@ enum CorrespondentClosureStatus {
 model User {
   id           String   @id @default(uuid())
   username     String   @unique
+  firstName    String?
+  lastName     String?
   name         String?
+  documentNumber String? @unique
+  email        String?
+  address      String?
+  birthDate    DateTime?
   role         Role     @default(EMPLOYEE)
+  roleProfileId String?
   passwordHash String
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  roleProfile  RoleProfile? @relation(fields: [roleProfileId], references: [id], onDelete: SetNull)
   loginEvents  LoginEvent[]
   sales        Sale[]
   cashSessions CashSession[]
@@ -133,6 +141,36 @@ model User {
   correspondentClosures               CorrespondentDailyClosure[]
   correspondentAuditLogs              CorrespondentAuditLog[]
   correspondentEvidences             CorrespondentEvidence[]
+
+  @@index([roleProfileId])
+}
+
+model RoleProfile {
+  id          String   @id @default(uuid())
+  key         String?  @unique
+  name        String   @unique
+  description String?
+  baseRole    Role     @default(EMPLOYEE)
+  isSystem    Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       User[]
+}
+
+model RolePermission {
+  id            String   @id @default(uuid())
+  roleProfileId String
+  permissionKey String
+  allowed       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  roleProfile RoleProfile @relation(fields: [roleProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([roleProfileId, permissionKey])
+  @@index([roleProfileId])
 }
 
 model LoginEvent {
@@ -186,6 +224,7 @@ model Product {
   name          String
   sku           String   @unique
   barcode       String?  @unique
+  unitMeasure   String   @default("UNIDAD")
   price         Int
   cost          Int      @default(0)
   marginPercent Float    @default(0)

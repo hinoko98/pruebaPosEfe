@@ -1,5 +1,7 @@
 import type { MenuItem } from "@/app/layout/SideMenu";
+import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
 
+import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
 import AssessmentIcon from "@mui/icons-material/Assessment";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
@@ -9,18 +11,23 @@ import PointOfSaleIcon from "@mui/icons-material/PointOfSale";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import SettingsIcon from "@mui/icons-material/Settings";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
-import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
 
 export const adminMenu: MenuItem[] = [
   { type: "item", label: "Resumen", path: "/admin", icon: <DashboardIcon /> },
-  { type: "item", label: "Facturar", path: "/admin/pos", icon: <PointOfSaleIcon /> },
+  {
+    type: "item",
+    label: "Facturar",
+    path: "/admin/pos",
+    icon: <PointOfSaleIcon />,
+    permissionKey: APP_PERMISSION_KEYS.posAccess,
+  },
   {
     type: "group",
     label: "Ventas",
     icon: <ReceiptLongIcon />,
     children: [
-      { label: "Historial", path: "/admin/sales" },
-      { label: "Caja", path: "/admin/cash" },
+      { label: "Historial", path: "/admin/sales", permissionKey: APP_PERMISSION_KEYS.salesHistory },
+      { label: "Caja", path: "/admin/cash", permissionKey: APP_PERMISSION_KEYS.cashView },
     ],
   },
   {
@@ -28,9 +35,9 @@ export const adminMenu: MenuItem[] = [
     label: "Corresponsal",
     icon: <AccountBalanceIcon />,
     children: [
-      { label: "Transacciones", path: "/admin/correspondent" },
+      { label: "Transacciones", path: "/admin/correspondent", permissionKey: APP_PERMISSION_KEYS.correspondentView },
       { label: "Cuadre", path: "/admin/correspondent/closures" },
-      { label: "Configuración", path: "/admin/correspondent/settings" },
+      { label: "Configuracion", path: "/admin/correspondent/settings" },
     ],
   },
   {
@@ -38,8 +45,8 @@ export const adminMenu: MenuItem[] = [
     label: "Inventario",
     icon: <Inventory2Icon />,
     children: [
-      { label: "Productos", path: "/admin/products" },
-      { label: "Movimientos", path: "/admin/stock-moves" },
+      { label: "Productos", path: "/admin/products", permissionKey: APP_PERMISSION_KEYS.productsView },
+      { label: "Movimientos", path: "/admin/stock-moves", permissionKey: APP_PERMISSION_KEYS.stockMovesView },
     ],
   },
   {
@@ -47,33 +54,52 @@ export const adminMenu: MenuItem[] = [
     label: "Compras",
     icon: <ShoppingCartIcon />,
     children: [
-      { label: "Compras", path: "/admin/purchases" },
-      { label: "Proveedores", path: "/admin/suppliers" },
+      { label: "Compras", path: "/admin/purchases", permissionKey: APP_PERMISSION_KEYS.purchasesView },
+      { label: "Proveedores", path: "/admin/suppliers", permissionKey: APP_PERMISSION_KEYS.suppliersView },
     ],
   },
   {
     type: "group",
-    label: "Gestión",
+    label: "Gestion",
     icon: <PeopleAltIcon />,
     children: [
-      { label: "Usuarios", path: "/admin/users" },
-      { label: "Clientes", path: "/admin/customers" },
+      { label: "Usuarios", path: "/admin/users", permissionKey: APP_PERMISSION_KEYS.usersView },
+      { label: "Roles y permisos", path: "/admin/roles", permissionKey: APP_PERMISSION_KEYS.rolesView },
+      { label: "Clientes", path: "/admin/customers", permissionKey: APP_PERMISSION_KEYS.customersView },
     ],
   },
-  { type: "item", label: "Reportes", path: "/admin/reports", icon: <AssessmentIcon /> },
-  { type: "item", label: "Configuración", path: "/admin/settings", icon: <SettingsIcon /> },
+  {
+    type: "item",
+    label: "Reportes",
+    path: "/admin/reports",
+    icon: <AssessmentIcon />,
+    permissionKey: APP_PERMISSION_KEYS.reportsView,
+  },
+  {
+    type: "item",
+    label: "Configuracion",
+    path: "/admin/settings",
+    icon: <SettingsIcon />,
+    permissionKey: APP_PERMISSION_KEYS.settingsView,
+  },
 ];
 
 export const employeeMenu: MenuItem[] = [
   { type: "item", label: "Resumen", path: "/app", icon: <DashboardIcon /> },
-  { type: "item", label: "Facturar", path: "/app/pos", icon: <PointOfSaleIcon /> },
+  {
+    type: "item",
+    label: "Facturar",
+    path: "/app/pos",
+    icon: <PointOfSaleIcon />,
+    permissionKey: APP_PERMISSION_KEYS.posAccess,
+  },
   {
     type: "group",
     label: "Ventas",
     icon: <ReceiptLongIcon />,
     children: [
-      { label: "Historial", path: "/app/sales" },
-      { label: "Caja", path: "/app/cash" },
+      { label: "Historial", path: "/app/sales", permissionKey: APP_PERMISSION_KEYS.salesHistory },
+      { label: "Caja", path: "/app/cash", permissionKey: APP_PERMISSION_KEYS.cashView },
     ],
   },
   {
@@ -81,19 +107,31 @@ export const employeeMenu: MenuItem[] = [
     label: "Corresponsal",
     icon: <AccountBalanceIcon />,
     children: [
-      { label: "Transacciones", path: "/app/correspondent" },
+      { label: "Transacciones", path: "/app/correspondent", permissionKey: APP_PERMISSION_KEYS.correspondentView },
       { label: "Cuadre", path: "/app/correspondent/closures" },
     ],
   },
-  { type: "item", label: "Clientes", path: "/app/customers", icon: <PeopleAltIcon /> },
+  {
+    type: "item",
+    label: "Clientes",
+    path: "/app/customers",
+    icon: <PeopleAltIcon />,
+    permissionKey: APP_PERMISSION_KEYS.customersView,
+  },
   {
     type: "group",
     label: "Inventario",
     icon: <Inventory2Icon />,
     children: [
-      { label: "Productos", path: "/app/products" },
-      { label: "Movimientos", path: "/app/stock-moves" },
+      { label: "Productos", path: "/app/products", permissionKey: APP_PERMISSION_KEYS.productsView },
+      { label: "Movimientos", path: "/app/stock-moves", permissionKey: APP_PERMISSION_KEYS.stockMovesView },
     ],
   },
-  { type: "item", label: "Proveedores", path: "/app/suppliers", icon: <LocalShippingIcon /> },
+  {
+    type: "item",
+    label: "Proveedores",
+    path: "/app/suppliers",
+    icon: <LocalShippingIcon />,
+    permissionKey: APP_PERMISSION_KEYS.suppliersView,
+  },
 ];

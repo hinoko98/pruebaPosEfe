@@ -13,7 +13,8 @@ import {
   Role,
 } from "@prisma/client";
 
-import { createUserInputSchema, loginInputSchema } from "./ipc/schemas/auth.schema";
+import { createUserInputSchema, loginInputSchema, updateUserInputSchema } from "./ipc/schemas/auth.schema";
+import { createRoleProfileInputSchema, updateRoleProfileInputSchema } from "./ipc/schemas/roles.schema";
 import { createSaleSchema } from "./ipc/schemas/sales.schema";
 import {
   ensureCorrespondentSchemaIfNeeded,
@@ -21,6 +22,13 @@ import {
   seedCorrespondentCatalogIfNeeded,
 } from "./modules/correspondent";
 import { registerBackofficeIpcHandlers } from "./modules/backoffice";
+import {
+  ROLE_DEFINITIONS,
+  flattenRolePermissionCatalog,
+  getPermissionCatalogItem,
+  type AppRoleKey,
+} from "../../renderer/features/user/roles.catalog";
+import { APP_PERMISSION_KEYS } from "../../renderer/features/user/app-permissions";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname, "..");
@@ -41,6 +49,9 @@ let currentSessionUser: {
   username: string;
   role: Role;
   name?: string;
+  roleProfileId?: string | null;
+  roleProfileName?: string | null;
+  permissions?: string[];
 } | null = null;
 
 type SeedConfig = {
@@ -190,9 +201,313 @@ function buildInvoiceNumber(prefix: string, sequence: number) {
   return `${prefix}-${String(sequence).padStart(6, "0")}`;
 }
 
+function normalizeOptionalText(value?: string | null) {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
+function buildUserDisplayName(firstName: string, lastName: string) {
+  return [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
+}
+
+function normalizeUsernamePart(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toLowerCase();
+}
+
+function buildUsernameBase(firstName: string, lastName: string, documentNumber: string) {
+  const firstPart = normalizeUsernamePart(firstName).slice(0, 3).padEnd(3, "x");
+  const lastPart = normalizeUsernamePart(lastName).slice(0, 3).padEnd(3, "x");
+  const documentDigits = documentNumber.replace(/\D/g, "");
+  const documentPart = documentDigits.slice(-3).padStart(3, "0");
+
+  return `${firstPart}${lastPart}${documentPart}`;
+}
+
+async function generateUniqueUsername(params: {
+  prismaClient: PrismaClient;
+  firstName: string;
+  lastName: string;
+  documentNumber: string;
+  excludeUserId?: string;
+}) {
+  const baseUsername = buildUsernameBase(params.firstName, params.lastName, params.documentNumber);
+  let counter = 0;
+
+  while (true) {
+    const suffix = counter === 0 ? "" : String(counter + 1).padStart(2, "0");
+    const candidate = `${baseUsername}${suffix}`;
+    const existing = await params.prismaClient.user.findFirst({
+      where: {
+        username: candidate,
+        ...(params.excludeUserId ? { NOT: { id: params.excludeUserId } } : {}),
+      },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return candidate;
+    }
+
+    counter += 1;
+  }
+}
+
+function parseBirthDate(value?: string | null) {
+  if (!value) return null;
+
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function mapRoleKeyToPrismaRole(roleKey: AppRoleKey) {
+  return roleKey === "ADMIN" ? Role.ADMIN : Role.EMPLOYEE;
+}
+
+function roleProfileSystemKey(roleKey: AppRoleKey) {
+  return `SYSTEM_${roleKey}`;
+}
+
+function hasCurrentSessionPermission(permissionKey?: string) {
+  if (!permissionKey) return true;
+  return Boolean(currentSessionUser?.permissions?.includes(permissionKey));
+}
+
+async function loadPermissionKeysForRoleProfile(prismaClient: PrismaClient, roleProfileId?: string | null) {
+  if (!roleProfileId) return [];
+
+  const records = await prismaClient.rolePermission.findMany({
+    where: {
+      roleProfileId,
+      allowed: true,
+    },
+    select: { permissionKey: true },
+    orderBy: { permissionKey: "asc" },
+  });
+
+  return records.map((record) => record.permissionKey);
+}
+
+async function resolveRoleProfileForUser(prismaClient: PrismaClient, userId: string) {
+  const user = await prismaClient.user.findUnique({
+    where: { id: userId },
+    include: {
+      roleProfile: {
+        include: {
+          permissions: {
+            where: { allowed: true },
+            orderBy: { permissionKey: "asc" },
+          },
+        },
+      },
+    },
+  });
+
+  if (!user) return null;
+
+  const permissions =
+    user.roleProfile?.permissions.map((permission) => permission.permissionKey) ??
+    (
+      await prismaClient.roleProfile.findUnique({
+        where: { key: roleProfileSystemKey(user.role as AppRoleKey) },
+        include: {
+          permissions: {
+            where: { allowed: true },
+            orderBy: { permissionKey: "asc" },
+          },
+        },
+      })
+    )?.permissions.map((permission) => permission.permissionKey) ??
+    [];
+
+  return {
+    roleProfileId: user.roleProfile?.id ?? null,
+    roleProfileName: user.roleProfile?.name ?? null,
+    permissions,
+  };
+}
+
+async function ensureUserSchemaIfNeeded(prismaClient: PrismaClient) {
+  const columns = await prismaClient.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("User");`);
+  const existingColumns = new Set(columns.map((column) => column.name));
+  const statements: string[] = [];
+
+  if (!existingColumns.has("firstName")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "firstName" TEXT;`);
+  }
+  if (!existingColumns.has("lastName")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "lastName" TEXT;`);
+  }
+  if (!existingColumns.has("documentNumber")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "documentNumber" TEXT;`);
+  }
+  if (!existingColumns.has("email")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "email" TEXT;`);
+  }
+  if (!existingColumns.has("address")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "address" TEXT;`);
+  }
+  if (!existingColumns.has("birthDate")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "birthDate" DATETIME;`);
+  }
+
+  for (const statement of statements) {
+    await prismaClient.$executeRawUnsafe(statement);
+  }
+
+  await prismaClient.$executeRawUnsafe(`
+    UPDATE "User"
+    SET "firstName" = "name"
+    WHERE "name" IS NOT NULL
+      AND ("firstName" IS NULL OR TRIM("firstName") = '');
+  `);
+
+  await prismaClient.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "User_documentNumber_key" ON "User"("documentNumber");`
+  );
+}
+
+async function ensureProductSchemaIfNeeded(prismaClient: PrismaClient) {
+  const columns = await prismaClient.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Product");`);
+  const existingColumns = new Set(columns.map((column) => column.name));
+
+  if (!existingColumns.has("unitMeasure")) {
+    await prismaClient.$executeRawUnsafe(
+      `ALTER TABLE "Product" ADD COLUMN "unitMeasure" TEXT NOT NULL DEFAULT 'UNIDAD';`
+    );
+  }
+
+  await prismaClient.$executeRawUnsafe(`
+    UPDATE "Product"
+    SET "unitMeasure" = 'UNIDAD'
+    WHERE "unitMeasure" IS NULL OR TRIM("unitMeasure") = '';
+  `);
+}
+
+async function ensureRoleSchemaIfNeeded(prismaClient: PrismaClient) {
+  await prismaClient.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "RoleProfile" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "key" TEXT,
+      "name" TEXT NOT NULL,
+      "description" TEXT,
+      "baseRole" TEXT NOT NULL DEFAULT 'EMPLOYEE',
+      "isSystem" BOOLEAN NOT NULL DEFAULT false,
+      "isActive" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  await prismaClient.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "RoleProfile_key_key" ON "RoleProfile"("key");
+  `);
+  await prismaClient.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "RoleProfile_name_key" ON "RoleProfile"("name");
+  `);
+
+  await prismaClient.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "RolePermission" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "roleProfileId" TEXT NOT NULL,
+      "permissionKey" TEXT NOT NULL,
+      "allowed" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "RolePermission_roleProfileId_fkey" FOREIGN KEY ("roleProfileId") REFERENCES "RoleProfile" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    );
+  `);
+
+  await prismaClient.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "RolePermission_roleProfileId_permissionKey_key"
+    ON "RolePermission"("roleProfileId", "permissionKey");
+  `);
+  await prismaClient.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "RolePermission_roleProfileId_idx"
+    ON "RolePermission"("roleProfileId");
+  `);
+
+  const userColumns = await prismaClient.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("User");`);
+  const existingUserColumns = new Set(userColumns.map((column) => column.name));
+
+  if (!existingUserColumns.has("roleProfileId")) {
+    await prismaClient.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN "roleProfileId" TEXT;`);
+  }
+
+  await prismaClient.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "User_roleProfileId_idx"
+    ON "User"("roleProfileId");
+  `);
+}
+
+async function seedRoleProfilesIfNeeded(prismaClient: PrismaClient) {
+  for (const definition of ROLE_DEFINITIONS) {
+    const permissionCatalog = flattenRolePermissionCatalog(definition);
+    const existingProfile = await prismaClient.roleProfile.findUnique({
+      where: { key: roleProfileSystemKey(definition.key) },
+      select: { id: true },
+    });
+
+    const roleProfile = existingProfile
+      ? await prismaClient.roleProfile.update({
+          where: { id: existingProfile.id },
+          data: {
+            name: definition.name,
+            description: definition.description,
+            baseRole: mapRoleKeyToPrismaRole(definition.key),
+            isSystem: true,
+          },
+        })
+      : await prismaClient.roleProfile.create({
+          data: {
+            key: roleProfileSystemKey(definition.key),
+            name: definition.name,
+            description: definition.description,
+            baseRole: mapRoleKeyToPrismaRole(definition.key),
+            isSystem: true,
+            isActive: true,
+          },
+        });
+
+    const existingPermissionCount = await prismaClient.rolePermission.count({
+      where: { roleProfileId: roleProfile.id },
+    });
+
+    if (existingPermissionCount === 0 && permissionCatalog.length > 0) {
+      await prismaClient.rolePermission.createMany({
+        data: permissionCatalog.map((permission) => ({
+          roleProfileId: roleProfile.id,
+          permissionKey: permission.key,
+          allowed: true,
+        })),
+      });
+    }
+  }
+
+  const systemProfiles = await prismaClient.roleProfile.findMany({
+    where: { key: { in: ROLE_DEFINITIONS.map((definition) => roleProfileSystemKey(definition.key)) } },
+    select: { id: true, baseRole: true },
+  });
+
+  for (const profile of systemProfiles) {
+    await prismaClient.user.updateMany({
+      where: {
+        role: profile.baseRole,
+        roleProfileId: null,
+      },
+      data: {
+        roleProfileId: profile.id,
+      },
+    });
+  }
+}
+
 async function bootstrapAppData() {
   await ensureCorrespondentSchemaIfNeeded(prisma);
-  await seedAdminIfNeeded(prisma);
   await seedCoreConfigIfNeeded(prisma);
   await seedCorrespondentCatalogIfNeeded(prisma);
 
@@ -210,6 +525,11 @@ app.whenReady().then(async () => {
 
   prisma = new PrismaClient();
   appConnectedAt = new Date();
+  await ensureUserSchemaIfNeeded(prisma);
+  await ensureRoleSchemaIfNeeded(prisma);
+  await seedAdminIfNeeded(prisma);
+  await seedRoleProfilesIfNeeded(prisma);
+  await ensureProductSchemaIfNeeded(prisma);
 
   registerBackofficeIpcHandlers({
     ipcMain,
@@ -276,11 +596,16 @@ ipcMain.handle("auth:login", async (_event: IpcMainInvokeEvent, payload) => {
     success: true,
   });
 
+  const roleProfile = await resolveRoleProfileForUser(prisma, user.id);
+
   currentSessionUser = {
     id: user.id,
     username: user.username,
     name: user.name ?? undefined,
     role: user.role,
+    roleProfileId: roleProfile?.roleProfileId ?? null,
+    roleProfileName: roleProfile?.roleProfileName ?? null,
+    permissions: roleProfile?.permissions ?? [],
   };
 
   return {
@@ -296,22 +621,327 @@ ipcMain.handle("auth:createUser", async (_event: IpcMainInvokeEvent, payload) =>
   if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
     return { success: false, message: "Solo admins pueden crear usuarios" };
   }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.usersCreate)) {
+    return { success: false, message: "Tu rol no puede crear usuarios" };
+  }
 
-  const { newUsername, newPassword, name, role } = parsed.data;
+  const { firstName, lastName, documentNumber, email, address, birthDate, newPassword, role, roleProfileId, isActive } = parsed.data;
   const passwordHash = await bcrypt.hash(newPassword, 10);
+  const fullName = buildUserDisplayName(firstName, lastName);
 
   try {
+    const duplicateDocument = await prisma.user.findFirst({
+      where: { documentNumber },
+      select: { id: true },
+    });
+
+    if (duplicateDocument) {
+      return { success: false, message: "La cedula ya esta registrada para otro usuario" };
+    }
+
+    const selectedRoleProfile = roleProfileId
+      ? await prisma.roleProfile.findUnique({
+          where: { id: roleProfileId },
+          select: { id: true, baseRole: true, isActive: true },
+        })
+      : await prisma.roleProfile.findUnique({
+          where: { key: roleProfileSystemKey((role ?? Role.EMPLOYEE) as AppRoleKey) },
+          select: { id: true, baseRole: true, isActive: true },
+        });
+
+    if (!selectedRoleProfile || !selectedRoleProfile.isActive) {
+      return { success: false, message: "El perfil de rol seleccionado no esta disponible" };
+    }
+
+    const username = await generateUniqueUsername({
+      prismaClient: prisma,
+      firstName,
+      lastName,
+      documentNumber,
+    });
+
     await prisma.user.create({
       data: {
-        username: newUsername,
-        name: name?.trim() || null,
+        username,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        name: fullName,
+        documentNumber,
+        email: normalizeOptionalText(email),
+        address: normalizeOptionalText(address),
+        birthDate: parseBirthDate(birthDate),
         passwordHash,
-        role: role ?? Role.EMPLOYEE,
+        role: selectedRoleProfile.baseRole,
+        roleProfileId: selectedRoleProfile.id,
+        isActive: isActive ?? true,
       },
     });
-    return { success: true };
+
+    return { success: true, username };
   } catch {
-    return { success: false, message: "Usuario duplicado" };
+    return { success: false, message: "No se pudo crear el usuario" };
+  }
+});
+
+ipcMain.handle("users:update", async (_event: IpcMainInvokeEvent, payload) => {
+  const parsed = updateUserInputSchema.safeParse(payload);
+  if (!parsed.success) return { success: false, message: "Datos invalidos" };
+
+  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+    return { success: false, message: "Solo admins pueden editar usuarios" };
+  }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.usersEdit)) {
+    return { success: false, message: "Tu rol no puede editar usuarios" };
+  }
+
+  const { id, firstName, lastName, documentNumber, email, address, birthDate, newPassword, role, roleProfileId, isActive } = parsed.data;
+  const existingUser = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true, role: true, isActive: true, roleProfileId: true },
+  });
+
+  if (!existingUser) {
+    return { success: false, message: "El usuario ya no existe" };
+  }
+
+  const duplicateDocument = await prisma.user.findFirst({
+    where: {
+      documentNumber,
+      NOT: { id },
+    },
+    select: { id: true },
+  });
+
+  if (duplicateDocument) {
+    return { success: false, message: "La cedula ya esta registrada para otro usuario" };
+  }
+
+  const selectedRoleProfile = roleProfileId
+    ? await prisma.roleProfile.findUnique({
+        where: { id: roleProfileId },
+        select: { id: true, baseRole: true, isActive: true, name: true },
+      })
+    : await prisma.roleProfile.findUnique({
+        where: { key: roleProfileSystemKey((role ?? existingUser.role) as AppRoleKey) },
+        select: { id: true, baseRole: true, isActive: true, name: true },
+      });
+
+  if (!selectedRoleProfile || !selectedRoleProfile.isActive) {
+    return { success: false, message: "El perfil de rol seleccionado no esta disponible" };
+  }
+
+  if (
+    existingUser.role === Role.ADMIN &&
+    (selectedRoleProfile.baseRole !== Role.ADMIN || !isActive)
+  ) {
+    const remainingAdmins = await prisma.user.count({
+      where: {
+        role: Role.ADMIN,
+        isActive: true,
+        NOT: { id },
+      },
+    });
+
+    if (remainingAdmins === 0) {
+      return { success: false, message: "Debe existir al menos un administrador activo" };
+    }
+  }
+
+  const username = await generateUniqueUsername({
+    prismaClient: prisma,
+    firstName,
+    lastName,
+    documentNumber,
+    excludeUserId: id,
+  });
+  const fullName = buildUserDisplayName(firstName, lastName);
+
+  try {
+    await prisma.user.update({
+      where: { id },
+      data: {
+        username,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        name: fullName,
+        documentNumber,
+        email: normalizeOptionalText(email),
+        address: normalizeOptionalText(address),
+        birthDate: parseBirthDate(birthDate),
+        role: selectedRoleProfile.baseRole,
+        roleProfileId: selectedRoleProfile.id,
+        isActive,
+        ...(newPassword?.trim()
+          ? {
+              passwordHash: await bcrypt.hash(newPassword, 10),
+            }
+          : {}),
+      },
+    });
+
+    if (currentSessionUser.id === id) {
+      currentSessionUser = {
+        ...currentSessionUser,
+        username,
+        name: fullName,
+        role: selectedRoleProfile.baseRole,
+        roleProfileId: selectedRoleProfile.id,
+        roleProfileName: selectedRoleProfile.name,
+        permissions: await loadPermissionKeysForRoleProfile(prisma, selectedRoleProfile.id),
+      };
+    }
+
+    return { success: true, username };
+  } catch {
+    return { success: false, message: "No se pudo actualizar el usuario" };
+  }
+});
+
+ipcMain.handle("roles:list", async () => {
+  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+    return { success: false, message: "Solo admins pueden ver roles", roles: [] };
+  }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.rolesView)) {
+    return { success: false, message: "Tu rol no puede ver roles", roles: [] };
+  }
+
+  const roles = await prisma.roleProfile.findMany({
+    include: {
+      permissions: {
+        where: { allowed: true },
+        orderBy: { permissionKey: "asc" },
+        select: { permissionKey: true },
+      },
+      _count: {
+        select: { users: true },
+      },
+    },
+    orderBy: [{ isSystem: "desc" }, { name: "asc" }],
+  });
+
+  return {
+    success: true,
+    roles: roles.map((roleProfile) => ({
+      id: roleProfile.id,
+      key: roleProfile.key,
+      name: roleProfile.name,
+      description: roleProfile.description,
+      baseRole: roleProfile.baseRole,
+      isSystem: roleProfile.isSystem,
+      isActive: roleProfile.isActive,
+      permissionKeys: roleProfile.permissions.map((permission) => permission.permissionKey),
+      usersCount: roleProfile._count.users,
+      createdAt: roleProfile.createdAt.toISOString(),
+      updatedAt: roleProfile.updatedAt.toISOString(),
+    })),
+  };
+});
+
+ipcMain.handle("roles:create", async (_event: IpcMainInvokeEvent, payload) => {
+  const parsed = createRoleProfileInputSchema.safeParse(payload);
+  if (!parsed.success) return { success: false, message: "Datos invalidos para el rol" };
+
+  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+    return { success: false, message: "Solo admins pueden crear roles" };
+  }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.rolesManage)) {
+    return { success: false, message: "Tu rol no puede crear roles" };
+  }
+
+  if (parsed.data.permissionKeys.length > 0) {
+    const invalidPermission = parsed.data.permissionKeys.find(
+      (permissionKey) => !getPermissionCatalogItem(parsed.data.baseRole as AppRoleKey, permissionKey)
+    );
+    if (invalidPermission) {
+      return { success: false, message: "Uno o mas permisos no pertenecen al rol base seleccionado" };
+    }
+  }
+
+  try {
+    const created = await prisma.roleProfile.create({
+      data: {
+        name: parsed.data.name.trim(),
+        description: normalizeOptionalText(parsed.data.description),
+        baseRole: parsed.data.baseRole,
+        isSystem: false,
+        isActive: parsed.data.isActive ?? true,
+        permissions: {
+          create: parsed.data.permissionKeys.map((permissionKey) => ({
+            permissionKey,
+            allowed: true,
+          })),
+        },
+      },
+      select: { id: true },
+    });
+
+    return { success: true, roleId: created.id };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo crear el rol";
+    return { success: false, message };
+  }
+});
+
+ipcMain.handle("roles:update", async (_event: IpcMainInvokeEvent, payload) => {
+  const parsed = updateRoleProfileInputSchema.safeParse(payload);
+  if (!parsed.success) return { success: false, message: "Datos invalidos para el rol" };
+
+  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+    return { success: false, message: "Solo admins pueden editar roles" };
+  }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.rolesManage)) {
+    return { success: false, message: "Tu rol no puede editar roles" };
+  }
+
+  const existing = await prisma.roleProfile.findUnique({
+    where: { id: parsed.data.id },
+    select: { id: true, baseRole: true, isSystem: true, name: true },
+  });
+
+  if (!existing) {
+    return { success: false, message: "El rol ya no existe" };
+  }
+
+  const invalidPermission = parsed.data.permissionKeys.find(
+    (permissionKey) => !getPermissionCatalogItem(existing.baseRole as AppRoleKey, permissionKey)
+  );
+  if (invalidPermission) {
+    return { success: false, message: "Uno o mas permisos no pertenecen al rol base seleccionado" };
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.roleProfile.update({
+        where: { id: parsed.data.id },
+        data: {
+          name: parsed.data.name.trim(),
+          description: normalizeOptionalText(parsed.data.description),
+          isActive: parsed.data.isActive ?? true,
+        },
+      });
+
+      await tx.rolePermission.deleteMany({ where: { roleProfileId: parsed.data.id } });
+      await tx.rolePermission.createMany({
+        data: parsed.data.permissionKeys.map((permissionKey) => ({
+          roleProfileId: parsed.data.id,
+          permissionKey,
+          allowed: true,
+        })),
+      });
+    });
+
+    if (currentSessionUser.roleProfileId === parsed.data.id) {
+      currentSessionUser = {
+        ...currentSessionUser,
+        roleProfileName: parsed.data.name.trim(),
+        permissions: parsed.data.permissionKeys,
+      };
+    }
+
+    return { success: true, roleId: parsed.data.id };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo actualizar el rol";
+    return { success: false, message };
   }
 });
 
@@ -348,10 +978,23 @@ ipcMain.handle("sales:create", async (_event, payload) => {
   if (!currentSessionUser) {
     return { success: false, message: "Debes iniciar sesion para vender" };
   }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.salesCreate)) {
+    return { success: false, message: "Tu rol no puede registrar ventas" };
+  }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.salesManagePayments)) {
+    return { success: false, message: "Tu rol no puede gestionar pagos" };
+  }
 
   const parsed = createSaleSchema.safeParse(payload);
   if (!parsed.success) {
     return { success: false, message: "Datos invalidos para la venta" };
+  }
+  if (
+    parsed.data.customer?.trim() &&
+    parsed.data.customer.trim() !== "Consumidor final" &&
+    !hasCurrentSessionPermission(APP_PERMISSION_KEYS.salesChangeCustomer)
+  ) {
+    return { success: false, message: "Tu rol no puede cambiar el cliente en la factura" };
   }
 
   const productIds = parsed.data.items.map((item) => item.productId);
@@ -397,15 +1040,61 @@ ipcMain.handle("sales:create", async (_event, payload) => {
   const total = subtotal + tax;
   const costTotal = normalizedItems.reduce((sum, item) => sum + item.product.cost * item.qty, 0);
   const profit = normalizedItems.reduce((sum, item) => sum + item.lineProfit, 0);
-  const amountPaid = parsed.data.amountPaid ?? total;
-  const changeAmount = parsed.data.paymentMethod === "CASH" ? Math.max(0, amountPaid - total) : 0;
+  const requestedPayments =
+    parsed.data.payments && parsed.data.payments.length > 0
+      ? parsed.data.payments
+      : [
+          {
+            method: parsed.data.paymentMethod,
+            amount: parsed.data.amountPaid ?? total,
+          },
+        ];
+
+  const normalizedPayments = requestedPayments
+    .map((payment) => ({
+      method: payment.method,
+      amount: money(payment.amount),
+    }))
+    .filter((payment) => payment.amount > 0);
+
+  if (normalizedPayments.length === 0) {
+    return { success: false, message: "Debes registrar al menos un pago para completar la venta" };
+  }
+
+  const amountPaid = normalizedPayments.reduce((sum, payment) => sum + payment.amount, 0);
+  const changeAmount = Math.max(0, amountPaid - total);
+  const cashReceived = normalizedPayments
+    .filter((payment) => payment.method === "CASH")
+    .reduce((sum, payment) => sum + payment.amount, 0);
+
+  if (changeAmount > cashReceived) {
+    return { success: false, message: "Las vueltas solo pueden salir de un pago en efectivo" };
+  }
+
+  let remainingAmount = total;
+  const appliedTotals = new Map<PrismaPaymentMethod, number>();
+  for (const payment of normalizedPayments) {
+    if (remainingAmount <= 0) break;
+    const appliedAmount = Math.min(payment.amount, remainingAmount);
+    if (appliedAmount <= 0) continue;
+    appliedTotals.set(
+      payment.method as PrismaPaymentMethod,
+      (appliedTotals.get(payment.method as PrismaPaymentMethod) ?? 0) + appliedAmount
+    );
+    remainingAmount -= appliedAmount;
+  }
+
+  const primaryPaymentMethod =
+    [...appliedTotals.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
+    (normalizedPayments[0].method as PrismaPaymentMethod);
+  const appliedCashAmount = appliedTotals.get(PrismaPaymentMethod.CASH) ?? 0;
 
   if (parsed.data.clientTotal !== undefined && Math.abs(parsed.data.clientTotal - total) > 1) {
     return { success: false, message: "El total enviado no coincide con el calculo del sistema" };
   }
 
-  if (parsed.data.paymentMethod === "CASH" && amountPaid < total) {
-    return { success: false, message: "El efectivo recibido no alcanza para cubrir la venta" };
+  if (amountPaid < total) {
+    return { success: false, message: "El pago recibido no alcanza para cubrir la venta" };
   }
 
   try {
@@ -428,7 +1117,7 @@ ipcMain.handle("sales:create", async (_event, payload) => {
         data: {
           invoiceNumber,
           customer: parsed.data.customer,
-          paymentMethod: parsed.data.paymentMethod as PrismaPaymentMethod,
+          paymentMethod: primaryPaymentMethod,
           subtotal,
           tax,
           total,
@@ -453,20 +1142,20 @@ ipcMain.handle("sales:create", async (_event, payload) => {
             })),
           },
           payments: {
-            create: {
-              method: parsed.data.paymentMethod as PrismaPaymentMethod,
-              amount: amountPaid,
-            },
+            create: normalizedPayments.map((payment) => ({
+              method: payment.method as PrismaPaymentMethod,
+              amount: payment.amount,
+            })),
           },
         },
       });
 
-      if (activeCashSession && parsed.data.paymentMethod === "CASH") {
+      if (activeCashSession && appliedCashAmount > 0) {
         await tx.cashMovement.create({
           data: {
             sessionId: activeCashSession.id,
             type: CashMovementType.SALE_IN,
-            amount: total,
+            amount: appliedCashAmount,
             note: createdSale.invoiceNumber,
           },
         });

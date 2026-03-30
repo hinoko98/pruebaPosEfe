@@ -1,125 +1,130 @@
 import { z } from "zod";
 
-// ─── Crear producto ───────────────────────────────────────────────────────────
+export const productUnitMeasureSchema = z.enum([
+  "UNIDAD",
+  "PAR",
+  "METRO",
+  "CENTIMETRO",
+  "CAJA",
+  "PAQUETE",
+  "DOCENA",
+  "ROLLO",
+  "BOLSA",
+  "BOTELLA",
+  "FRASCO",
+  "LIBRA",
+  "KILO",
+  "LITRO",
+]);
 
-export const createProductSchema = z.object({
-  name: z
-    .string({ message: "El nombre es obligatorio" })
-    .trim()
-    .min(2, "Mínimo 2 caracteres")
-    .max(120, "Máximo 120 caracteres"),
+const allowedTaxRates = [0, 0.05, 0.19] as const;
 
-  barcode: z
-    .string()
-    .trim()
-    .min(1)
-    .max(50)
-    .optional()
-    .nullable(),
+function validateAllowedTaxRate(taxRate: number | undefined, ctx: z.RefinementCtx) {
+  if (taxRate === undefined) return;
 
-  sku: z
-    .string()
-    .trim()
-    .min(1)
-    .max(50)
-    .optional()
-    .nullable(),
+  if (!allowedTaxRates.includes(taxRate as (typeof allowedTaxRates)[number])) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "El IVA permitido es: no aplica, 0%, 5% o 19%",
+      path: ["taxRate"],
+    });
+  }
+}
 
-  price: z
-    .number({ message: "El precio es obligatorio" })
-    .positive("El precio debe ser mayor a 0"),
+export const createProductSchema = z
+  .object({
+    name: z
+      .string({ message: "El nombre es obligatorio" })
+      .trim()
+      .min(2, "Minimo 2 caracteres")
+      .max(120, "Maximo 120 caracteres"),
 
-  cost: z
-    .number()
-    .min(0, "El costo no puede ser negativo")
-    .optional()
-    .default(0),
+    barcode: z.string().trim().min(1).max(50).optional().nullable(),
 
-  marginPercent: z
-    .number()
-    .min(0, "La ganancia no puede ser negativa")
-    .optional()
-    .default(0),
+    sku: z.string().trim().min(1).max(50).optional().nullable(),
 
-  hasTax: z.boolean().optional().default(false),
+    unitMeasure: productUnitMeasureSchema.optional().default("UNIDAD"),
 
-  taxRate: z
-    .number()
-    .min(0)
-    .max(1, "taxRate debe ser entre 0 y 1 (ej: 0.19)")
-    .optional()
-    .default(0),
+    price: z
+      .number({ message: "El precio es obligatorio" })
+      .positive("El precio debe ser mayor a 0"),
 
-  stock: z
-    .number()
-    .int("El stock debe ser un número entero")
-    .min(0, "El stock no puede ser negativo")
-    .optional()
-    .default(0),
+    cost: z.number().min(0, "El costo no puede ser negativo").optional().default(0),
 
-  categoryId: z.string().uuid().optional().nullable(),
+    marginPercent: z.number().min(0, "La ganancia no puede ser negativa").optional().default(0),
 
-  subcategoryId: z.string().uuid().optional().nullable(),
+    hasTax: z.boolean().optional().default(false),
 
-  isActive: z.boolean().optional().default(true),
-});
+    taxRate: z.number().min(0).max(1).optional().default(0),
+
+    stock: z
+      .number()
+      .int("El stock debe ser un numero entero")
+      .min(0, "El stock no puede ser negativo")
+      .optional()
+      .default(0),
+
+    categoryId: z.string().uuid().optional().nullable(),
+
+    subcategoryId: z.string().uuid().optional().nullable(),
+
+    isActive: z.boolean().optional().default(true),
+  })
+  .superRefine((data, ctx) => {
+    validateAllowedTaxRate(data.taxRate, ctx);
+  });
 
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
-// ─── Editar producto ──────────────────────────────────────────────────────────
+export const updateProductSchema = z
+  .object({
+    id: z.string().uuid("ID de producto invalido"),
 
-export const updateProductSchema = z.object({
-  id: z.string().uuid("ID de producto inválido"),
+    name: z.string().trim().min(2, "Minimo 2 caracteres").max(120).optional(),
 
-  name: z
-    .string()
-    .trim()
-    .min(2, "Mínimo 2 caracteres")
-    .max(120)
-    .optional(),
+    barcode: z.string().trim().min(1).max(50).optional().nullable(),
 
-  barcode: z.string().trim().min(1).max(50).optional().nullable(),
+    sku: z.string().trim().min(1).max(50).optional().nullable(),
 
-  sku: z.string().trim().min(1).max(50).optional().nullable(),
+    unitMeasure: productUnitMeasureSchema.optional(),
 
-  price: z.number().positive("El precio debe ser mayor a 0").optional(),
+    price: z.number().positive("El precio debe ser mayor a 0").optional(),
 
-  cost: z.number().min(0).optional(),
+    cost: z.number().min(0).optional(),
 
-  marginPercent: z.number().min(0).optional(),
+    marginPercent: z.number().min(0).optional(),
 
-  hasTax: z.boolean().optional(),
+    hasTax: z.boolean().optional(),
 
-  taxRate: z.number().min(0).max(1).optional(),
+    taxRate: z.number().min(0).max(1).optional(),
 
-  stock: z.number().int().min(0).optional(),
+    stock: z.number().int().min(0).optional(),
 
-  categoryId: z.string().uuid().optional().nullable(),
+    categoryId: z.string().uuid().optional().nullable(),
 
-  subcategoryId: z.string().uuid().optional().nullable(),
+    subcategoryId: z.string().uuid().optional().nullable(),
 
-  isActive: z.boolean().optional(),
-});
+    isActive: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    validateAllowedTaxRate(data.taxRate, ctx);
+  });
 
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
 
-// ─── Ajuste de stock ──────────────────────────────────────────────────────────
-
 export const adjustStockSchema = z.object({
-  productId: z.string().uuid("ID de producto inválido"),
+  productId: z.string().uuid("ID de producto invalido"),
   delta: z
     .number()
-    .int("El ajuste debe ser un número entero")
+    .int("El ajuste debe ser un numero entero")
     .refine((n) => n !== 0, "El ajuste no puede ser 0"),
   reason: z.string().trim().max(200).optional(),
 });
 
 export type AdjustStockInput = z.infer<typeof adjustStockSchema>;
 
-// ─── Buscar por barcode ───────────────────────────────────────────────────────
-
 export const findByBarcodeSchema = z.object({
-  barcode: z.string().trim().min(1, "Barcode no puede estar vacío"),
+  barcode: z.string().trim().min(1, "Barcode no puede estar vacio"),
 });
 
 export type FindByBarcodeInput = z.infer<typeof findByBarcodeSchema>;

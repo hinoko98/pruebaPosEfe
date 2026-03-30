@@ -18,17 +18,42 @@ export const loginResultSchema = z.object({
       username: z.string(),
       role: roleSchema,
       name: z.string().optional(),
+      roleProfileId: z.string().nullable().optional(),
+      roleProfileName: z.string().nullable().optional(),
+      permissions: z.array(z.string()).optional(),
     })
     .optional(),
 });
 
 export type LoginResult = z.infer<typeof loginResultSchema>;
 
-export const createUserInputSchema = z.object({
-  name: z.string().trim().min(2).max(120).optional(),
-  newUsername: z.string().trim().min(3).max(50),
-  newPassword: z.string().min(6).max(200),
+const birthDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .optional()
+  .nullable();
+
+const baseUserProfileSchema = z.object({
+  firstName: z.string().trim().min(2).max(80),
+  lastName: z.string().trim().min(2).max(80),
+  documentNumber: z.string().trim().regex(/^\d{6,20}$/),
+  email: z.string().trim().email().max(120).optional().nullable(),
+  address: z.string().trim().max(180).optional().nullable(),
+  birthDate: birthDateSchema,
   role: roleSchema.optional().default("EMPLOYEE"),
+  roleProfileId: z.string().uuid().optional().nullable(),
+  isActive: z.boolean().optional().default(true),
+});
+
+export const createUserInputSchema = baseUserProfileSchema.extend({
+  newPassword: z.string().min(6).max(200),
 });
 
 export type CreateUserInput = z.infer<typeof createUserInputSchema>;
+
+export const updateUserInputSchema = baseUserProfileSchema.extend({
+  id: z.string().uuid(),
+  newPassword: z.string().min(6).max(200).optional().or(z.literal("")),
+});
+
+export type UpdateUserInput = z.infer<typeof updateUserInputSchema>;

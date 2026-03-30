@@ -29,6 +29,7 @@ export type MenuItem =
       path: string;
       icon?: React.ReactNode;
       disabled?: boolean;
+      permissionKey?: string;
     }
   | {
       type: "group";
@@ -38,6 +39,7 @@ export type MenuItem =
         label: string;
         path: string;
         disabled?: boolean;
+        permissionKey?: string;
       }>;
     }
   | { type: "divider" };

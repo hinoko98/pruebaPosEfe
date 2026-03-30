@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Outlet } from "react-router-dom";
 
 import Box from "@mui/material/Box";
@@ -8,6 +8,8 @@ import Toolbar from "@mui/material/Toolbar";
 
 import SideMenu, { MenuItem } from "./SideMenu";
 import AppHeader from "./AppHeader";
+import { hasPermission } from "@/features/auth/permissions";
+import { useAuth } from "@/features/auth/hooks/useAuth";
 
 const drawerWidth = 280;
 
@@ -26,6 +28,7 @@ export default function AppShell({
   lastSyncText,
   onSync,
 }: AppShellProps) {
+  const { user } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [syncLabel, setSyncLabel] = useState(lastSyncText ?? "Cargando...");
 
@@ -48,9 +51,28 @@ export default function AppShell({
     void refreshSyncStatus();
   }, []);
 
+  const visibleMenu = useMemo<MenuItem[]>(
+    () =>
+      menu
+        .map((item) => {
+          if (item.type === "item") {
+            return hasPermission(user, item.permissionKey) ? item : null;
+          }
+
+          if (item.type === "group") {
+            const children = item.children.filter((child) => hasPermission(user, child.permissionKey));
+            return children.length > 0 ? { ...item, children } : null;
+          }
+
+          return item;
+        })
+        .filter((item): item is MenuItem => item !== null),
+    [menu, user]
+  );
+
   const drawer = (
     <SideMenu
-      menu={menu}
+      menu={visibleMenu}
       lastSyncText={syncLabel}
       onSync={() => {
         void refreshSyncStatus();

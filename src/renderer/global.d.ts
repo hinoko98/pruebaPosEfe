@@ -1,4 +1,4 @@
-import type { LoginInput, LoginResult, CreateUserInput } from "~/main/electron/ipc/schemas/auth.schema";
+import type { LoginInput, LoginResult, CreateUserInput, UpdateUserInput } from "~/main/electron/ipc/schemas/auth.schema";
 import type {
   CreateCorrespondentClosureInput,
   CreateCorrespondentTransactionInput,
@@ -6,6 +6,7 @@ import type {
   ListCorrespondentTransactionsInput,
 } from "~/main/electron/ipc/schemas/correspondent.schema";
 import type { CreateProductInput, UpdateProductInput } from "~/main/electron/ipc/schemas/product.schema";
+import type { CreateRoleProfileInput, UpdateRoleProfileInput } from "~/main/electron/ipc/schemas/roles.schema";
 import type { CreateSaleInput, CreateSaleResult } from "~/main/electron/ipc/schemas/sales.schema";
 
 type PosProduct = {
@@ -273,12 +274,38 @@ type UsersListResponse = {
   users: Array<{
     id: string;
     name: string | null;
+    firstName: string | null;
+    lastName: string | null;
     username: string;
+    documentNumber: string | null;
+    email: string | null;
+    address: string | null;
+    birthDate: string | null;
     role: "ADMIN" | "EMPLOYEE";
+    roleProfileId: string | null;
+    roleProfileName: string | null;
     isActive: boolean;
     createdAt: string;
     salesCount: number;
     sessionsCount: number;
+  }>;
+};
+
+type RoleProfilesResponse = {
+  success: boolean;
+  message?: string;
+  roles: Array<{
+    id: string;
+    key: string | null;
+    name: string;
+    description: string | null;
+    baseRole: "ADMIN" | "EMPLOYEE";
+    isSystem: boolean;
+    isActive: boolean;
+    permissionKeys: string[];
+    usersCount: number;
+    createdAt: string;
+    updatedAt: string;
   }>;
 };
 
@@ -305,6 +332,7 @@ type ProductsAdminResponse = {
     name: string;
     sku: string | null;
     barcode: string | null;
+    unitMeasure: string;
     price: number;
     cost: number;
     marginPercent: number;
@@ -499,7 +527,8 @@ declare global {
   interface Window {
     api: {
       login: (payload: LoginInput) => Promise<LoginResult>;
-      createUser: (payload: CreateUserInput) => Promise<{ success: boolean; message?: string }>;
+      createUser: (payload: CreateUserInput) => Promise<{ success: boolean; message?: string; username?: string }>;
+      updateUser: (payload: UpdateUserInput) => Promise<{ success: boolean; message?: string; username?: string }>;
       logout: () => Promise<{ success: boolean }>;
       listProducts: () => Promise<PosProduct[]>;
       createSale: (payload: CreateSaleInput) => Promise<CreateSaleResult>;
@@ -545,6 +574,9 @@ declare global {
         correspondentBalances?: Array<{ platformId: string; amount: number }>;
       }) => Promise<GenericMutationResponse>;
       listUsers: () => Promise<UsersListResponse>;
+      listRoleProfiles: () => Promise<RoleProfilesResponse>;
+      createRoleProfile: (payload: CreateRoleProfileInput) => Promise<{ success: boolean; message?: string; roleId?: string }>;
+      updateRoleProfile: (payload: UpdateRoleProfileInput) => Promise<{ success: boolean; message?: string; roleId?: string }>;
       listProductsAdmin: () => Promise<ProductsAdminResponse>;
       listProductCategories: () => Promise<ProductCategoriesResponse>;
       createProductRecord: (payload: CreateProductInput) => Promise<GenericMutationResponse>;

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { LoginInput, LoginResult, CreateUserInput } from "./ipc/schemas/auth.schema";
+import type { LoginInput, LoginResult, CreateUserInput, UpdateUserInput } from "./ipc/schemas/auth.schema";
 import type {
   CreateCorrespondentClosureInput,
   CreateCorrespondentTransactionInput,
@@ -7,14 +7,18 @@ import type {
   ListCorrespondentTransactionsInput,
 } from "./ipc/schemas/correspondent.schema";
 import type { CreateProductInput, UpdateProductInput } from "./ipc/schemas/product.schema";
+import type { CreateRoleProfileInput, UpdateRoleProfileInput } from "./ipc/schemas/roles.schema";
 import type { CreateSaleInput, CreateSaleResult } from "./ipc/schemas/sales.schema";
 
 contextBridge.exposeInMainWorld("api", {
   login: (payload: LoginInput): Promise<LoginResult> =>
     ipcRenderer.invoke("auth:login", payload),
 
-  createUser: (payload: CreateUserInput): Promise<{ success: boolean; message?: string }> =>
+  createUser: (payload: CreateUserInput): Promise<{ success: boolean; message?: string; username?: string }> =>
     ipcRenderer.invoke("auth:createUser", payload),
+
+  updateUser: (payload: UpdateUserInput): Promise<{ success: boolean; message?: string; username?: string }> =>
+    ipcRenderer.invoke("users:update", payload),
 
   logout: (): Promise<{ success: boolean }> =>
     ipcRenderer.invoke("auth:logout"),
@@ -85,6 +89,9 @@ contextBridge.exposeInMainWorld("api", {
   }) => ipcRenderer.invoke("cash:close", payload),
 
   listUsers: () => ipcRenderer.invoke("users:list"),
+  listRoleProfiles: () => ipcRenderer.invoke("roles:list"),
+  createRoleProfile: (payload: CreateRoleProfileInput) => ipcRenderer.invoke("roles:create", payload),
+  updateRoleProfile: (payload: UpdateRoleProfileInput) => ipcRenderer.invoke("roles:update", payload),
 
   listProductsAdmin: () => ipcRenderer.invoke("products:list-admin"),
   listProductCategories: () => ipcRenderer.invoke("products:categories:list"),
