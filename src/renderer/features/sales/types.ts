@@ -1,17 +1,20 @@
-// src/renderer/features/sales/types.ts
 export type Money = number;
 
 export type Product = {
   id: string;
-  sku?: string;       // código interno
-  barcode?: string;   // EAN/UPC
+  sku?: string;
+  barcode?: string | null;
   name: string;
   price: Money;
-  taxRate?: number;   // 0.19 etc
+  cost?: Money;
+  taxRate?: number;
+  stock?: number;
+  category?: string | null;
+  subcategory?: string | null;
 };
 
 export type CartItem = {
-  lineId: string;     // id único de línea (no del producto)
+  lineId: string;
   productId: string;
   name: string;
   price: Money;
