@@ -21,12 +21,15 @@ import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import FloatingAlert from "@/components/feedback/FloatingAlert";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
+import { useTablePagination } from "@/hooks/useTablePagination";
 
 type PurchaseRow = Awaited<ReturnType<typeof window.api.listPurchases>>["purchases"][number];
 
@@ -87,6 +90,9 @@ export default function PurchasesView() {
   const [rows, setRows] = useState<PurchaseFormRow[]>([emptyPurchaseRow()]);
   const canCreatePurchases = hasPermission(user, APP_PERMISSION_KEYS.purchasesCreate);
   const canViewPurchaseDetails = hasPermission(user, APP_PERMISSION_KEYS.purchasesDetails);
+  const purchasesPagination = useTablePagination(filteredPurchases);
+  const draftRowsPagination = useTablePagination(rows);
+  const detailItemsPagination = useTablePagination(selectedPurchase?.items ?? []);
 
   const loadData = async () => {
     setLoading(true);
@@ -263,7 +269,7 @@ export default function PurchasesView() {
         ) : null}
       </Box>
 
-      {feedback ? <Alert severity={feedback.severity}>{feedback.message}</Alert> : null}
+      <FloatingAlert feedback={feedback} onClose={() => setFeedback(null)} />
 
       <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2}>
         <Card><CardContent><Typography variant="body2" color="text.secondary">Compras listadas</Typography><Typography variant="h5">{totals.count}</Typography></CardContent></Card>
@@ -299,7 +305,7 @@ export default function PurchasesView() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredPurchases.map((purchase) => (
+                  {purchasesPagination.paginatedRows.map((purchase) => (
                     <TableRow key={purchase.id} hover>
                       <TableCell>{purchase.number}</TableCell>
                       <TableCell>{purchase.supplier}</TableCell>
@@ -327,6 +333,16 @@ export default function PurchasesView() {
                   ) : null}
                 </TableBody>
               </Table>
+              <TablePagination
+                component="div"
+                count={filteredPurchases.length}
+                page={purchasesPagination.page}
+                onPageChange={purchasesPagination.handleChangePage}
+                rowsPerPage={purchasesPagination.rowsPerPage}
+                onRowsPerPageChange={purchasesPagination.handleChangeRowsPerPage}
+                rowsPerPageOptions={[10, 15]}
+                labelRowsPerPage="Filas"
+              />
             </Box>
           )}
         </Stack>
@@ -384,7 +400,7 @@ export default function PurchasesView() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {rows.map((row) => {
+                  {draftRowsPagination.paginatedRows.map((row) => {
                     const subtotal = Math.round(numberValue(row.qty) * numberValue(row.cost));
                     return (
                       <TableRow key={row.lineId}>
@@ -444,6 +460,16 @@ export default function PurchasesView() {
                   })}
                 </TableBody>
               </Table>
+              <TablePagination
+                component="div"
+                count={rows.length}
+                page={draftRowsPagination.page}
+                onPageChange={draftRowsPagination.handleChangePage}
+                rowsPerPage={draftRowsPagination.rowsPerPage}
+                onRowsPerPageChange={draftRowsPagination.handleChangeRowsPerPage}
+                rowsPerPageOptions={[10, 15]}
+                labelRowsPerPage="Filas"
+              />
             </Box>
 
             <Button variant="outlined" onClick={handleAddRow}>
@@ -485,30 +511,42 @@ export default function PurchasesView() {
                 <DetailCard label="Saldo" value={currency(selectedPurchase.balance)} />
               </Box>
 
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Producto</TableCell>
-                    <TableCell>SKU</TableCell>
-                    <TableCell align="right">Cantidad</TableCell>
-                    <TableCell align="right">Costo</TableCell>
-                    <TableCell align="right">IVA</TableCell>
-                    <TableCell align="right">Total</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {selectedPurchase.items.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>{item.productName}</TableCell>
-                      <TableCell>{item.productSku || "-"}</TableCell>
-                      <TableCell align="right">{item.qty}</TableCell>
-                      <TableCell align="right">{currency(item.cost)}</TableCell>
-                      <TableCell align="right">{Math.round(item.taxRate * 100)}%</TableCell>
-                      <TableCell align="right">{currency(item.total)}</TableCell>
+              <Box sx={{ overflowX: "auto" }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Producto</TableCell>
+                      <TableCell>SKU</TableCell>
+                      <TableCell align="right">Cantidad</TableCell>
+                      <TableCell align="right">Costo</TableCell>
+                      <TableCell align="right">IVA</TableCell>
+                      <TableCell align="right">Total</TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHead>
+                  <TableBody>
+                    {detailItemsPagination.paginatedRows.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>{item.productName}</TableCell>
+                        <TableCell>{item.productSku || "-"}</TableCell>
+                        <TableCell align="right">{item.qty}</TableCell>
+                        <TableCell align="right">{currency(item.cost)}</TableCell>
+                        <TableCell align="right">{Math.round(item.taxRate * 100)}%</TableCell>
+                        <TableCell align="right">{currency(item.total)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <TablePagination
+                  component="div"
+                  count={selectedPurchase.items.length}
+                  page={detailItemsPagination.page}
+                  onPageChange={detailItemsPagination.handleChangePage}
+                  rowsPerPage={detailItemsPagination.rowsPerPage}
+                  onRowsPerPageChange={detailItemsPagination.handleChangeRowsPerPage}
+                  rowsPerPageOptions={[10, 15]}
+                  labelRowsPerPage="Filas"
+                />
+              </Box>
 
               {selectedPurchase.note ? (
                 <Alert severity="info">{selectedPurchase.note}</Alert>

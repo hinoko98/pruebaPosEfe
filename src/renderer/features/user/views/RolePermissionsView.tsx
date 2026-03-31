@@ -26,6 +26,7 @@ import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
+import FloatingAlert from "@/components/feedback/FloatingAlert";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
@@ -339,7 +340,7 @@ export function RolePermissionsView() {
         </Stack>
       </Box>
 
-      {feedback ? <Alert severity={feedback.severity}>{feedback.message}</Alert> : null}
+      <FloatingAlert feedback={feedback} onClose={() => setFeedback(null)} />
 
       {loading ? (
         <Alert severity="info">Cargando roles y permisos...</Alert>

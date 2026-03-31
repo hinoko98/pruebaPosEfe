@@ -16,12 +16,15 @@ import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import FloatingAlert from "@/components/feedback/FloatingAlert";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
+import { useTablePagination } from "@/hooks/useTablePagination";
 
 const TIPOS_DOCUMENTO = [
   "Cédula",
@@ -160,6 +163,7 @@ export default function CustomersView() {
   const withSalesCount = customers.filter((customer) => customer.salesCount > 0).length;
   const canCreateCustomers = hasPermission(user, APP_PERMISSION_KEYS.customersCreate);
   const canEditCustomers = hasPermission(user, APP_PERMISSION_KEYS.customersEdit);
+  const customersPagination = useTablePagination(filteredCustomers);
 
   const openCreate = () => {
     setEditingCustomer(null);
@@ -233,7 +237,11 @@ export default function CustomersView() {
         ) : null}
       </Box>
 
-      {feedback ? <Alert severity={feedback.severity}>{feedback.message}</Alert> : null}
+      <FloatingAlert feedback={feedback} onClose={() => setFeedback(null)} />
+      <FloatingAlert
+        feedback={formError ? { severity: "error", message: formError } : null}
+        onClose={() => setFormError(null)}
+      />
 
       <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2}>
         <Card><CardContent><Typography variant="body2" color="text.secondary">Clientes activos</Typography><Typography variant="h5">{activeCount}</Typography></CardContent></Card>
@@ -267,7 +275,7 @@ export default function CustomersView() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredCustomers.map((customer) => (
+                  {customersPagination.paginatedRows.map((customer) => (
                     <TableRow key={customer.id} hover>
                       <TableCell>
                         <Stack spacing={0.25}>
@@ -306,6 +314,16 @@ export default function CustomersView() {
                   ) : null}
                 </TableBody>
               </Table>
+              <TablePagination
+                component="div"
+                count={filteredCustomers.length}
+                page={customersPagination.page}
+                onPageChange={customersPagination.handleChangePage}
+                rowsPerPage={customersPagination.rowsPerPage}
+                onRowsPerPageChange={customersPagination.handleChangeRowsPerPage}
+                rowsPerPageOptions={[10, 15]}
+                labelRowsPerPage="Filas"
+              />
             </Box>
           )}
         </Stack>
@@ -315,8 +333,6 @@ export default function CustomersView() {
         <DialogTitle>{editingCustomer ? "Editar cliente" : "Nuevo cliente"}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
-            {formError ? <Alert severity="error">{formError}</Alert> : null}
-
             <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "1fr 1fr" }} gap={2}>
               <TextField
                 label="Nombres"

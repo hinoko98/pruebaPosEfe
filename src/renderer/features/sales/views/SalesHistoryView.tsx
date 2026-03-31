@@ -11,14 +11,17 @@ import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
+import FloatingAlert from "@/components/feedback/FloatingAlert";
 import SaleReceiptDialog from "@/features/sales/components/SaleReceiptDialog";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { estadoVentaLabel } from "@/lib/display";
 
 function currency(value: number) {
@@ -34,7 +37,7 @@ export default function SalesHistoryView() {
   const [sales, setSales] = useState<Awaited<ReturnType<typeof window.api.listSales>>["sales"]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ severity: "success" | "error" | "info"; message: string } | null>(null);
   const [selectedSale, setSelectedSale] = useState<NonNullable<Awaited<ReturnType<typeof window.api.getSaleDetail>>["sale"]> | null>(null);
   const [printing, setPrinting] = useState(false);
   const canPrintSales = hasPermission(user, APP_PERMISSION_KEYS.salesPrint);
@@ -43,7 +46,7 @@ export default function SalesHistoryView() {
     setLoading(true);
     const response = await window.api.listSales();
     if (!response.success) {
-      setFeedback(response.message || "No se pudo cargar el historial");
+      setFeedback({ severity: "error", message: response.message || "No se pudo cargar el historial" });
       setLoading(false);
       return;
     }
@@ -73,11 +76,12 @@ export default function SalesHistoryView() {
       { count: 0, total: 0 }
     );
   }, [filteredSales]);
+  const salesPagination = useTablePagination(filteredSales);
 
   const handleOpenSale = async (saleId: string) => {
     const response = await window.api.getSaleDetail(saleId);
     if (!response.success || !response.sale) {
-      setFeedback(response.message || "No se pudo cargar la factura");
+      setFeedback({ severity: "error", message: response.message || "No se pudo cargar la factura" });
       return;
     }
     setSelectedSale(response.sale);
@@ -89,10 +93,10 @@ export default function SalesHistoryView() {
     const response = await window.api.printSaleInvoice(selectedSale.id);
     setPrinting(false);
     if (!response.success) {
-      setFeedback(response.message || "No se pudo imprimir la factura");
+      setFeedback({ severity: "error", message: response.message || "No se pudo imprimir la factura" });
       return;
     }
-    setFeedback("Factura enviada a impresion.");
+    setFeedback({ severity: "success", message: "Factura enviada a impresion." });
   };
 
   return (
@@ -104,7 +108,7 @@ export default function SalesHistoryView() {
         </Typography>
       </Box>
 
-      {feedback ? <Alert severity="info">{feedback}</Alert> : null}
+      <FloatingAlert feedback={feedback} onClose={() => setFeedback(null)} />
 
       <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2}>
         <Card><CardContent><Typography variant="body2" color="text.secondary">Facturas cargadas</Typography><Typography variant="h5">{totals.count}</Typography></CardContent></Card>
@@ -133,7 +137,7 @@ export default function SalesHistoryView() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredSales.map((sale) => (
+                  {salesPagination.paginatedRows.map((sale) => (
                     <TableRow key={sale.id} hover>
                       <TableCell>{sale.invoiceNumber}</TableCell>
                       <TableCell>{sale.customer}</TableCell>
@@ -153,6 +157,16 @@ export default function SalesHistoryView() {
                   ) : null}
                 </TableBody>
               </Table>
+              <TablePagination
+                component="div"
+                count={filteredSales.length}
+                page={salesPagination.page}
+                onPageChange={salesPagination.handleChangePage}
+                rowsPerPage={salesPagination.rowsPerPage}
+                onRowsPerPageChange={salesPagination.handleChangeRowsPerPage}
+                rowsPerPageOptions={[10, 15]}
+                labelRowsPerPage="Filas"
+              />
             </Box>
           )}
         </Stack>

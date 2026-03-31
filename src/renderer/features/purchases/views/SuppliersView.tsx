@@ -16,12 +16,15 @@ import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import FloatingAlert from "@/components/feedback/FloatingAlert";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
+import { useTablePagination } from "@/hooks/useTablePagination";
 
 const TIPOS_DOCUMENTO = [
   "NIT",
@@ -153,6 +156,7 @@ export default function SuppliersView() {
   const withPurchasesCount = suppliers.filter((supplier) => supplier.purchasesCount > 0).length;
   const canCreateSuppliers = hasPermission(user, APP_PERMISSION_KEYS.suppliersCreate);
   const canEditSuppliers = hasPermission(user, APP_PERMISSION_KEYS.suppliersEdit);
+  const suppliersPagination = useTablePagination(filteredSuppliers);
 
   const openCreate = () => {
     setEditingSupplier(null);
@@ -226,7 +230,11 @@ export default function SuppliersView() {
         ) : null}
       </Box>
 
-      {feedback ? <Alert severity={feedback.severity}>{feedback.message}</Alert> : null}
+      <FloatingAlert feedback={feedback} onClose={() => setFeedback(null)} />
+      <FloatingAlert
+        feedback={formError ? { severity: "error", message: formError } : null}
+        onClose={() => setFormError(null)}
+      />
 
       <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2}>
         <Card><CardContent><Typography variant="body2" color="text.secondary">Proveedores activos</Typography><Typography variant="h5">{activeCount}</Typography></CardContent></Card>
@@ -260,7 +268,7 @@ export default function SuppliersView() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredSuppliers.map((supplier) => (
+                  {suppliersPagination.paginatedRows.map((supplier) => (
                     <TableRow key={supplier.id} hover>
                       <TableCell>
                         <Stack spacing={0.25}>
@@ -299,6 +307,16 @@ export default function SuppliersView() {
                   ) : null}
                 </TableBody>
               </Table>
+              <TablePagination
+                component="div"
+                count={filteredSuppliers.length}
+                page={suppliersPagination.page}
+                onPageChange={suppliersPagination.handleChangePage}
+                rowsPerPage={suppliersPagination.rowsPerPage}
+                onRowsPerPageChange={suppliersPagination.handleChangeRowsPerPage}
+                rowsPerPageOptions={[10, 15]}
+                labelRowsPerPage="Filas"
+              />
             </Box>
           )}
         </Stack>
@@ -308,8 +326,6 @@ export default function SuppliersView() {
         <DialogTitle>{editingSupplier ? "Editar proveedor" : "Nuevo proveedor"}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
-            {formError ? <Alert severity="error">{formError}</Alert> : null}
-
             <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "1fr 1fr" }} gap={2}>
               <TextField
                 label="Nombre comercial"

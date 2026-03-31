@@ -16,10 +16,13 @@ import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
+import FloatingAlert from "@/components/feedback/FloatingAlert";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { tipoMovimientoInventarioLabel } from "@/lib/display";
 
 type InventoryMove = Awaited<ReturnType<typeof window.api.listInventoryMoves>>["moves"][number];
@@ -105,6 +108,7 @@ export default function InventoryMovesView() {
     const sameDay = new Date(move.createdAt).toDateString() === new Date().toDateString();
     return sameDay && move.type.includes("ADJUSTMENT");
   }).length;
+  const movesPagination = useTablePagination(filteredMoves);
 
   return (
     <Stack spacing={3}>
@@ -115,7 +119,10 @@ export default function InventoryMovesView() {
         </Typography>
       </Box>
 
-      {feedback ? <Alert severity="error">{feedback}</Alert> : null}
+      <FloatingAlert
+        feedback={feedback ? { severity: "error", message: feedback } : null}
+        onClose={() => setFeedback(null)}
+      />
 
       <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2}>
         <Card><CardContent><Typography variant="body2" color="text.secondary">Movimientos cargados</Typography><Typography variant="h5">{moves.length}</Typography></CardContent></Card>
@@ -172,7 +179,7 @@ export default function InventoryMovesView() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredMoves.map((move) => {
+                  {movesPagination.paginatedRows.map((move) => {
                     const date = new Date(move.createdAt);
                     return (
                       <TableRow key={move.id} hover>
@@ -203,6 +210,16 @@ export default function InventoryMovesView() {
                   ) : null}
                 </TableBody>
               </Table>
+              <TablePagination
+                component="div"
+                count={filteredMoves.length}
+                page={movesPagination.page}
+                onPageChange={movesPagination.handleChangePage}
+                rowsPerPage={movesPagination.rowsPerPage}
+                onRowsPerPageChange={movesPagination.handleChangeRowsPerPage}
+                rowsPerPageOptions={[10, 15]}
+                labelRowsPerPage="Filas"
+              />
             </Box>
           )}
         </Stack>

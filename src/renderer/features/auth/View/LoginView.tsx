@@ -4,12 +4,14 @@ import { FormEvent } from "react";
 
 // Componentes MUI
 import TextField from "@mui/material/TextField";
-import Button from "@mui/material/Button";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import Stack from "@mui/material/Stack";
+
+// Componentes propios
+import ButtonUI from "@/components/ui/Button";
 
 import { useAuth } from "@/features/auth/hooks/useAuth";
 
@@ -27,7 +29,7 @@ export default function Login() {
     setError(""); // Limpia errores previos
 
     if (!user.trim() || !password.trim()) {
-      setError("Completa ambos campos");
+      setError("Campos requeridos");
       return;
     }
 
@@ -62,7 +64,7 @@ export default function Login() {
         </div>
         {/* Formulario con MUI */}
         <div>
-          <form onSubmit={handleLogin}>
+          <form onSubmit={handleLogin} noValidate>
             <Stack spacing={2} p={3}>
               {/* Campo Email */}
               <TextField
@@ -74,6 +76,10 @@ export default function Login() {
                 fullWidth
                 autoFocus
                 required
+                error={!user.trim() && !!error}
+                helperText={
+                  !user.trim() && error ? "El usuario es obligatorio" : ""
+                }
                 // El label sube automáticamente al escribir o al tener valor
               />
 
@@ -111,16 +117,16 @@ export default function Login() {
 
               {/* Botones */}
               <div className="space-y-4 pt-4">
-                <Button
+                <ButtonUI
                   type="submit"
-                  variant="contained"
+                  variant="primary"
                   color="primary" // o "success" si prefieres verde
                   fullWidth
-                  size="large"
-                  sx={{ py: 1.8 }} // un poco más alto como tu botón original
+                  size="lg"
+                  // sx={{ py: 1.8 }} // un poco más alto como tu botón original
                 >
                   Iniciar Sesión
-                </Button>
+                </ButtonUI>
               </div>
             </Stack>
           </form>

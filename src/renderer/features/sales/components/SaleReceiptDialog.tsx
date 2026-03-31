@@ -1,3 +1,4 @@
+import Box from "@mui/material/Box";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
@@ -9,8 +10,10 @@ import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { metodoPagoLabel } from "@/lib/display";
 
 type SaleDetail = NonNullable<Awaited<ReturnType<typeof window.api.getSaleDetail>>["sale"]>;
@@ -43,6 +46,7 @@ export default function SaleReceiptDialog({
   printing?: boolean;
   canPrint?: boolean;
 }) {
+  const itemsPagination = useTablePagination(sale?.items ?? []);
   if (!sale) return null;
 
   return (
@@ -61,26 +65,38 @@ export default function SaleReceiptDialog({
             <Typography variant="body2" color="text.secondary">Pago: {paymentSummary(sale)}</Typography>
           </Stack>
 
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Producto</TableCell>
-                <TableCell align="right">Cant.</TableCell>
-                <TableCell align="right">Precio</TableCell>
-                <TableCell align="right">Total</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {sale.items.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>{item.name}</TableCell>
-                  <TableCell align="right">{item.qty}</TableCell>
-                  <TableCell align="right">{currency(item.price)}</TableCell>
-                  <TableCell align="right">{currency(item.lineTotal)}</TableCell>
+          <Box sx={{ overflowX: "auto" }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Producto</TableCell>
+                  <TableCell align="right">Cant.</TableCell>
+                  <TableCell align="right">Precio</TableCell>
+                  <TableCell align="right">Total</TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHead>
+              <TableBody>
+                {itemsPagination.paginatedRows.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>{item.name}</TableCell>
+                    <TableCell align="right">{item.qty}</TableCell>
+                    <TableCell align="right">{currency(item.price)}</TableCell>
+                    <TableCell align="right">{currency(item.lineTotal)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <TablePagination
+              component="div"
+              count={sale.items.length}
+              page={itemsPagination.page}
+              onPageChange={itemsPagination.handleChangePage}
+              rowsPerPage={itemsPagination.rowsPerPage}
+              onRowsPerPageChange={itemsPagination.handleChangeRowsPerPage}
+              rowsPerPageOptions={[10, 15]}
+              labelRowsPerPage="Filas"
+            />
+          </Box>
 
           <Stack spacing={0.5} alignItems="flex-end">
             <Typography variant="body2">Subtotal: {currency(sale.subtotal)}</Typography>

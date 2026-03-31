@@ -25,16 +25,19 @@ import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
+import FloatingAlert from "@/components/feedback/FloatingAlert";
 import { getTaxLabel, getUnitLabel } from "@/features/products/constants";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import type { CategoryOption, SubcategoryMap } from "@/features/products/services/products.api";
 import type { Product } from "@/features/products/types";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import ProductCreateView from "@/features/products/views/ProductCreateView";
 import ProductEditView from "@/features/products/views/ProductEditView";
 
@@ -149,6 +152,7 @@ export default function ProductListView() {
   const canEditProducts = hasPermission(user, APP_PERMISSION_KEYS.productsEdit);
   const canArchiveProducts = hasPermission(user, APP_PERMISSION_KEYS.productsDelete);
   const canManageCategories = canEditProducts;
+  const productsPagination = useTablePagination(filteredProducts);
 
   const handleCreateProduct = async (payload: Parameters<typeof window.api.createProductRecord>[0]) => {
     const response = await window.api.createProductRecord(payload);
@@ -249,7 +253,7 @@ export default function ProductListView() {
         </Stack>
       </Box>
 
-      {feedback ? <Alert severity={feedback.severity}>{feedback.message}</Alert> : null}
+      <FloatingAlert feedback={feedback} onClose={() => setFeedback(null)} />
 
       <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2}>
         <Card>
@@ -309,7 +313,7 @@ export default function ProductListView() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredProducts.map((product) => (
+                  {productsPagination.paginatedRows.map((product) => (
                     <TableRow key={product.id} hover>
                       <TableCell>
                         <Typography fontWeight={600}>{product.name}</Typography>
@@ -347,6 +351,16 @@ export default function ProductListView() {
                   ))}
                 </TableBody>
               </Table>
+              <TablePagination
+                component="div"
+                count={filteredProducts.length}
+                page={productsPagination.page}
+                onPageChange={productsPagination.handleChangePage}
+                rowsPerPage={productsPagination.rowsPerPage}
+                onRowsPerPageChange={productsPagination.handleChangeRowsPerPage}
+                rowsPerPageOptions={[10, 15]}
+                labelRowsPerPage="Filas"
+              />
             </Box>
           )}
         </Stack>
