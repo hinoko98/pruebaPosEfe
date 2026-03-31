@@ -15,7 +15,7 @@ import {
 } from "@prisma/client";
 
 import { createProductSchema, updateProductSchema } from "../ipc/schemas/product.schema";
-import { APP_PERMISSION_KEYS } from "../../renderer/features/user/app-permissions";
+import { APP_PERMISSION_KEYS } from "../../../renderer/features/user/app-permissions";
 
 type CurrentSessionUser = {
   id: string;
@@ -287,22 +287,6 @@ function hasSessionPermission(currentSessionUser: CurrentSessionUser, permission
   return Boolean(currentSessionUser?.permissions?.includes(permissionKey));
 }
 
-function ensureSessionPermission(
-  currentSessionUser: CurrentSessionUser,
-  permissionKey: string,
-  message: string
-) {
-  if (!currentSessionUser) {
-    throw new Error("Debes iniciar sesion");
-  }
-
-  if (!hasSessionPermission(currentSessionUser, permissionKey)) {
-    throw new Error(message);
-  }
-
-  return currentSessionUser;
-}
-
 function actorLabel(currentSessionUser: CurrentSessionUser) {
   return currentSessionUser?.name?.trim() || currentSessionUser?.username || "Sistema";
 }
@@ -450,6 +434,9 @@ export function registerBackofficeIpcHandlers({
 
   ipcMain.handle("settings:update", async (_event, payload) => {
     const currentSessionUser = await ensureAdminSession(getCurrentSessionUser);
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.settingsView)) {
+      return { success: false, message: "Tu rol no puede editar la configuracion general" };
+    }
     const parsed = businessSettingsSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Configuracion invalida" };
 
@@ -668,6 +655,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("cash:open", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.cashOpen)) {
+      return { success: false, message: "Tu rol no puede abrir caja" };
+    }
     const parsed = openCashSessionSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Datos invalidos para apertura de caja" };
 
@@ -716,6 +706,9 @@ export function registerBackofficeIpcHandlers({
   ipcMain.handle("cash:close", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.cashClose)) {
+      return { success: false, message: "Tu rol no puede cerrar caja" };
+    }
     const parsed = closeCashSessionSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Datos invalidos para cierre de caja" };
 
