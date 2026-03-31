@@ -22,14 +22,17 @@ import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
+import FloatingAlert from "@/components/feedback/FloatingAlert";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
+import { useTablePagination } from "@/hooks/useTablePagination";
 import { rolLabel } from "@/lib/display";
 
 type UserRow = Awaited<ReturnType<typeof window.api.listUsers>>["users"][number];
@@ -175,6 +178,7 @@ export function UserView() {
   const canCreateUsers = hasPermission(user, APP_PERMISSION_KEYS.usersCreate);
   const canEditUsers = hasPermission(user, APP_PERMISSION_KEYS.usersEdit);
   const canViewRoles = hasPermission(user, APP_PERMISSION_KEYS.rolesView);
+  const usersPagination = useTablePagination(filteredUsers);
 
   const updateForm = <K extends keyof UserFormState>(key: K, value: UserFormState[K]) => {
     setForm((prev) => {
@@ -397,7 +401,7 @@ export function UserView() {
         </Stack>
       </Box>
 
-      {feedback ? <Alert severity={feedback.severity}>{feedback.message}</Alert> : null}
+      <FloatingAlert feedback={feedback} onClose={() => setFeedback(null)} />
 
       <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2}>
         <Card>
@@ -449,7 +453,7 @@ export function UserView() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredUsers.map((row) => (
+                  {usersPagination.paginatedRows.map((row) => (
                     <TableRow key={row.id} hover>
                       <TableCell>{row.name || "Sin nombre"}</TableCell>
                       <TableCell>{row.username}</TableCell>
@@ -487,6 +491,16 @@ export function UserView() {
                   ) : null}
                 </TableBody>
               </Table>
+              <TablePagination
+                component="div"
+                count={filteredUsers.length}
+                page={usersPagination.page}
+                onPageChange={usersPagination.handleChangePage}
+                rowsPerPage={usersPagination.rowsPerPage}
+                onRowsPerPageChange={usersPagination.handleChangeRowsPerPage}
+                rowsPerPageOptions={[10, 15]}
+                labelRowsPerPage="Filas"
+              />
             </Box>
           )}
         </Stack>

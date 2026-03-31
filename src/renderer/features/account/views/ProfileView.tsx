@@ -8,10 +8,10 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
-import Alert from "@mui/material/Alert";
+import FloatingAlert from "@/components/feedback/FloatingAlert";
 
 export default function ProfileView() {
-  const { user, setUser } = useAuth() as any; // ajusta tipos si ya los tienes
+  const { user, login } = useAuth();
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -42,16 +42,19 @@ export default function ProfileView() {
       // if (!res.success) throw new Error(res.message);
 
       // Por ahora actualiza local (UI)
-      setUser?.({
+      login({
         ...user,
         name: name.trim(),
         username: username.trim(),
-        email: email.trim() || undefined,
+        // El tipo AuthUser actual no expone email, asi que se mantiene solo en la UI local.
       });
 
       setMsg({ type: "success", text: "Perfil actualizado." });
-    } catch (e: any) {
-      setMsg({ type: "error", text: e?.message ?? "No se pudo actualizar el perfil." });
+    } catch (error) {
+      setMsg({
+        type: "error",
+        text: error instanceof Error ? error.message : "No se pudo actualizar el perfil.",
+      });
     } finally {
       setSaving(false);
     }
@@ -69,7 +72,10 @@ export default function ProfileView() {
       <Card sx={{ mt: 2, borderRadius: 3 }}>
         <CardContent>
           <Stack spacing={2}>
-            {msg ? <Alert severity={msg.type}>{msg.text}</Alert> : null}
+            <FloatingAlert
+              feedback={msg ? { severity: msg.type, message: msg.text } : null}
+              onClose={() => setMsg(null)}
+            />
 
             <TextField
               label="Nombre"
