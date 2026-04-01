@@ -26,6 +26,7 @@ import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import FloatingAlert from "@/components/feedback/FloatingAlert";
+import HelpHint from "@/components/ui/HelpHint";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
@@ -90,9 +91,6 @@ export default function PurchasesView() {
   const [rows, setRows] = useState<PurchaseFormRow[]>([emptyPurchaseRow()]);
   const canCreatePurchases = hasPermission(user, APP_PERMISSION_KEYS.purchasesCreate);
   const canViewPurchaseDetails = hasPermission(user, APP_PERMISSION_KEYS.purchasesDetails);
-  const purchasesPagination = useTablePagination(filteredPurchases);
-  const draftRowsPagination = useTablePagination(rows);
-  const detailItemsPagination = useTablePagination(selectedPurchase?.items ?? []);
 
   const loadData = async () => {
     setLoading(true);
@@ -163,6 +161,9 @@ export default function PurchasesView() {
       { subtotal: 0, tax: 0 }
     );
   }, [rows]);
+  const purchasesPagination = useTablePagination(filteredPurchases);
+  const draftRowsPagination = useTablePagination(rows);
+  const detailItemsPagination = useTablePagination(selectedPurchase?.items ?? []);
 
   const handleAddRow = () => {
     setRows((prev) => [...prev, emptyPurchaseRow()]);
@@ -255,11 +256,9 @@ export default function PurchasesView() {
   return (
     <Stack spacing={3}>
       <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
-        <Box>
+        <Box display="flex" alignItems="center" gap={0.5}>
           <Typography variant="h4">Compras</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Registra compras reales a proveedores y surte inventario desde una compra recibida.
-          </Typography>
+          <HelpHint title="Registra compras a proveedores, alimenta inventario y controla saldos pendientes de cada factura." />
         </Box>
 
         {canCreatePurchases ? (

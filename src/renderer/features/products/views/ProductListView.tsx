@@ -31,6 +31,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import FloatingAlert from "@/components/feedback/FloatingAlert";
+import HelpHint from "@/components/ui/HelpHint";
 import { getTaxLabel, getUnitLabel } from "@/features/products/constants";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
@@ -232,11 +233,9 @@ export default function ProductListView() {
   return (
     <Stack spacing={3}>
       <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
-        <Box>
+        <Box display="flex" alignItems="center" gap={0.5}>
           <Typography variant="h4">Productos</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Catalogo conectado a base de datos con categorias y stock real.
-          </Typography>
+          <HelpHint title="Administra el catálogo, categorías, precios y stock real de cada producto desde una sola vista." />
         </Box>
 
         <Stack direction="row" spacing={1} flexWrap="wrap">

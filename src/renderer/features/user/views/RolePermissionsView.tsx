@@ -27,6 +27,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import FloatingAlert from "@/components/feedback/FloatingAlert";
+import HelpHint from "@/components/ui/HelpHint";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
@@ -293,13 +294,11 @@ export function RolePermissionsView() {
   return (
     <Stack spacing={3}>
       <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={2} flexWrap="wrap">
-        <Box>
+        <Box display="flex" alignItems="center" gap={0.5}>
           <Typography variant="h4" fontWeight={800}>
             Permisos del rol
           </Typography>
-          <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-            Administra perfiles de rol, sus permisos y la estructura base de acceso del sistema.
-          </Typography>
+          <HelpHint title="Configura perfiles de acceso y define con claridad qué puede consultar o editar cada rol del sistema." />
         </Box>
 
         <Stack direction="row" spacing={1} flexWrap="wrap">

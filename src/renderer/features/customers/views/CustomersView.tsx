@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -20,26 +21,24 @@ import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+
 import FloatingAlert from "@/components/feedback/FloatingAlert";
+import HelpHint from "@/components/ui/HelpHint";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
 import { useTablePagination } from "@/hooks/useTablePagination";
+import { copyText } from "@/lib/clipboard";
+import { buildSuggestedManagedCode, normalizePrefixedCode } from "@/lib/internal-code";
 
-const TIPOS_DOCUMENTO = [
-  "Cédula",
-  "NIT",
-  "Cédula de extranjería",
-  "Pasaporte",
-  "Tarjeta de identidad",
-] as const;
-
-type TipoDocumento = (typeof TIPOS_DOCUMENTO)[number];
 type CustomerRow = Awaited<ReturnType<typeof window.api.listCustomers>>["customers"][number];
+type CustomerDocumentType = NonNullable<Parameters<typeof window.api.createCustomer>[0]["documentType"]>;
+
 type CustomerFormState = {
+  internalCode: string;
   firstName: string;
   lastName: string;
-  documentType: TipoDocumento;
+  documentType: CustomerDocumentType;
   documentNumber: string;
   phone: string;
   email: string;
@@ -47,10 +46,19 @@ type CustomerFormState = {
   isActive: boolean;
 };
 
+const DOCUMENT_TYPES: CustomerDocumentType[] = [
+  "Cédula",
+  "NIT",
+  "Cédula de extranjería",
+  "Pasaporte",
+  "Tarjeta de identidad",
+];
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function emptyForm(): CustomerFormState {
   return {
+    internalCode: "",
     firstName: "",
     lastName: "",
     documentType: "Cédula",
@@ -77,12 +85,12 @@ function splitFullName(name: string) {
 
 function splitDocument(document: string | null) {
   if (!document) {
-    return { documentType: "Cédula" as TipoDocumento, documentNumber: "" };
+    return { documentType: "Cédula" as CustomerDocumentType, documentNumber: "" };
   }
 
-  const foundType = TIPOS_DOCUMENTO.find((type) => document.startsWith(`${type}: `));
+  const foundType = DOCUMENT_TYPES.find((type) => document.startsWith(`${type}: `));
   if (!foundType) {
-    return { documentType: "Cédula" as TipoDocumento, documentNumber: document };
+    return { documentType: "Cédula" as CustomerDocumentType, documentNumber: document };
   }
 
   return {
@@ -96,6 +104,7 @@ function customerToForm(customer: CustomerRow): CustomerFormState {
   const documentParts = splitDocument(customer.document);
 
   return {
+    internalCode: customer.internalCode || "",
     firstName: nameParts.firstName,
     lastName: nameParts.lastName,
     documentType: documentParts.documentType,
@@ -108,21 +117,15 @@ function customerToForm(customer: CustomerRow): CustomerFormState {
 }
 
 function validateForm(form: CustomerFormState) {
-  if (form.firstName.trim().length < 2) {
-    return "Los nombres son obligatorios.";
-  }
-  if (form.phone && !/^\d{10}$/.test(form.phone)) {
-    return "El teléfono debe tener 10 números.";
-  }
-  if (form.email && !EMAIL_REGEX.test(form.email)) {
-    return "El correo no tiene un formato válido.";
-  }
+  if (form.firstName.trim().length < 2) return "Los nombres son obligatorios.";
+  if (form.phone && !/^\d{10}$/.test(form.phone)) return "El telefono debe tener 10 numeros.";
+  if (form.email && !EMAIL_REGEX.test(form.email)) return "El correo no tiene un formato valido.";
   return null;
 }
 
 export default function CustomersView() {
   const { user } = useAuth();
-  const [customers, setCustomers] = useState<Awaited<ReturnType<typeof window.api.listCustomers>>["customers"]>([]);
+  const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -139,6 +142,7 @@ export default function CustomersView() {
       setLoading(false);
       return;
     }
+
     setCustomers(response.customers);
     setLoading(false);
   };
@@ -152,7 +156,15 @@ export default function CustomersView() {
     if (!query) return customers;
 
     return customers.filter((customer) =>
-      [customer.name, customer.document || "", customer.phone || "", customer.email || "", customer.createdBy || ""]
+      [
+        customer.name,
+        customer.internalCode || "",
+        customer.document || "",
+        customer.phone || "",
+        customer.email || "",
+        customer.address || "",
+        customer.createdBy || "",
+      ]
         .join(" ")
         .toLowerCase()
         .includes(query)
@@ -161,13 +173,17 @@ export default function CustomersView() {
 
   const activeCount = customers.filter((customer) => customer.isActive).length;
   const withSalesCount = customers.filter((customer) => customer.salesCount > 0).length;
+  const withCreditsCount = customers.filter((customer) => customer.creditsCount > 0).length;
   const canCreateCustomers = hasPermission(user, APP_PERMISSION_KEYS.customersCreate);
   const canEditCustomers = hasPermission(user, APP_PERMISSION_KEYS.customersEdit);
   const customersPagination = useTablePagination(filteredCustomers);
 
   const openCreate = () => {
     setEditingCustomer(null);
-    setForm(emptyForm());
+    setForm({
+      ...emptyForm(),
+      internalCode: buildSuggestedManagedCode(customers.map((customer) => customer.internalCode), "CLI", 4),
+    });
     setFormError(null);
     setDialogOpen(true);
   };
@@ -185,6 +201,17 @@ export default function CustomersView() {
     setFormError(null);
   };
 
+  const handleCopyCode = async (value: string | null) => {
+    if (!value) return;
+
+    try {
+      await copyText(value);
+      setFeedback({ severity: "success", message: `Codigo ${value} copiado.` });
+    } catch {
+      setFeedback({ severity: "error", message: "No se pudo copiar el codigo." });
+    }
+  };
+
   const handleSave = async () => {
     const validationError = validateForm(form);
     if (validationError) {
@@ -193,6 +220,7 @@ export default function CustomersView() {
     }
 
     const payload = {
+      internalCode: form.internalCode.trim() || undefined,
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim() || undefined,
       documentType: form.documentType,
@@ -223,11 +251,9 @@ export default function CustomersView() {
   return (
     <Stack spacing={3}>
       <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
-        <Box>
+        <Box display="flex" alignItems="center" gap={0.5}>
           <Typography variant="h4">Clientes</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Registro real de clientes con validación y trazabilidad de quién los creó.
-          </Typography>
+          <HelpHint title="Mantiene una base limpia de clientes con código interno, contacto y búsqueda rápida para operación y seguimiento." />
         </Box>
 
         {canCreateCustomers ? (
@@ -243,17 +269,46 @@ export default function CustomersView() {
         onClose={() => setFormError(null)}
       />
 
-      <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2}>
-        <Card><CardContent><Typography variant="body2" color="text.secondary">Clientes activos</Typography><Typography variant="h5">{activeCount}</Typography></CardContent></Card>
-        <Card><CardContent><Typography variant="body2" color="text.secondary">Total clientes</Typography><Typography variant="h5">{customers.length}</Typography></CardContent></Card>
-        <Card><CardContent><Typography variant="body2" color="text.secondary">Clientes con ventas</Typography><Typography variant="h5">{withSalesCount}</Typography></CardContent></Card>
+      <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(4, 1fr)" }} gap={2}>
+        <Card>
+          <CardContent>
+            <Typography variant="body2" color="text.secondary">
+              Clientes activos
+            </Typography>
+            <Typography variant="h5">{activeCount}</Typography>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <Typography variant="body2" color="text.secondary">
+              Total clientes
+            </Typography>
+            <Typography variant="h5">{customers.length}</Typography>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <Typography variant="body2" color="text.secondary">
+              Con ventas registradas
+            </Typography>
+            <Typography variant="h5">{withSalesCount}</Typography>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <Typography variant="body2" color="text.secondary">
+              Con creditos activos
+            </Typography>
+            <Typography variant="h5">{withCreditsCount}</Typography>
+          </CardContent>
+        </Card>
       </Box>
 
       <Card sx={{ p: 2 }}>
         <Stack spacing={2}>
           <TextField
             label="Buscar cliente"
-            placeholder="Nombre, documento, teléfono, correo o usuario"
+            placeholder="Codigo, nombre, documento, telefono, correo o direccion"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -267,7 +322,7 @@ export default function CustomersView() {
                   <TableRow>
                     <TableCell>Cliente</TableCell>
                     <TableCell>Documento</TableCell>
-                    <TableCell>Teléfono</TableCell>
+                    <TableCell>Telefono</TableCell>
                     <TableCell>Correo</TableCell>
                     <TableCell>Estado</TableCell>
                     <TableCell>Registrado por</TableCell>
@@ -280,8 +335,20 @@ export default function CustomersView() {
                       <TableCell>
                         <Stack spacing={0.25}>
                           <Typography fontWeight={600}>{customer.name}</Typography>
+                          <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap">
+                            <Chip size="small" label={customer.internalCode || "Sin codigo"} variant="outlined" />
+                            {customer.internalCode ? (
+                              <Button
+                                size="small"
+                                startIcon={<ContentCopyOutlinedIcon fontSize="small" />}
+                                onClick={() => void handleCopyCode(customer.internalCode)}
+                              >
+                                Copiar
+                              </Button>
+                            ) : null}
+                          </Box>
                           <Typography variant="caption" color="text.secondary">
-                            Ventas relacionadas: {customer.salesCount}
+                            Ventas: {customer.salesCount} | Creditos: {customer.creditsCount}
                           </Typography>
                         </Stack>
                       </TableCell>
@@ -302,14 +369,18 @@ export default function CustomersView() {
                             Ver / editar
                           </Button>
                         ) : (
-                          <Typography variant="body2" color="text.secondary">Sin acciones</Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Sin acciones
+                          </Typography>
                         )}
                       </TableCell>
                     </TableRow>
                   ))}
                   {filteredCustomers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} align="center">No hay clientes para mostrar.</TableCell>
+                      <TableCell colSpan={7} align="center">
+                        No hay clientes para mostrar.
+                      </TableCell>
                     </TableRow>
                   ) : null}
                 </TableBody>
@@ -335,6 +406,15 @@ export default function CustomersView() {
           <Stack spacing={2} sx={{ mt: 1 }}>
             <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "1fr 1fr" }} gap={2}>
               <TextField
+                label="Codigo interno"
+                value={form.internalCode}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, internalCode: normalizePrefixedCode(event.target.value, "CLI") }))
+                }
+                helperText="Visible en tabla y busqueda. Si lo dejas vacio, el sistema genera uno."
+              />
+              <Box />
+              <TextField
                 label="Nombres"
                 value={form.firstName}
                 onChange={(event) => setForm((prev) => ({ ...prev, firstName: event.target.value }))}
@@ -349,10 +429,14 @@ export default function CustomersView() {
                 select
                 label="Tipo de documento"
                 value={form.documentType}
-                onChange={(event) => setForm((prev) => ({ ...prev, documentType: event.target.value as TipoDocumento }))}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, documentType: event.target.value as CustomerDocumentType }))
+                }
               >
-                {TIPOS_DOCUMENTO.map((type) => (
-                  <MenuItem key={type} value={type}>{type}</MenuItem>
+                {DOCUMENT_TYPES.map((type) => (
+                  <MenuItem key={type} value={type}>
+                    {type}
+                  </MenuItem>
                 ))}
               </TextField>
               <TextField
@@ -361,10 +445,12 @@ export default function CustomersView() {
                 onChange={(event) => setForm((prev) => ({ ...prev, documentNumber: event.target.value }))}
               />
               <TextField
-                label="Teléfono"
+                label="Telefono"
                 value={form.phone}
-                onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value.replace(/\D/g, "").slice(0, 10) }))}
-                helperText="Debe tener 10 números"
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, phone: event.target.value.replace(/\D/g, "").slice(0, 10) }))
+                }
+                helperText="Debe tener 10 numeros"
               />
               <TextField
                 label="Correo"
@@ -373,10 +459,12 @@ export default function CustomersView() {
                 type="email"
               />
               <TextField
-                label="Dirección"
+                label="Direccion"
                 value={form.address}
                 onChange={(event) => setForm((prev) => ({ ...prev, address: event.target.value }))}
-                sx={{ gridColumn: { xs: "auto", md: "1 / span 1" } }}
+                multiline
+                minRows={2}
+                sx={{ gridColumn: { md: "1 / -1" } }}
               />
               <TextField
                 select
@@ -392,7 +480,9 @@ export default function CustomersView() {
         </DialogContent>
         <DialogActions>
           <Button onClick={closeDialog}>Cancelar</Button>
-          <Button variant="contained" onClick={() => void handleSave()}>Guardar</Button>
+          <Button variant="contained" onClick={() => void handleSave()}>
+            Guardar
+          </Button>
         </DialogActions>
       </Dialog>
     </Stack>

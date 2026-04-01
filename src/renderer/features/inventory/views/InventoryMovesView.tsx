@@ -22,6 +22,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import FloatingAlert from "@/components/feedback/FloatingAlert";
+import HelpHint from "@/components/ui/HelpHint";
 import { useTablePagination } from "@/hooks/useTablePagination";
 import { tipoMovimientoInventarioLabel } from "@/lib/display";
 
@@ -113,10 +114,10 @@ export default function InventoryMovesView() {
   return (
     <Stack spacing={3}>
       <Box>
-        <Typography variant="h4">Movimientos de inventario</Typography>
-        <Typography variant="body2" color="text.secondary">
-          Kardex real con detalle por fecha, hora, producto y tipo de movimiento.
-        </Typography>
+        <Box display="flex" alignItems="center" gap={0.5}>
+          <Typography variant="h4">Movimientos de inventario</Typography>
+          <HelpHint title="Kardex operativo con fecha, producto, referencia y tipo de ajuste para rastrear entradas y salidas reales." />
+        </Box>
       </Box>
 
       <FloatingAlert
