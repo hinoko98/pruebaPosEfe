@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 
 import InvoicePanel from "@/features/sales/components/InvoicePanel";
-import PaymentDialog from "@/features/sales/components/PaymentDialog";
+import PaymentDialog, { type PaymentDialogSubmit } from "@/features/sales/components/PaymentDialog";
 import ProductShelf from "@/features/sales/components/ProductShelf";
 import SaleReceiptDialog from "@/features/sales/components/SaleReceiptDialog";
 import SalesTabs from "@/features/sales/components/SalesTabs";
 import SearchBar from "@/features/sales/components/SearchBar";
+import HelpHint from "@/components/ui/HelpHint";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
@@ -87,6 +88,8 @@ export default function PosView() {
 
   const activeTab = tabs.find((tab) => tab.id === activeId) ?? tabs[0];
   const currentPayments = activeTab.payments.length ? activeTab.payments : [{ method: "CASH" as PaymentMethod, amount: 0 }];
+  const selectedCustomer =
+    customers.find((customer) => customer.name === activeTab.customer) ?? null;
   const canCreateSales = hasPermission(user, APP_PERMISSION_KEYS.salesCreate);
   const canChangeCustomer = hasPermission(user, APP_PERMISSION_KEYS.salesChangeCustomer);
   const canManagePayments = hasPermission(user, APP_PERMISSION_KEYS.salesManagePayments);
@@ -185,8 +188,12 @@ export default function PosView() {
     };
   }, [activeTab.cart]);
 
-  const finalize = async (paymentsPlan: Payment[]) => {
+  const finalize = async ({ payments: paymentsPlan, registerDebt, dueDate, debtAmount }: PaymentDialogSubmit) => {
     if (activeTab.cart.length === 0) return;
+    if (registerDebt && !selectedCustomer) {
+      setFeedback("Selecciona un cliente registrado para enviar saldo a cuenta por cobrar.");
+      return;
+    }
 
     setSaving(true);
     setFeedback(null);
@@ -196,6 +203,7 @@ export default function PosView() {
       const amountPaid = paymentsPlan.reduce((sum, payment) => sum + payment.amount, 0);
       const response = await window.api.createSale({
         customer: activeTab.customer || "Consumidor final",
+        customerId: selectedCustomer?.id ?? null,
         paymentMethod,
         amountPaid,
         payments: paymentsPlan,
@@ -204,6 +212,7 @@ export default function PosView() {
           qty: item.qty,
         })),
         clientTotal: totals.total,
+        allowDebt: registerDebt,
       });
 
       if (!response.success) {
@@ -216,9 +225,27 @@ export default function PosView() {
         setCompletedSale(detail.sale);
       }
 
+      let accountingMessage = "";
+      if (registerDebt && selectedCustomer && debtAmount > 0) {
+        const creditResponse = await window.api.createAccountingCredit({
+          saleId: response.saleId,
+          customerId: selectedCustomer.id,
+          total: debtAmount,
+          dueDate: dueDate ? new Date(`${dueDate}T23:59:59`).toISOString() : null,
+        });
+
+        if (!creditResponse.success) {
+          accountingMessage = " La venta quedo registrada, pero el saldo no pudo enviarse a cartera.";
+        } else {
+          accountingMessage = ` Saldo enviado a cartera por ${fmt(debtAmount)}.`;
+        }
+      }
+
       setPaymentDialogOpen(false);
       setFeedback(
-        paymentsPlan.length > 1
+        registerDebt
+          ? `Venta ${response.invoiceNumber} registrada por ${fmt(response.total)}.${accountingMessage}`
+          : paymentsPlan.length > 1
           ? `Venta ${response.invoiceNumber} registrada por ${fmt(response.total)}. Pago combinado${response.changeAmount > 0 ? `. Vueltas: ${fmt(response.changeAmount)}.` : "."}`
           : paymentMethod === "CASH"
             ? `Venta ${response.invoiceNumber} registrada por ${fmt(response.total)}. Vueltas: ${fmt(response.changeAmount)}.`
@@ -261,6 +288,23 @@ export default function PosView() {
         overflow: "hidden",
       }}
     >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          padding: "10px 14px",
+          background: "white",
+          borderBottom: "1px solid #e2e8f0",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <strong style={{ fontSize: 16, color: "#0f172a" }}>Facturar</strong>
+          <HelpHint title="Busca productos, arma la venta, define cliente y confirma el pago sin salir del flujo principal de caja." />
+        </div>
+      </div>
+
       <SalesTabs tabs={tabs} activeId={activeId} onSelect={setActiveId} onAdd={addTab} onClose={closeTab} />
 
       {feedback ? (
@@ -353,8 +397,10 @@ export default function PosView() {
         total={totals.total}
         saving={saving}
         initialPayments={currentPayments}
+        customerName={selectedCustomer?.name ?? activeTab.customer}
+        canRegisterDebt={Boolean(selectedCustomer)}
         onClose={() => setPaymentDialogOpen(false)}
-        onConfirm={(payments) => finalize(payments)}
+        onConfirm={(payload) => finalize(payload)}
       />
 
       <SaleReceiptDialog

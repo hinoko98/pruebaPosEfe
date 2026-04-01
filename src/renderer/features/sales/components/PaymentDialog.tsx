@@ -8,10 +8,12 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
+import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
@@ -24,6 +26,13 @@ type DraftPayment = {
   id: string;
   method: PaymentMethod;
   amount: string;
+};
+
+export type PaymentDialogSubmit = {
+  payments: Payment[];
+  registerDebt: boolean;
+  dueDate: string | null;
+  debtAmount: number;
 };
 
 const METHOD_OPTIONS: Array<{ value: PaymentMethod; label: string }> = [
@@ -53,6 +62,8 @@ export default function PaymentDialog({
   total,
   saving,
   initialPayments,
+  customerName,
+  canRegisterDebt,
   onClose,
   onConfirm,
 }: {
@@ -60,11 +71,15 @@ export default function PaymentDialog({
   total: number;
   saving?: boolean;
   initialPayments?: Payment[];
+  customerName?: string;
+  canRegisterDebt?: boolean;
   onClose: () => void;
-  onConfirm: (payments: Payment[]) => Promise<void> | void;
+  onConfirm: (payload: PaymentDialogSubmit) => Promise<void> | void;
 }) {
   const [mode, setMode] = useState<CheckoutMode | null>(null);
   const [payments, setPayments] = useState<DraftPayment[]>([createDraftPayment()]);
+  const [registerDebt, setRegisterDebt] = useState(false);
+  const [dueDate, setDueDate] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -80,6 +95,8 @@ export default function PaymentDialog({
         createDraftPayment(payment.method, payment.amount > 0 ? String(payment.amount) : "")
       )
     );
+    setRegisterDebt(false);
+    setDueDate("");
   }, [initialPayments, open]);
 
   const normalizedPayments = useMemo(
@@ -102,7 +119,12 @@ export default function PaymentDialog({
   const remaining = Math.max(0, total - totalReceived);
   const change = Math.max(0, totalReceived - total);
   const invalidChangeSource = change > cashReceived;
-  const canContinue = normalizedPayments.some((payment) => payment.amount > 0) && remaining === 0 && !invalidChangeSource;
+  const debtEnabled = Boolean(registerDebt && canRegisterDebt && remaining > 0);
+  const hasAnyPayment = normalizedPayments.some((payment) => payment.amount > 0);
+  const canContinue =
+    !invalidChangeSource &&
+    (remaining === 0 || debtEnabled) &&
+    (hasAnyPayment || debtEnabled);
 
   const handleSelectMode = (nextMode: CheckoutMode) => {
     setMode(nextMode);
@@ -142,7 +164,12 @@ export default function PaymentDialog({
         amount: Math.round(payment.amount),
       }));
 
-    await onConfirm(payload);
+    await onConfirm({
+      payments: payload,
+      registerDebt: debtEnabled,
+      dueDate: debtEnabled && dueDate ? dueDate : null,
+      debtAmount: debtEnabled ? Math.round(remaining) : 0,
+    });
   };
 
   return (
@@ -175,10 +202,14 @@ export default function PaymentDialog({
                   sx={{
                     fontSize: 14,
                     fontWeight: 800,
-                    color: change > 0 ? "#0f766e" : remaining > 0 ? "#e11d48" : "#475569",
+                    color: change > 0 ? "#0f766e" : debtEnabled ? "#b45309" : remaining > 0 ? "#e11d48" : "#475569",
                   }}
                 >
-                  {change > 0 ? `Vueltas: ${fmt(change)}` : `Por cobrar: ${fmt(remaining)}`}
+                  {change > 0
+                    ? `Vueltas: ${fmt(change)}`
+                    : debtEnabled
+                      ? `Saldo a cartera: ${fmt(remaining)}`
+                      : `Por cobrar: ${fmt(remaining)}`}
                 </Typography>
               </Stack>
 
@@ -297,7 +328,48 @@ export default function PaymentDialog({
               ) : null}
 
               {!invalidChangeSource && remaining > 0 ? (
-                <Alert severity="info">Faltan {fmt(remaining)} para completar la venta.</Alert>
+                <Alert severity={canRegisterDebt ? "warning" : "info"}>
+                  {canRegisterDebt
+                    ? `Faltan ${fmt(remaining)}. Puedes enviarlos a cuenta por cobrar para ${customerName ?? "el cliente"} desde aqui.`
+                    : `Faltan ${fmt(remaining)} para completar la venta.`}
+                </Alert>
+              ) : null}
+
+              {canRegisterDebt ? (
+                <Box
+                  sx={{
+                    p: 2,
+                    borderRadius: 3,
+                    border: "1px solid #f1e1ae",
+                    background: "#fff8e6",
+                    display: "grid",
+                    gap: 1.25,
+                  }}
+                >
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={registerDebt}
+                        onChange={(event) => setRegisterDebt(event.target.checked)}
+                        size="small"
+                        disabled={remaining === 0}
+                      />
+                    }
+                    label="Enviar saldo pendiente a cartera"
+                  />
+
+                  {registerDebt && remaining > 0 ? (
+                    <TextField
+                      label="Vencimiento"
+                      type="date"
+                      value={dueDate}
+                      onChange={(event) => setDueDate(event.target.value)}
+                      InputLabelProps={{ shrink: true }}
+                      size="small"
+                      fullWidth
+                    />
+                  ) : null}
+                </Box>
               ) : null}
             </Stack>
           ) : (

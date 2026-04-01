@@ -17,6 +17,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import FloatingAlert from "@/components/feedback/FloatingAlert";
+import HelpHint from "@/components/ui/HelpHint";
 import SaleReceiptDialog from "@/features/sales/components/SaleReceiptDialog";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
@@ -102,10 +103,10 @@ export default function SalesHistoryView() {
   return (
     <Stack spacing={3}>
       <Box>
-        <Typography variant="h4">Historial de ventas</Typography>
-        <Typography variant="body2" color="text.secondary">
-          Consulta facturas reales y reimprime sin salir del modulo.
-        </Typography>
+        <Box display="flex" alignItems="center" gap={0.5}>
+          <Typography variant="h4">Historial de ventas</Typography>
+          <HelpHint title="Consulta facturas reales, revisa el estado de cada venta y reimprime comprobantes sin salir del flujo operativo." />
+        </Box>
       </Box>
 
       <FloatingAlert feedback={feedback} onClose={() => setFeedback(null)} />
