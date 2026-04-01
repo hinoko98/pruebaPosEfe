@@ -1,5 +1,5 @@
 export function metodoPagoLabel(value: "CASH" | "CARD" | "TRANSFER") {
-  if (value === "CARD") return "Tarjeta";
+  if (value === "CARD") return "Transferencia";
   if (value === "TRANSFER") return "Transferencia";
   return "Efectivo";
 }

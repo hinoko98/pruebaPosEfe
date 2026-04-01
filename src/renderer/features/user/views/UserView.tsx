@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Alert from "@mui/material/Alert";
@@ -29,16 +30,20 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 import FloatingAlert from "@/components/feedback/FloatingAlert";
+import HelpHint from "@/components/ui/HelpHint";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
 import { useTablePagination } from "@/hooks/useTablePagination";
+import { copyText } from "@/lib/clipboard";
+import { buildSuggestedManagedCode, normalizePrefixedCode } from "@/lib/internal-code";
 import { rolLabel } from "@/lib/display";
 
 type UserRow = Awaited<ReturnType<typeof window.api.listUsers>>["users"][number];
 type UserRole = "ADMIN" | "EMPLOYEE";
 
 type UserFormState = {
+  internalCode: string;
   firstName: string;
   lastName: string;
   documentNumber: string;
@@ -52,6 +57,7 @@ type UserFormState = {
 };
 
 const initialFormState: UserFormState = {
+  internalCode: "",
   firstName: "",
   lastName: "",
   documentNumber: "",
@@ -91,6 +97,7 @@ function formatOptionalValue(value?: string | null) {
 
 function toEditForm(user: UserRow): UserFormState {
   return {
+    internalCode: user.internalCode ?? "",
     firstName: user.firstName ?? "",
     lastName: user.lastName ?? "",
     documentNumber: user.documentNumber ?? "",
@@ -156,6 +163,7 @@ export function UserView() {
     return users.filter((row) =>
       [
         row.name || "",
+        row.internalCode || "",
         row.firstName || "",
         row.lastName || "",
         row.username,
@@ -198,7 +206,10 @@ export function UserView() {
   };
 
   const openCreateDialog = () => {
-    resetForm();
+    setForm({
+      ...initialFormState,
+      internalCode: buildSuggestedManagedCode(users.map((entry) => entry.internalCode), "USR", 4),
+    });
     setCreateOpen(true);
   };
 
@@ -219,6 +230,7 @@ export function UserView() {
 
   const handleCreate = async () => {
     const response = await window.api.createUser({
+      internalCode: form.internalCode || null,
       firstName: form.firstName,
       lastName: form.lastName,
       documentNumber: form.documentNumber,
@@ -249,6 +261,7 @@ export function UserView() {
 
     const response = await window.api.updateUser({
       id: editingUser.id,
+      internalCode: form.internalCode || null,
       firstName: form.firstName,
       lastName: form.lastName,
       documentNumber: form.documentNumber,
@@ -274,8 +287,26 @@ export function UserView() {
     await loadUsers();
   };
 
+  const handleCopyCode = async (value: string | null) => {
+    if (!value) return;
+
+    try {
+      await copyText(value);
+      setFeedback({ severity: "success", message: `Codigo ${value} copiado.` });
+    } catch {
+      setFeedback({ severity: "error", message: "No se pudo copiar el codigo." });
+    }
+  };
+
   const renderUserForm = (isEdit = false) => (
     <Stack spacing={2} sx={{ mt: 1 }}>
+      <TextField
+        label="Codigo interno"
+        value={form.internalCode}
+        onChange={(event) => updateForm("internalCode", normalizePrefixedCode(event.target.value, "USR"))}
+        helperText="Visible en tabla y busqueda. Si lo dejas vacio, el sistema genera uno."
+      />
+
       <Box display="grid" gridTemplateColumns={{ xs: "1fr", sm: "repeat(2, 1fr)" }} gap={2}>
         <TextField
           label="Nombre"
@@ -380,11 +411,9 @@ export function UserView() {
   return (
     <Stack spacing={3}>
       <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
-        <Box>
+        <Box display="flex" alignItems="center" gap={0.5}>
           <Typography variant="h4">Usuarios</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Registro completo de empleados y administradores.
-          </Typography>
+          <HelpHint title="Administra empleados y administradores con código interno, rol, estado y trazabilidad de acceso." />
         </Box>
 
         <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -428,7 +457,7 @@ export function UserView() {
         <Stack spacing={2}>
           <TextField
             label="Buscar usuario"
-            placeholder="Nombre, usuario, cedula, correo o rol"
+            placeholder="Codigo, nombre, usuario, cedula, correo o rol"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -441,6 +470,7 @@ export function UserView() {
                 <TableHead>
                   <TableRow>
                     <TableCell>Nombre</TableCell>
+                    <TableCell>Codigo</TableCell>
                     <TableCell>Usuario</TableCell>
                     <TableCell>Cedula</TableCell>
                     <TableCell>Correo</TableCell>
@@ -456,6 +486,16 @@ export function UserView() {
                   {usersPagination.paginatedRows.map((row) => (
                     <TableRow key={row.id} hover>
                       <TableCell>{row.name || "Sin nombre"}</TableCell>
+                      <TableCell>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Chip size="small" label={row.internalCode || "Sin codigo"} variant="outlined" />
+                          {row.internalCode ? (
+                            <IconButton onClick={() => void handleCopyCode(row.internalCode)} size="small">
+                              <ContentCopyOutlinedIcon fontSize="small" />
+                            </IconButton>
+                          ) : null}
+                        </Stack>
+                      </TableCell>
                       <TableCell>{row.username}</TableCell>
                       <TableCell>{row.documentNumber || "No registrada"}</TableCell>
                       <TableCell>{row.email || "No registrado"}</TableCell>
@@ -486,7 +526,7 @@ export function UserView() {
                   ))}
                   {filteredUsers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} align="center">No hay usuarios para mostrar.</TableCell>
+                      <TableCell colSpan={11} align="center">No hay usuarios para mostrar.</TableCell>
                     </TableRow>
                   ) : null}
                 </TableBody>
@@ -535,17 +575,14 @@ export function UserView() {
               </Box>
 
               <Box display="grid" gridTemplateColumns={{ xs: "1fr", sm: "repeat(2, 1fr)" }} gap={2}>
+                <TextField label="Codigo interno" value={detailUser.internalCode || "Sin codigo"} disabled />
                 <TextField label="Cedula" value={formatOptionalValue(detailUser.documentNumber)} disabled />
-                <TextField label="Correo" value={formatOptionalValue(detailUser.email)} disabled />
               </Box>
 
-              <TextField
-                label="Direccion"
-                value={formatOptionalValue(detailUser.address)}
-                disabled
-                multiline
-                minRows={2}
-              />
+              <Box display="grid" gridTemplateColumns={{ xs: "1fr", sm: "repeat(2, 1fr)" }} gap={2}>
+                <TextField label="Correo" value={formatOptionalValue(detailUser.email)} disabled />
+                <TextField label="Direccion" value={formatOptionalValue(detailUser.address)} disabled multiline minRows={2} />
+              </Box>
 
               <Box display="grid" gridTemplateColumns={{ xs: "1fr", sm: "repeat(2, 1fr)" }} gap={2}>
                 <TextField label="Fecha de nacimiento" value={formatOptionalValue(detailUser.birthDate)} disabled />
