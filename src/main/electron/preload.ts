@@ -1,10 +1,25 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { LoginInput, LoginResult, CreateUserInput, UpdateUserInput } from "./ipc/schemas/auth.schema";
 import type {
+  AccountingRangeInput,
+  CreateAccountingCreditInput,
+  CreateAccountingCreditNoteInput,
+  CreateAccountingExpenseInput,
+  CreateAccountingPaymentInput,
+} from "./ipc/schemas/accounting.schema";
+import type {
+  CreateCorrespondentPlatformInput,
   CreateCorrespondentClosureInput,
+  CreateCorrespondentTransactionTypeInput,
   CreateCorrespondentTransactionInput,
+  DeleteCorrespondentPlatformInput,
+  DeleteCorrespondentTransactionTypeInput,
+  GetCorrespondentTransactionDetailInput,
   ListCorrespondentClosuresInput,
   ListCorrespondentTransactionsInput,
+  UpdateCorrespondentPlatformInput,
+  UpdateCorrespondentTransactionTypeInput,
+  UpdateCorrespondentTransactionInput,
 } from "./ipc/schemas/correspondent.schema";
 import type { CreateProductInput, UpdateProductInput } from "./ipc/schemas/product.schema";
 import type { CreateRoleProfileInput, UpdateRoleProfileInput } from "./ipc/schemas/roles.schema";
@@ -54,11 +69,35 @@ contextBridge.exposeInMainWorld("api", {
   createCorrespondentTransaction: (payload: CreateCorrespondentTransactionInput) =>
     ipcRenderer.invoke("correspondent:transaction:create", payload),
 
+  getCorrespondentTransactionDetail: (payload: GetCorrespondentTransactionDetailInput) =>
+    ipcRenderer.invoke("correspondent:transaction:detail", payload),
+
+  updateCorrespondentTransaction: (payload: UpdateCorrespondentTransactionInput) =>
+    ipcRenderer.invoke("correspondent:transaction:update", payload),
+
   listCorrespondentClosures: (payload?: ListCorrespondentClosuresInput) =>
     ipcRenderer.invoke("correspondent:closures:list", payload),
 
   createCorrespondentClosure: (payload: CreateCorrespondentClosureInput) =>
     ipcRenderer.invoke("correspondent:closure:create", payload),
+
+  createCorrespondentPlatform: (payload: CreateCorrespondentPlatformInput) =>
+    ipcRenderer.invoke("correspondent:platform:create", payload),
+
+  updateCorrespondentPlatform: (payload: UpdateCorrespondentPlatformInput) =>
+    ipcRenderer.invoke("correspondent:platform:update", payload),
+
+  deleteCorrespondentPlatform: (payload: DeleteCorrespondentPlatformInput) =>
+    ipcRenderer.invoke("correspondent:platform:delete", payload),
+
+  createCorrespondentTransactionType: (payload: CreateCorrespondentTransactionTypeInput) =>
+    ipcRenderer.invoke("correspondent:type:create", payload),
+
+  updateCorrespondentTransactionType: (payload: UpdateCorrespondentTransactionTypeInput) =>
+    ipcRenderer.invoke("correspondent:type:update", payload),
+
+  deleteCorrespondentTransactionType: (payload: DeleteCorrespondentTransactionTypeInput) =>
+    ipcRenderer.invoke("correspondent:type:delete", payload),
 
   getAppStatus: () => ipcRenderer.invoke("app:status"),
   getBusinessSettings: () => ipcRenderer.invoke("settings:get"),
@@ -106,6 +145,7 @@ contextBridge.exposeInMainWorld("api", {
 
   listCustomers: () => ipcRenderer.invoke("customers:list"),
   createCustomer: (payload: {
+    internalCode?: string | null;
     firstName: string;
     lastName?: string;
     documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
@@ -117,6 +157,7 @@ contextBridge.exposeInMainWorld("api", {
   }) => ipcRenderer.invoke("customers:create", payload),
   updateCustomer: (payload: {
     id: string;
+    internalCode?: string | null;
     firstName: string;
     lastName?: string;
     documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
@@ -129,6 +170,7 @@ contextBridge.exposeInMainWorld("api", {
 
   listSuppliers: () => ipcRenderer.invoke("suppliers:list"),
   createSupplier: (payload: {
+    internalCode?: string | null;
     name: string;
     contactName?: string | null;
     documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
@@ -140,6 +182,7 @@ contextBridge.exposeInMainWorld("api", {
   }) => ipcRenderer.invoke("suppliers:create", payload),
   updateSupplier: (payload: {
     id: string;
+    internalCode?: string | null;
     name: string;
     contactName?: string | null;
     documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
@@ -176,4 +219,11 @@ contextBridge.exposeInMainWorld("api", {
   }) => ipcRenderer.invoke("sales:list", payload),
   getSaleDetail: (saleId: string) => ipcRenderer.invoke("sales:get-detail", { saleId }),
   printSaleInvoice: (saleId: string) => ipcRenderer.invoke("sales:print-invoice", { saleId }),
+
+  getAccountingSummary: (payload?: AccountingRangeInput) => ipcRenderer.invoke("accounting:summary", payload),
+  createAccountingCredit: (payload: CreateAccountingCreditInput) => ipcRenderer.invoke("accounting:credit:create", payload),
+  createAccountingPayment: (payload: CreateAccountingPaymentInput) => ipcRenderer.invoke("accounting:payment:create", payload),
+  createAccountingCreditNote: (payload: CreateAccountingCreditNoteInput) =>
+    ipcRenderer.invoke("accounting:credit-note:create", payload),
+  createAccountingExpense: (payload: CreateAccountingExpenseInput) => ipcRenderer.invoke("accounting:expense:create", payload),
 });

@@ -6,6 +6,7 @@ import {
   CashMovementType,
   CashSessionStatus,
   CorrespondentDirection,
+  CreditStatus,
   InventoryMovementType,
   PaymentMethod,
   PrismaClient,
@@ -14,8 +15,16 @@ import {
   SaleStatus,
 } from "@prisma/client";
 
+import {
+  accountingRangeSchema,
+  createAccountingCreditNoteSchema,
+  createAccountingCreditSchema,
+  createAccountingExpenseSchema,
+  createAccountingPaymentSchema,
+} from "../ipc/schemas/accounting.schema";
 import { createProductSchema, updateProductSchema } from "../ipc/schemas/product.schema";
 import { APP_PERMISSION_KEYS } from "../../../renderer/features/user/app-permissions";
+import { resolveManagedCode } from "../../../shared/internalCodes";
 
 type CurrentSessionUser = {
   id: string;
@@ -54,6 +63,7 @@ const documentTypeSchema = z.enum([
 ]);
 
 const createCustomerSchema = z.object({
+  internalCode: z.string().trim().max(30).optional().nullable(),
   firstName: z.string().trim().min(2).max(80),
   lastName: z.string().trim().max(80).optional().default(""),
   documentType: documentTypeSchema.optional().default("Cédula"),
@@ -69,6 +79,7 @@ const updateCustomerSchema = createCustomerSchema.extend({
 });
 
 const createSupplierSchema = z.object({
+  internalCode: z.string().trim().max(30).optional().nullable(),
   name: z.string().trim().min(2).max(120),
   contactName: z.string().trim().max(120).optional().nullable(),
   documentType: documentTypeSchema.optional().default("NIT"),
@@ -175,7 +186,7 @@ function calculateSalePrice(cost: number, marginPercent = 0, hasTax = false, tax
 }
 
 function paymentMethodLabel(value: PaymentMethod) {
-  if (value === PaymentMethod.CARD) return "Tarjeta";
+  if (value === PaymentMethod.CARD) return "Transferencia";
   if (value === PaymentMethod.TRANSFER) return "Transferencia";
   return "Efectivo";
 }
@@ -348,6 +359,113 @@ function parseSessionMeta(note?: string | null) {
 
 function stringifySessionMeta(meta: Record<string, unknown>) {
   return JSON.stringify(meta);
+}
+
+function buildDateRangeFilter(dateFrom?: string, dateTo?: string) {
+  return dateFrom || dateTo
+    ? {
+        ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
+        ...(dateTo ? { lte: new Date(dateTo) } : {}),
+      }
+    : undefined;
+}
+
+function startOfToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function deriveCreditStatus(balance: number, total: number, dueDate?: Date | null) {
+  if (total <= 0) return CreditStatus.CANCELLED;
+  if (balance <= 0) return CreditStatus.PAID;
+  if (dueDate && dueDate.getTime() < startOfToday().getTime()) return CreditStatus.OVERDUE;
+  if (balance < total) return CreditStatus.PARTIAL;
+  return CreditStatus.PENDING;
+}
+
+function mapSaleStatusFromReturns(total: number, returnedTotal: number) {
+  if (returnedTotal >= total) return SaleStatus.RETURNED;
+  if (returnedTotal > 0) return SaleStatus.PARTIALLY_RETURNED;
+  return SaleStatus.COMPLETED;
+}
+
+export async function ensureBackofficeSchemaIfNeeded(prismaClient: PrismaClient) {
+  const customerColumns = await prismaClient.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Customer");`);
+  const supplierColumns = await prismaClient.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Supplier");`);
+  const customerColumnSet = new Set(customerColumns.map((column) => column.name));
+  const supplierColumnSet = new Set(supplierColumns.map((column) => column.name));
+
+  if (!customerColumnSet.has("internalCode")) {
+    await prismaClient.$executeRawUnsafe(`ALTER TABLE "Customer" ADD COLUMN "internalCode" TEXT;`);
+  }
+
+  if (!supplierColumnSet.has("internalCode")) {
+    await prismaClient.$executeRawUnsafe(`ALTER TABLE "Supplier" ADD COLUMN "internalCode" TEXT;`);
+  }
+
+  const customers = await prismaClient.customer.findMany({
+    select: {
+      id: true,
+      internalCode: true,
+    },
+    orderBy: [{ createdAt: "asc" }, { name: "asc" }],
+  });
+  const assignedCustomerCodes: string[] = [];
+
+  for (const customer of customers) {
+    const internalCode = resolveManagedCode({
+      desiredCode: customer.internalCode,
+      existingCodes: assignedCustomerCodes,
+      prefix: "CLI",
+      digits: 4,
+      maxLength: 30,
+    });
+
+    if (internalCode !== customer.internalCode) {
+      await prismaClient.customer.update({
+        where: { id: customer.id },
+        data: { internalCode },
+      });
+    }
+
+    assignedCustomerCodes.push(internalCode);
+  }
+
+  const suppliers = await prismaClient.supplier.findMany({
+    select: {
+      id: true,
+      internalCode: true,
+    },
+    orderBy: [{ createdAt: "asc" }, { name: "asc" }],
+  });
+  const assignedSupplierCodes: string[] = [];
+
+  for (const supplier of suppliers) {
+    const internalCode = resolveManagedCode({
+      desiredCode: supplier.internalCode,
+      existingCodes: assignedSupplierCodes,
+      prefix: "PRV",
+      digits: 4,
+      maxLength: 30,
+    });
+
+    if (internalCode !== supplier.internalCode) {
+      await prismaClient.supplier.update({
+        where: { id: supplier.id },
+        data: { internalCode },
+      });
+    }
+
+    assignedSupplierCodes.push(internalCode);
+  }
+
+  await prismaClient.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "Customer_internalCode_key" ON "Customer"("internalCode");`
+  );
+  await prismaClient.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "Supplier_internalCode_key" ON "Supplier"("internalCode");`
+  );
 }
 
 function getSkuPrefix(name: string, categoryName?: string | null) {
@@ -815,6 +933,7 @@ export function registerBackofficeIpcHandlers({
       success: true,
       users: users.map((user) => ({
         id: user.id,
+        internalCode: user.internalCode,
         name: user.name,
         firstName: user.firstName ?? user.name,
         lastName: user.lastName,
@@ -1148,6 +1267,7 @@ export function registerBackofficeIpcHandlers({
       success: true,
       customers: customers.map((customer) => ({
         id: customer.id,
+        internalCode: customer.internalCode,
         name: customer.name,
         document: customer.document,
         phone: customer.phone,
@@ -1173,8 +1293,22 @@ export function registerBackofficeIpcHandlers({
     if (!parsed.success) return { success: false, message: "Datos invalidos para el cliente" };
 
     try {
+      const existingInternalCodes = (
+        await prisma.customer.findMany({
+          select: { internalCode: true },
+        })
+      ).map((customer) => customer.internalCode);
+      const internalCode = resolveManagedCode({
+        desiredCode: parsed.data.internalCode,
+        existingCodes: existingInternalCodes,
+        prefix: "CLI",
+        digits: 4,
+        maxLength: 30,
+      });
+
       const customer = await prisma.customer.create({
         data: {
+          internalCode,
           name: buildFullName(parsed.data.firstName, parsed.data.lastName),
           document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
           phone: parsed.data.phone || null,
@@ -1192,8 +1326,12 @@ export function registerBackofficeIpcHandlers({
       });
 
       return { success: true, customerId: customer.id };
-    } catch {
-      return { success: false, message: "No se pudo crear el cliente. Verifica documento o correo duplicado." };
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "No se pudo crear el cliente. Verifica documento o correo duplicado.";
+      return { success: false, message };
     }
   });
 
@@ -1209,16 +1347,31 @@ export function registerBackofficeIpcHandlers({
     const current = await prisma.customer.findUnique({ where: { id: parsed.data.id } });
     if (!current) return { success: false, message: "Cliente no encontrado" };
 
-    const nextData = {
-      name: buildFullName(parsed.data.firstName, parsed.data.lastName),
-      document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
-      phone: parsed.data.phone || null,
-      email: parsed.data.email || null,
-      address: parsed.data.address || null,
-      isActive: parsed.data.isActive ?? current.isActive,
-    };
-
     try {
+      const existingInternalCodes = (
+        await prisma.customer.findMany({
+          where: { NOT: { id: current.id } },
+          select: { internalCode: true },
+        })
+      ).map((customer) => customer.internalCode);
+      const internalCode = resolveManagedCode({
+        desiredCode: parsed.data.internalCode,
+        existingCodes: existingInternalCodes,
+        prefix: "CLI",
+        digits: 4,
+        maxLength: 30,
+      });
+
+      const nextData = {
+        internalCode,
+        name: buildFullName(parsed.data.firstName, parsed.data.lastName),
+        document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
+        phone: parsed.data.phone || null,
+        email: parsed.data.email || null,
+        address: parsed.data.address || null,
+        isActive: parsed.data.isActive ?? current.isActive,
+      };
+
       await prisma.customer.update({
         where: { id: current.id },
         data: {
@@ -1230,8 +1383,12 @@ export function registerBackofficeIpcHandlers({
 
       await logAudit(prisma, currentSessionUser, "customers", "update", "Customer", current.id, current, nextData);
       return { success: true };
-    } catch {
-      return { success: false, message: "No se pudo actualizar el cliente. Verifica documento o correo duplicado." };
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "No se pudo actualizar el cliente. Verifica documento o correo duplicado.";
+      return { success: false, message };
     }
   });
 
@@ -1254,6 +1411,7 @@ export function registerBackofficeIpcHandlers({
       success: true,
       suppliers: suppliers.map((supplier) => ({
         id: supplier.id,
+        internalCode: supplier.internalCode,
         name: supplier.name,
         document: supplier.taxId,
         phone: supplier.phone,
@@ -1278,8 +1436,22 @@ export function registerBackofficeIpcHandlers({
     if (!parsed.success) return { success: false, message: "Datos invalidos para el proveedor" };
 
     try {
+      const existingInternalCodes = (
+        await prisma.supplier.findMany({
+          select: { internalCode: true },
+        })
+      ).map((supplier) => supplier.internalCode);
+      const internalCode = resolveManagedCode({
+        desiredCode: parsed.data.internalCode,
+        existingCodes: existingInternalCodes,
+        prefix: "PRV",
+        digits: 4,
+        maxLength: 30,
+      });
+
       const supplier = await prisma.supplier.create({
         data: {
+          internalCode,
           name: parsed.data.name,
           taxId: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
           phone: parsed.data.phone || null,
@@ -1296,8 +1468,12 @@ export function registerBackofficeIpcHandlers({
       });
 
       return { success: true, supplierId: supplier.id };
-    } catch {
-      return { success: false, message: "No se pudo crear el proveedor. Verifica documento o correo duplicado." };
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "No se pudo crear el proveedor. Verifica documento o correo duplicado.";
+      return { success: false, message };
     }
   });
 
@@ -1313,17 +1489,32 @@ export function registerBackofficeIpcHandlers({
     const current = await prisma.supplier.findUnique({ where: { id: parsed.data.id } });
     if (!current) return { success: false, message: "Proveedor no encontrado" };
 
-    const nextData = {
-      name: parsed.data.name,
-      taxId: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
-      phone: parsed.data.phone || null,
-      email: parsed.data.email || null,
-      address: parsed.data.address || null,
-      contactName: parsed.data.contactName || null,
-      isActive: parsed.data.isActive ?? current.isActive,
-    };
-
     try {
+      const existingInternalCodes = (
+        await prisma.supplier.findMany({
+          where: { NOT: { id: current.id } },
+          select: { internalCode: true },
+        })
+      ).map((supplier) => supplier.internalCode);
+      const internalCode = resolveManagedCode({
+        desiredCode: parsed.data.internalCode,
+        existingCodes: existingInternalCodes,
+        prefix: "PRV",
+        digits: 4,
+        maxLength: 30,
+      });
+
+      const nextData = {
+        internalCode,
+        name: parsed.data.name,
+        taxId: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
+        phone: parsed.data.phone || null,
+        email: parsed.data.email || null,
+        address: parsed.data.address || null,
+        contactName: parsed.data.contactName || null,
+        isActive: parsed.data.isActive ?? current.isActive,
+      };
+
       await prisma.supplier.update({
         where: { id: current.id },
         data: nextData,
@@ -1331,8 +1522,12 @@ export function registerBackofficeIpcHandlers({
 
       await logAudit(prisma, currentSessionUser, "suppliers", "update", "Supplier", current.id, current, nextData);
       return { success: true };
-    } catch {
-      return { success: false, message: "No se pudo actualizar el proveedor. Verifica documento o correo duplicado." };
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "No se pudo actualizar el proveedor. Verifica documento o correo duplicado.";
+      return { success: false, message };
     }
   });
 
@@ -1781,5 +1976,504 @@ export function registerBackofficeIpcHandlers({
         }
       );
     });
+  });
+
+  ipcMain.handle("accounting:summary", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.reportsView)) {
+      return { success: false, message: "Tu rol no puede consultar contabilidad" };
+    }
+
+    const parsed = accountingRangeSchema.safeParse(payload);
+    if (!parsed.success) return { success: false, message: "Filtros invalidos" };
+
+    const createdAt = buildDateRangeFilter(parsed.data.dateFrom, parsed.data.dateTo);
+
+    const [customers, sales, credits, payments, creditNotes, expenses] = await Promise.all([
+      prisma.customer.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          internalCode: true,
+          name: true,
+          document: true,
+          phone: true,
+        },
+      }),
+      prisma.sale.findMany({
+        where: {
+          ...(createdAt ? { createdAt } : {}),
+          status: { not: SaleStatus.CANCELLED },
+        },
+        include: {
+          customerRef: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          credits: {
+            orderBy: { createdAt: "desc" },
+          },
+          returns: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 150,
+      }),
+      prisma.customerCredit.findMany({
+        where: createdAt ? { createdAt } : undefined,
+        include: {
+          customer: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          sale: {
+            select: {
+              id: true,
+              invoiceNumber: true,
+            },
+          },
+          payments: {
+            select: {
+              amount: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 150,
+      }),
+      prisma.customerPayment.findMany({
+        where: createdAt ? { createdAt } : undefined,
+        include: {
+          customer: {
+            select: {
+              name: true,
+            },
+          },
+          credit: {
+            select: {
+              id: true,
+              sale: {
+                select: {
+                  id: true,
+                  invoiceNumber: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 150,
+      }),
+      prisma.saleReturn.findMany({
+        where: createdAt ? { createdAt } : undefined,
+        include: {
+          sale: {
+            select: {
+              id: true,
+              invoiceNumber: true,
+              customer: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 150,
+      }),
+      prisma.cashMovement.findMany({
+        where: {
+          ...(createdAt ? { createdAt } : {}),
+          type: { in: [CashMovementType.EXPENSE_OUT, CashMovementType.WITHDRAWAL_OUT] },
+        },
+        include: {
+          session: {
+            include: {
+              register: {
+                select: { name: true },
+              },
+              user: {
+                select: { username: true, name: true },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 150,
+      }),
+    ]);
+
+    const mappedCredits = credits.map((credit) => {
+      const status = deriveCreditStatus(credit.balance, credit.total, credit.dueDate);
+      return {
+        id: credit.id,
+        saleId: credit.saleId,
+        invoiceNumber: credit.sale.invoiceNumber,
+        customerId: credit.customerId,
+        customerName: credit.customer.name,
+        total: credit.total,
+        balance: credit.balance,
+        paidAmount: credit.payments.reduce((sum, payment) => sum + payment.amount, 0),
+        status,
+        dueDate: credit.dueDate?.toISOString() ?? null,
+        createdAt: credit.createdAt.toISOString(),
+      };
+    });
+
+    return {
+      success: true,
+      summary: {
+        pendingCreditsCount: mappedCredits.filter((credit) => credit.balance > 0).length,
+        pendingCreditsBalance: mappedCredits.reduce((sum, credit) => sum + credit.balance, 0),
+        paymentsTotal: payments.reduce((sum, payment) => sum + payment.amount, 0),
+        creditNotesTotal: creditNotes.reduce((sum, note) => sum + note.total, 0),
+        expensesTotal: expenses.reduce((sum, expense) => sum + expense.amount, 0),
+        netOperationalBalance:
+          payments.reduce((sum, payment) => sum + payment.amount, 0) -
+          creditNotes.reduce((sum, note) => sum + note.total, 0) -
+          expenses.reduce((sum, expense) => sum + expense.amount, 0),
+      },
+      customers: customers.map((customer) => ({
+        id: customer.id,
+        internalCode: customer.internalCode,
+        name: customer.name,
+        document: customer.document,
+        phone: customer.phone,
+      })),
+      sales: sales.map((sale) => {
+        const returnedTotal = sale.returns.reduce((sum, entry) => sum + entry.total, 0);
+        const credit = sale.credits[0] ?? null;
+        return {
+          id: sale.id,
+          invoiceNumber: sale.invoiceNumber,
+          customer: sale.customer,
+          customerId: sale.customerRef?.id ?? null,
+          total: sale.total,
+          status: sale.status,
+          createdAt: sale.createdAt.toISOString(),
+          returnedTotal,
+          availableCreditTotal: Math.max(sale.total - returnedTotal, 0),
+          availableCreditNoteTotal: Math.max(sale.total - returnedTotal, 0),
+          credit: credit
+            ? {
+                id: credit.id,
+                total: credit.total,
+                balance: credit.balance,
+                status: deriveCreditStatus(credit.balance, credit.total, credit.dueDate),
+                dueDate: credit.dueDate?.toISOString() ?? null,
+              }
+            : null,
+        };
+      }),
+      credits: mappedCredits,
+      payments: payments.map((payment) => ({
+        id: payment.id,
+        creditId: payment.creditId,
+        saleId: payment.credit?.sale.id ?? null,
+        invoiceNumber: payment.credit?.sale.invoiceNumber ?? null,
+        customerName: payment.customer.name,
+        method: payment.method,
+        amount: payment.amount,
+        note: payment.note,
+        createdAt: payment.createdAt.toISOString(),
+      })),
+      creditNotes: creditNotes.map((note) => ({
+        id: note.id,
+        saleId: note.saleId,
+        invoiceNumber: note.sale.invoiceNumber,
+        customerName: note.sale.customer,
+        total: note.total,
+        reason: note.reason,
+        createdAt: note.createdAt.toISOString(),
+      })),
+      expenses: expenses.map((expense) => ({
+        id: expense.id,
+        sessionId: expense.sessionId,
+        registerName: expense.session.register.name,
+        userName: expense.session.user.name ?? expense.session.user.username,
+        type: expense.type,
+        amount: expense.amount,
+        note: expense.note,
+        createdAt: expense.createdAt.toISOString(),
+      })),
+    };
+  });
+
+  ipcMain.handle("accounting:credit:create", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.reportsView)) {
+      return { success: false, message: "Tu rol no puede registrar cartera" };
+    }
+
+    const parsed = createAccountingCreditSchema.safeParse(payload);
+    if (!parsed.success) return { success: false, message: "Datos invalidos para la cartera" };
+
+    const sale = await prisma.sale.findUnique({
+      where: { id: parsed.data.saleId },
+      include: {
+        credits: true,
+        returns: true,
+      },
+    });
+    if (!sale) return { success: false, message: "La venta ya no existe" };
+    if (sale.credits.length > 0) return { success: false, message: "La venta ya tiene una cuenta por cobrar asociada" };
+
+    const customer = await prisma.customer.findUnique({
+      where: { id: parsed.data.customerId },
+      select: { id: true, name: true, isActive: true },
+    });
+    if (!customer || !customer.isActive) {
+      return { success: false, message: "Selecciona un cliente activo para crear la cuenta por cobrar" };
+    }
+
+    const returnedTotal = sale.returns.reduce((sum, entry) => sum + entry.total, 0);
+    const availableTotal = Math.max(sale.total - returnedTotal, 0);
+    const total = parsed.data.total ?? availableTotal;
+    if (availableTotal <= 0) return { success: false, message: "La venta no tiene saldo disponible para cartera" };
+    if (total > availableTotal) return { success: false, message: "El valor supera el saldo disponible de la venta" };
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const credit = await tx.customerCredit.create({
+          data: {
+            customerId: customer.id,
+            saleId: sale.id,
+            total,
+            balance: total,
+            dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
+            status: deriveCreditStatus(total, total, parsed.data.dueDate ? new Date(parsed.data.dueDate) : null),
+          },
+        });
+
+        await tx.sale.update({
+          where: { id: sale.id },
+          data: {
+            customerId: customer.id,
+            customer: customer.name,
+            status: SaleStatus.CREDIT,
+          },
+        });
+
+        return credit;
+      });
+
+      await logAudit(prisma, currentSessionUser, "accounting", "create", "CustomerCredit", result.id, undefined, {
+        saleId: sale.id,
+        customerId: customer.id,
+        total,
+      });
+
+      return { success: true, creditId: result.id, message: "Cuenta por cobrar creada correctamente." };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : "No se pudo crear la cuenta por cobrar" };
+    }
+  });
+
+  ipcMain.handle("accounting:payment:create", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.reportsView)) {
+      return { success: false, message: "Tu rol no puede registrar pagos" };
+    }
+
+    const parsed = createAccountingPaymentSchema.safeParse(payload);
+    if (!parsed.success) return { success: false, message: "Datos invalidos para el abono" };
+
+    const credit = await prisma.customerCredit.findUnique({
+      where: { id: parsed.data.creditId },
+      include: {
+        sale: {
+          include: {
+            returns: true,
+          },
+        },
+      },
+    });
+    if (!credit) return { success: false, message: "La cuenta por cobrar ya no existe" };
+    if (credit.balance <= 0) return { success: false, message: "La cuenta por cobrar ya se encuentra saldada" };
+    if (parsed.data.amount > credit.balance) return { success: false, message: "El abono supera el saldo pendiente" };
+
+    const cashSession =
+      parsed.data.method === PaymentMethod.CASH
+        ? await prisma.cashSession.findFirst({
+            where: { status: CashSessionStatus.OPEN },
+            orderBy: { openedAt: "desc" },
+          })
+        : null;
+
+    if (parsed.data.method === PaymentMethod.CASH && !cashSession) {
+      return { success: false, message: "Abre caja general antes de registrar abonos en efectivo" };
+    }
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const payment = await tx.customerPayment.create({
+          data: {
+            customerId: credit.customerId,
+            creditId: credit.id,
+            method: parsed.data.method,
+            amount: parsed.data.amount,
+            note: parsed.data.note || null,
+          },
+        });
+
+        const paidAmount = credit.total - credit.balance + parsed.data.amount;
+        const nextBalance = Math.max(credit.total - paidAmount, 0);
+        const nextStatus = deriveCreditStatus(nextBalance, credit.total, credit.dueDate);
+
+        await tx.customerCredit.update({
+          where: { id: credit.id },
+          data: {
+            balance: nextBalance,
+            status: nextStatus,
+          },
+        });
+
+        if (cashSession) {
+          await tx.cashMovement.create({
+            data: {
+              sessionId: cashSession.id,
+              type: CashMovementType.INCOME_IN,
+              amount: parsed.data.amount,
+              note: parsed.data.note || `Abono ${credit.sale.invoiceNumber}`,
+            },
+          });
+        }
+
+        if (nextBalance <= 0) {
+          const returnedTotal = credit.sale.returns.reduce((sum, entry) => sum + entry.total, 0);
+          await tx.sale.update({
+            where: { id: credit.saleId },
+            data: {
+              status: mapSaleStatusFromReturns(credit.sale.total, returnedTotal),
+            },
+          });
+        }
+
+        return payment;
+      });
+
+      await logAudit(prisma, currentSessionUser, "accounting", "create", "CustomerPayment", result.id, undefined, {
+        creditId: credit.id,
+        amount: parsed.data.amount,
+        method: parsed.data.method,
+      });
+
+      return { success: true, paymentId: result.id, message: "Abono registrado correctamente." };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : "No se pudo registrar el abono" };
+    }
+  });
+
+  ipcMain.handle("accounting:credit-note:create", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.reportsView)) {
+      return { success: false, message: "Tu rol no puede registrar notas credito" };
+    }
+
+    const parsed = createAccountingCreditNoteSchema.safeParse(payload);
+    if (!parsed.success) return { success: false, message: "Datos invalidos para la nota credito" };
+
+    const sale = await prisma.sale.findUnique({
+      where: { id: parsed.data.saleId },
+      include: {
+        returns: true,
+        credits: true,
+      },
+    });
+    if (!sale) return { success: false, message: "La venta ya no existe" };
+
+    const returnedTotal = sale.returns.reduce((sum, entry) => sum + entry.total, 0);
+    const availableAmount = Math.max(sale.total - returnedTotal, 0);
+    if (availableAmount <= 0) return { success: false, message: "La venta no tiene saldo disponible para nota credito" };
+    if (parsed.data.amount > availableAmount) return { success: false, message: "La nota credito supera el saldo disponible de la venta" };
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const creditNote = await tx.saleReturn.create({
+          data: {
+            saleId: sale.id,
+            total: parsed.data.amount,
+            reason: parsed.data.reason || null,
+          },
+        });
+
+        const nextReturnedTotal = returnedTotal + parsed.data.amount;
+        await tx.sale.update({
+          where: { id: sale.id },
+          data: {
+            status: mapSaleStatusFromReturns(sale.total, nextReturnedTotal),
+          },
+        });
+
+        const credit = sale.credits[0];
+        if (credit) {
+          const paidAmount = Math.max(credit.total - credit.balance, 0);
+          const nextTotal = Math.max(credit.total - parsed.data.amount, 0);
+          const nextBalance = Math.max(nextTotal - paidAmount, 0);
+          await tx.customerCredit.update({
+            where: { id: credit.id },
+            data: {
+              total: nextTotal,
+              balance: nextBalance,
+              status: deriveCreditStatus(nextBalance, nextTotal, credit.dueDate),
+            },
+          });
+        }
+
+        return creditNote;
+      });
+
+      await logAudit(prisma, currentSessionUser, "accounting", "create", "SaleReturn", result.id, undefined, {
+        saleId: sale.id,
+        total: parsed.data.amount,
+      });
+
+      return { success: true, creditNoteId: result.id, message: "Nota credito registrada correctamente." };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : "No se pudo registrar la nota credito" };
+    }
+  });
+
+  ipcMain.handle("accounting:expense:create", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.reportsView)) {
+      return { success: false, message: "Tu rol no puede registrar gastos" };
+    }
+
+    const parsed = createAccountingExpenseSchema.safeParse(payload);
+    if (!parsed.success) return { success: false, message: "Datos invalidos para el gasto" };
+
+    const activeSession = await prisma.cashSession.findFirst({
+      where: { status: CashSessionStatus.OPEN },
+      orderBy: { openedAt: "desc" },
+    });
+    if (!activeSession) return { success: false, message: "Abre caja general antes de registrar gastos o retiros" };
+
+    try {
+      const expense = await prisma.cashMovement.create({
+        data: {
+          sessionId: activeSession.id,
+          type: parsed.data.type as CashMovementType,
+          amount: parsed.data.amount,
+          note: parsed.data.note,
+        },
+      });
+
+      await logAudit(prisma, currentSessionUser, "accounting", "create", "CashMovement", expense.id, undefined, {
+        type: parsed.data.type,
+        amount: parsed.data.amount,
+        note: parsed.data.note,
+      });
+
+      return { success: true, expenseId: expense.id, message: "Gasto registrado correctamente." };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : "No se pudo registrar el gasto" };
+    }
   });
 }

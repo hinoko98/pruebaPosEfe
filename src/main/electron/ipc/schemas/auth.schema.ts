@@ -34,6 +34,7 @@ const birthDateSchema = z
   .nullable();
 
 const baseUserProfileSchema = z.object({
+  internalCode: z.string().trim().max(30).optional().nullable(),
   firstName: z.string().trim().min(2).max(80),
   lastName: z.string().trim().min(2).max(80),
   documentNumber: z.string().trim().regex(/^\d{6,20}$/),

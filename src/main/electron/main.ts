@@ -21,7 +21,7 @@ import {
   registerCorrespondentIpcHandlers,
   seedCorrespondentCatalogIfNeeded,
 } from "./modules/correspondent";
-import { registerBackofficeIpcHandlers } from "./modules/backoffice";
+import { ensureBackofficeSchemaIfNeeded, registerBackofficeIpcHandlers } from "./modules/backoffice";
 import {
   ROLE_DEFINITIONS,
   flattenRolePermissionCatalog,
@@ -29,6 +29,7 @@ import {
   type AppRoleKey,
 } from "../../renderer/features/user/roles.catalog";
 import { APP_PERMISSION_KEYS } from "../../renderer/features/user/app-permissions";
+import { resolveManagedCode } from "../../shared/internalCodes";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname, "..");
@@ -236,24 +237,26 @@ async function generateUniqueUsername(params: {
 }) {
   const baseUsername = buildUsernameBase(params.firstName, params.lastName, params.documentNumber);
   let counter = 0;
+  let candidate = baseUsername;
+  let existing = true;
 
-  while (true) {
+  while (existing) {
     const suffix = counter === 0 ? "" : String(counter + 1).padStart(2, "0");
-    const candidate = `${baseUsername}${suffix}`;
-    const existing = await params.prismaClient.user.findFirst({
+    candidate = `${baseUsername}${suffix}`;
+    existing = Boolean(
+      await params.prismaClient.user.findFirst({
       where: {
         username: candidate,
         ...(params.excludeUserId ? { NOT: { id: params.excludeUserId } } : {}),
       },
       select: { id: true },
-    });
-
-    if (!existing) {
-      return candidate;
-    }
+      })
+    );
 
     counter += 1;
   }
+
+  return candidate;
 }
 
 function parseBirthDate(value?: string | null) {
@@ -355,6 +358,9 @@ async function ensureUserSchemaIfNeeded(prismaClient: PrismaClient) {
   if (!existingColumns.has("birthDate")) {
     statements.push(`ALTER TABLE "User" ADD COLUMN "birthDate" DATETIME;`);
   }
+  if (!existingColumns.has("internalCode")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "internalCode" TEXT;`);
+  }
 
   for (const statement of statements) {
     await prismaClient.$executeRawUnsafe(statement);
@@ -369,6 +375,38 @@ async function ensureUserSchemaIfNeeded(prismaClient: PrismaClient) {
 
   await prismaClient.$executeRawUnsafe(
     `CREATE UNIQUE INDEX IF NOT EXISTS "User_documentNumber_key" ON "User"("documentNumber");`
+  );
+  const users = await prismaClient.user.findMany({
+    select: {
+      id: true,
+      internalCode: true,
+    },
+    orderBy: [{ createdAt: "asc" }, { username: "asc" }],
+  });
+
+  const assignedCodes: string[] = [];
+
+  for (const user of users) {
+    const internalCode = resolveManagedCode({
+      desiredCode: user.internalCode,
+      existingCodes: assignedCodes,
+      prefix: "USR",
+      digits: 4,
+      maxLength: 30,
+    });
+
+    if (internalCode !== user.internalCode) {
+      await prismaClient.user.update({
+        where: { id: user.id },
+        data: { internalCode },
+      });
+    }
+
+    assignedCodes.push(internalCode);
+  }
+
+  await prismaClient.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "User_internalCode_key" ON "User"("internalCode");`
   );
 }
 
@@ -519,31 +557,34 @@ async function bootstrapAppData() {
   });
 }
 
-app.whenReady().then(async () => {
-  const dbPath = path.join(app.getPath("userData"), "app.db").replace(/\\/g, "/");
-  process.env.DATABASE_URL = `file:${dbPath}`;
+app.whenReady()
+  .then(async () => {
+    const dbPath = path.join(app.getPath("userData"), "app.db").replace(/\\/g, "/");
+    process.env.DATABASE_URL = `file:${dbPath}`;
 
-  prisma = new PrismaClient();
-  appConnectedAt = new Date();
-  await ensureUserSchemaIfNeeded(prisma);
-  await ensureRoleSchemaIfNeeded(prisma);
-  await seedAdminIfNeeded(prisma);
-  await seedRoleProfilesIfNeeded(prisma);
-  await ensureProductSchemaIfNeeded(prisma);
+    prisma = new PrismaClient();
+    appConnectedAt = new Date();
+    await ensureUserSchemaIfNeeded(prisma);
+    await ensureRoleSchemaIfNeeded(prisma);
+    await ensureBackofficeSchemaIfNeeded(prisma);
+    await seedAdminIfNeeded(prisma);
+    await seedRoleProfilesIfNeeded(prisma);
+    await ensureProductSchemaIfNeeded(prisma);
 
-  registerBackofficeIpcHandlers({
-    ipcMain,
-    prisma,
-    getCurrentSessionUser: () => currentSessionUser,
-    getConnectedAt: () => appConnectedAt,
+    registerBackofficeIpcHandlers({
+      ipcMain,
+      prisma,
+      getCurrentSessionUser: () => currentSessionUser,
+      getConnectedAt: () => appConnectedAt,
+    });
+
+    await bootstrapAppData();
+    createWindow();
+  })
+  .catch((error) => {
+    console.error("No se pudo inicializar la aplicacion POS.", error);
+    app.quit();
   });
-
-  createWindow();
-
-  void bootstrapAppData().catch((error) => {
-    console.error("Error inicializando modulos en segundo plano:", error);
-  });
-});
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
@@ -625,7 +666,7 @@ ipcMain.handle("auth:createUser", async (_event: IpcMainInvokeEvent, payload) =>
     return { success: false, message: "Tu rol no puede crear usuarios" };
   }
 
-  const { firstName, lastName, documentNumber, email, address, birthDate, newPassword, role, roleProfileId, isActive } = parsed.data;
+  const { internalCode: desiredInternalCode, firstName, lastName, documentNumber, email, address, birthDate, newPassword, role, roleProfileId, isActive } = parsed.data;
   const passwordHash = await bcrypt.hash(newPassword, 10);
   const fullName = buildUserDisplayName(firstName, lastName);
 
@@ -659,9 +700,22 @@ ipcMain.handle("auth:createUser", async (_event: IpcMainInvokeEvent, payload) =>
       lastName,
       documentNumber,
     });
+    const existingInternalCodes = (
+      await prisma.user.findMany({
+        select: { internalCode: true },
+      })
+    ).map((user) => user.internalCode);
+    const internalCode = resolveManagedCode({
+      desiredCode: desiredInternalCode,
+      existingCodes: existingInternalCodes,
+      prefix: "USR",
+      digits: 4,
+      maxLength: 30,
+    });
 
     await prisma.user.create({
       data: {
+        internalCode,
         username,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
@@ -678,8 +732,9 @@ ipcMain.handle("auth:createUser", async (_event: IpcMainInvokeEvent, payload) =>
     });
 
     return { success: true, username };
-  } catch {
-    return { success: false, message: "No se pudo crear el usuario" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo crear el usuario";
+    return { success: false, message };
   }
 });
 
@@ -694,10 +749,10 @@ ipcMain.handle("users:update", async (_event: IpcMainInvokeEvent, payload) => {
     return { success: false, message: "Tu rol no puede editar usuarios" };
   }
 
-  const { id, firstName, lastName, documentNumber, email, address, birthDate, newPassword, role, roleProfileId, isActive } = parsed.data;
+  const { id, internalCode: desiredInternalCode, firstName, lastName, documentNumber, email, address, birthDate, newPassword, role, roleProfileId, isActive } = parsed.data;
   const existingUser = await prisma.user.findUnique({
     where: { id },
-    select: { id: true, role: true, isActive: true, roleProfileId: true },
+    select: { id: true, role: true, isActive: true, roleProfileId: true, internalCode: true },
   });
 
   if (!existingUser) {
@@ -757,9 +812,24 @@ ipcMain.handle("users:update", async (_event: IpcMainInvokeEvent, payload) => {
   const fullName = buildUserDisplayName(firstName, lastName);
 
   try {
+    const existingInternalCodes = (
+      await prisma.user.findMany({
+        where: { NOT: { id } },
+        select: { internalCode: true },
+      })
+    ).map((user) => user.internalCode);
+    const internalCode = resolveManagedCode({
+      desiredCode: desiredInternalCode,
+      existingCodes: existingInternalCodes,
+      prefix: "USR",
+      digits: 4,
+      maxLength: 30,
+    });
+
     await prisma.user.update({
       where: { id },
       data: {
+        internalCode,
         username,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
@@ -792,8 +862,9 @@ ipcMain.handle("users:update", async (_event: IpcMainInvokeEvent, payload) => {
     }
 
     return { success: true, username };
-  } catch {
-    return { success: false, message: "No se pudo actualizar el usuario" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo actualizar el usuario";
+    return { success: false, message };
   }
 });
 
@@ -989,9 +1060,32 @@ ipcMain.handle("sales:create", async (_event, payload) => {
   if (!parsed.success) {
     return { success: false, message: "Datos invalidos para la venta" };
   }
+  let selectedCustomer:
+    | {
+        id: string;
+        name: string;
+      }
+    | null = null;
+  if (parsed.data.customerId) {
+    selectedCustomer = await prisma.customer.findFirst({
+      where: {
+        id: parsed.data.customerId,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    if (!selectedCustomer) {
+      return { success: false, message: "El cliente seleccionado ya no esta disponible" };
+    }
+  }
+
+  const saleCustomerName = selectedCustomer?.name ?? parsed.data.customer?.trim() ?? "Consumidor final";
   if (
-    parsed.data.customer?.trim() &&
-    parsed.data.customer.trim() !== "Consumidor final" &&
+    saleCustomerName !== "Consumidor final" &&
     !hasCurrentSessionPermission(APP_PERMISSION_KEYS.salesChangeCustomer)
   ) {
     return { success: false, message: "Tu rol no puede cambiar el cliente en la factura" };
@@ -1057,7 +1151,7 @@ ipcMain.handle("sales:create", async (_event, payload) => {
     }))
     .filter((payment) => payment.amount > 0);
 
-  if (normalizedPayments.length === 0) {
+  if (normalizedPayments.length === 0 && !parsed.data.allowDebt) {
     return { success: false, message: "Debes registrar al menos un pago para completar la venta" };
   }
 
@@ -1086,14 +1180,14 @@ ipcMain.handle("sales:create", async (_event, payload) => {
 
   const primaryPaymentMethod =
     [...appliedTotals.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
-    (normalizedPayments[0].method as PrismaPaymentMethod);
+    ((normalizedPayments[0]?.method ?? parsed.data.paymentMethod) as PrismaPaymentMethod);
   const appliedCashAmount = appliedTotals.get(PrismaPaymentMethod.CASH) ?? 0;
 
   if (parsed.data.clientTotal !== undefined && Math.abs(parsed.data.clientTotal - total) > 1) {
     return { success: false, message: "El total enviado no coincide con el calculo del sistema" };
   }
 
-  if (amountPaid < total) {
+  if (amountPaid < total && !parsed.data.allowDebt) {
     return { success: false, message: "El pago recibido no alcanza para cubrir la venta" };
   }
 
@@ -1116,7 +1210,8 @@ ipcMain.handle("sales:create", async (_event, payload) => {
       const createdSale = await tx.sale.create({
         data: {
           invoiceNumber,
-          customer: parsed.data.customer,
+          customer: saleCustomerName,
+          customerId: selectedCustomer?.id ?? null,
           paymentMethod: primaryPaymentMethod,
           subtotal,
           tax,
@@ -1255,8 +1350,7 @@ ipcMain.handle("dashboard:stats", async (_event, range: DashboardRange = "day") 
     },
     paymentSummary: [
       { label: "Efectivo", value: paymentSummary.CASH ?? 0 },
-      { label: "Tarjeta", value: paymentSummary.CARD ?? 0 },
-      { label: "Transferencia", value: paymentSummary.TRANSFER ?? 0 },
+      { label: "Transferencia", value: (paymentSummary.CARD ?? 0) + (paymentSummary.TRANSFER ?? 0) },
     ],
     topProducts,
     recentSales: sales.slice(0, 6).map((sale) => ({
