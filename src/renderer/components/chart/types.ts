@@ -1,14 +1,27 @@
-import type { Theme, SxProps } from '@mui/material/styles';
-import type { Props as ApexProps } from 'react-apexcharts';
+import type { Theme, SxProps } from "@mui/material/styles";
 
-// ----------------------------------------------------------------------
+export type ChartType =
+  | "line"
+  | "area"
+  | "bar"
+  | "pie"
+  | "donut"
+  | "radialBar"
+  | "polarArea"
+  | "scatter"
+  | "bubble"
+  | "heatmap"
+  | "radar";
 
-export type ChartOptions = ApexProps['options'];
+export type ChartSeries = unknown;
+export type ChartOptions = Record<string, unknown>;
 
-export type ChartProps = React.ComponentProps<'div'> &
-  Pick<ApexProps, 'type' | 'series' | 'options'> & {
-    sx?: SxProps<Theme>;
-    slotProps?: {
-      loading?: SxProps<Theme>;
-    };
+export type ChartProps = React.ComponentProps<"div"> & {
+  type?: ChartType;
+  series?: ChartSeries;
+  options?: ChartOptions;
+  sx?: SxProps<Theme>;
+  slotProps?: {
+    loading?: SxProps<Theme>;
   };
+};

@@ -2,6 +2,7 @@ import type { MenuItem } from "@/app/layout/SideMenu";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
 
 import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
+import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 import AssessmentIcon from "@mui/icons-material/Assessment";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
@@ -27,7 +28,7 @@ export const adminMenu: MenuItem[] = [
     icon: <ReceiptLongIcon />,
     children: [
       { label: "Historial", path: "/admin/sales", permissionKey: APP_PERMISSION_KEYS.salesHistory },
-      { label: "Caja", path: "/admin/cash", permissionKey: APP_PERMISSION_KEYS.cashView },
+      { label: "Caja general", path: "/admin/cash", permissionKey: APP_PERMISSION_KEYS.cashView },
     ],
   },
   {
@@ -36,6 +37,7 @@ export const adminMenu: MenuItem[] = [
     icon: <AccountBalanceIcon />,
     children: [
       { label: "Transacciones", path: "/admin/correspondent", permissionKey: APP_PERMISSION_KEYS.correspondentView },
+      { label: "Historial", path: "/admin/correspondent/history", permissionKey: APP_PERMISSION_KEYS.correspondentView },
       { label: "Cuadre", path: "/admin/correspondent/closures" },
       { label: "Configuracion", path: "/admin/correspondent/settings" },
     ],
@@ -57,6 +59,13 @@ export const adminMenu: MenuItem[] = [
       { label: "Compras", path: "/admin/purchases", permissionKey: APP_PERMISSION_KEYS.purchasesView },
       { label: "Proveedores", path: "/admin/suppliers", permissionKey: APP_PERMISSION_KEYS.suppliersView },
     ],
+  },
+  {
+    type: "item",
+    label: "Contabilidad",
+    path: "/admin/accounting",
+    icon: <AccountBalanceWalletIcon />,
+    permissionKey: APP_PERMISSION_KEYS.reportsView,
   },
   {
     type: "group",
@@ -99,7 +108,7 @@ export const employeeMenu: MenuItem[] = [
     icon: <ReceiptLongIcon />,
     children: [
       { label: "Historial", path: "/app/sales", permissionKey: APP_PERMISSION_KEYS.salesHistory },
-      { label: "Caja", path: "/app/cash", permissionKey: APP_PERMISSION_KEYS.cashView },
+      { label: "Caja general", path: "/app/cash", permissionKey: APP_PERMISSION_KEYS.cashView },
     ],
   },
   {
@@ -108,6 +117,7 @@ export const employeeMenu: MenuItem[] = [
     icon: <AccountBalanceIcon />,
     children: [
       { label: "Transacciones", path: "/app/correspondent", permissionKey: APP_PERMISSION_KEYS.correspondentView },
+      { label: "Historial", path: "/app/correspondent/history", permissionKey: APP_PERMISSION_KEYS.correspondentView },
       { label: "Cuadre", path: "/app/correspondent/closures" },
     ],
   },

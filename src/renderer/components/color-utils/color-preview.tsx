@@ -1,8 +1,8 @@
-import { varAlpha, mergeClasses } from 'minimal-shared/utils';
+import { mergeClasses } from "@/lib/classnames";
 
-import { styled } from '@mui/material/styles';
+import { alpha, styled } from "@mui/material/styles";
 
-import { colorPreviewClasses } from './classes';
+import { colorPreviewClasses } from "./classes";
 
 // ----------------------------------------------------------------------
 
@@ -50,7 +50,7 @@ export function ColorPreview({
               '--item-gap': `${-gap}px`,
             },
             ...(Array.isArray(slotProps?.item?.sx)
-              ? (slotProps.item?.sx ?? [])
+              ? (slotProps?.item?.sx ?? [])
               : [slotProps?.item?.sx]),
           ]}
         />
@@ -81,8 +81,8 @@ const ItemRoot = styled('li')(({ theme }) => ({
   height: 'var(--item-size)',
   marginLeft: 'var(--item-gap)',
   backgroundColor: 'var(--item-color)',
-  border: `solid 2px ${theme.vars.palette.background.paper}`,
-  boxShadow: `inset -1px 1px 2px ${varAlpha(theme.vars.palette.common.blackChannel, 0.24)}`,
+  border: `solid 2px ${theme.palette.background.paper}`,
+  boxShadow: `inset -1px 1px 2px ${alpha(theme.palette.common.black, 0.24)}`,
 }));
 
 const ItemLabel = styled('li')(({ theme }) => ({
