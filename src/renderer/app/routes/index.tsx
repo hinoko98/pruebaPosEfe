@@ -22,6 +22,7 @@ const ProductListView = lazy(() => import("@/features/products/views/ProductList
 const PurchasesView = lazy(() => import("@/features/purchases/views/PurchasesView"));
 const SuppliersView = lazy(() => import("@/features/purchases/views/SuppliersView"));
 const ReportsView = lazy(() => import("@/features/reports/views/ReportsView"));
+const AccountingView = lazy(() => import("@/features/accounting/views/AccountingView"));
 const PosView = lazy(() => import("@/features/sales/views/PosView"));
 const SalesHistoryView = lazy(() => import("@/features/sales/views/SalesHistoryView"));
 const UserView = lazy(() =>
@@ -32,6 +33,7 @@ const RolePermissionsView = lazy(() =>
 );
 const InventoryMovesView = lazy(() => import("@/features/inventory/views/InventoryMovesView"));
 const CorrespondentView = lazy(() => import("@/features/correspondent/views/CorrespondentView"));
+const CorrespondentHistoryView = lazy(() => import("@/features/correspondent/views/CorrespondentHistoryView"));
 const CorrespondentClosuresView = lazy(() => import("@/features/correspondent/views/CorrespondentClosuresView"));
 const CorrespondentSettingsView = lazy(() => import("@/features/correspondent/views/CorrespondentSettingsView"));
 
@@ -114,8 +116,16 @@ export default function AppRoutes() {
                   element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.correspondentView} />,
                   children: [{ path: "correspondent", element: <CorrespondentView /> }],
                 },
+                { path: "correspondent/history", element: <CorrespondentHistoryView /> },
                 { path: "correspondent/closures", element: <CorrespondentClosuresView /> },
-                { path: "correspondent/settings", element: <CorrespondentSettingsView /> },
+                {
+                  element: <RoleRoute allow={["ADMIN"]} />,
+                  children: [{ path: "correspondent/settings", element: <CorrespondentSettingsView /> }],
+                },
+                {
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.reportsView} />,
+                  children: [{ path: "accounting", element: <AccountingView /> }],
+                },
                 {
                   element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.reportsView} />,
                   children: [{ path: "reports", element: <ReportsView /> }],
@@ -158,6 +168,7 @@ export default function AppRoutes() {
                   element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.correspondentView} />,
                   children: [{ path: "correspondent", element: <CorrespondentView /> }],
                 },
+                { path: "correspondent/history", element: <CorrespondentHistoryView /> },
                 { path: "correspondent/closures", element: <CorrespondentClosuresView /> },
                 {
                   element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.productsView} />,

@@ -1,13 +1,13 @@
-import type { Theme, SxProps } from '@mui/material/styles';
+import type { Theme, SxProps } from "@mui/material/styles";
 
-import { useCallback } from 'react';
-import { varAlpha, mergeClasses } from 'minimal-shared/utils';
+import { useCallback } from "react";
+import { mergeClasses } from "@/lib/classnames";
 
-import ButtonBase from '@mui/material/ButtonBase';
-import { styled, alpha as hexAlpha } from '@mui/material/styles';
+import ButtonBase from "@mui/material/ButtonBase";
+import { alpha, styled } from "@mui/material/styles";
 
-import { Iconify } from '../iconify';
-import { colorPickerClasses } from './classes';
+import { Iconify } from "../iconify";
+import { colorPickerClasses } from "./classes";
 
 // ----------------------------------------------------------------------
 
@@ -141,7 +141,7 @@ const ItemContainer = styled('span', {
   backgroundColor: color,
   width: 'calc(var(--item-size) - 16px)',
   height: 'calc(var(--item-size) - 16px)',
-  border: `solid 1px ${varAlpha(theme.vars.palette.grey['500Channel'], 0.16)}`,
+  border: `solid 1px ${alpha(theme.palette.grey[500], 0.16)}`,
   transition: theme.transitions.create(['all'], {
     duration: theme.transitions.duration.shortest,
   }),
@@ -151,8 +151,8 @@ const ItemContainer = styled('span', {
       style: {
         width: 'calc(var(--item-size) - 8px)',
         height: 'calc(var(--item-size) - 8px)',
-        outline: `solid 2px ${hexAlpha(color, 0.08)}`,
-        boxShadow: `4px 4px 8px 0 ${hexAlpha(color, 0.48)}`,
+        outline: `solid 2px ${alpha(color, 0.08)}`,
+        boxShadow: `4px 4px 8px 0 ${alpha(color, 0.48)}`,
       },
     },
   ],

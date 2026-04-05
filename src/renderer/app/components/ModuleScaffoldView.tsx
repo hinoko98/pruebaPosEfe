@@ -1,3 +1,4 @@
+import TablePagination from "@mui/material/TablePagination";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -12,6 +13,7 @@ import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { useTablePagination } from "@/hooks/useTablePagination";
 
 export type ModuleMetric = {
   label: string;
@@ -39,6 +41,8 @@ export default function ModuleScaffoldView({
   subtitle,
   primaryAction,
   secondaryAction,
+  showPrimaryAction = true,
+  showSecondaryAction = true,
   metrics,
   filters,
   columns,
@@ -51,6 +55,8 @@ export default function ModuleScaffoldView({
   subtitle: string;
   primaryAction?: string;
   secondaryAction?: string;
+  showPrimaryAction?: boolean;
+  showSecondaryAction?: boolean;
   metrics?: ModuleMetric[];
   filters?: string[];
   columns: ModuleColumn[];
@@ -59,6 +65,8 @@ export default function ModuleScaffoldView({
   formFields?: ModuleField[];
   notes?: string[];
 }) {
+  const rowsPagination = useTablePagination(rows);
+
   return (
     <Stack spacing={3}>
       <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
@@ -70,8 +78,8 @@ export default function ModuleScaffoldView({
         </Box>
 
         <Stack direction="row" spacing={1} flexWrap="wrap">
-          {secondaryAction ? <Button variant="outlined">{secondaryAction}</Button> : null}
-          {primaryAction ? <Button variant="contained">{primaryAction}</Button> : null}
+          {secondaryAction && showSecondaryAction ? <Button variant="outlined">{secondaryAction}</Button> : null}
+          {primaryAction && showPrimaryAction ? <Button variant="contained">{primaryAction}</Button> : null}
         </Stack>
       </Box>
 
@@ -122,7 +130,7 @@ export default function ModuleScaffoldView({
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {rows.map((row, index) => (
+                    {rowsPagination.paginatedRows.map((row, index) => (
                       <TableRow key={index} hover>
                         {columns.map((column) => (
                           <TableCell key={column.key} align={column.align ?? "left"}>
@@ -139,6 +147,16 @@ export default function ModuleScaffoldView({
                     ))}
                   </TableBody>
                 </Table>
+                <TablePagination
+                  component="div"
+                  count={rows.length}
+                  page={rowsPagination.page}
+                  onPageChange={rowsPagination.handleChangePage}
+                  rowsPerPage={rowsPagination.rowsPerPage}
+                  onRowsPerPageChange={rowsPagination.handleChangeRowsPerPage}
+                  rowsPerPageOptions={[10, 15]}
+                  labelRowsPerPage="Filas"
+                />
               </Box>
             </Stack>
           </CardContent>

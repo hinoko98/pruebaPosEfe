@@ -1,15 +1,13 @@
-import type { BoxProps } from '@mui/material/Box';
+import type { BoxProps } from "@mui/material/Box";
 
-import { mergeClasses } from 'minimal-shared/utils';
+import { mergeClasses } from "@/lib/classnames";
 
-import Box from '@mui/material/Box';
-import Skeleton from '@mui/material/Skeleton';
+import Box from "@mui/material/Box";
+import Skeleton from "@mui/material/Skeleton";
 
-import { chartClasses } from '../classes';
+import { chartClasses } from "../classes";
 
-import type { ChartProps } from '../types';
-
-// ----------------------------------------------------------------------
+import type { ChartProps } from "../types";
 
 export type ChartLoadingProps = BoxProps & Pick<ChartProps, 'type'>;
 

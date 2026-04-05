@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Outlet } from "react-router-dom";
 
 import Box from "@mui/material/Box";
@@ -32,7 +32,7 @@ export default function AppShell({
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [syncLabel, setSyncLabel] = useState(lastSyncText ?? "Cargando...");
 
-  const refreshSyncStatus = async () => {
+  const refreshSyncStatus = useCallback(async () => {
     if (!window.api?.getAppStatus) {
       setSyncLabel(lastSyncText ?? "Sin datos");
       return;
@@ -45,11 +45,11 @@ export default function AppShell({
     }
 
     setSyncLabel(new Date(response.connectedAt).toLocaleString("es-CO"));
-  };
+  }, [lastSyncText]);
 
   useEffect(() => {
     void refreshSyncStatus();
-  }, []);
+  }, [refreshSyncStatus]);
 
   const visibleMenu = useMemo<MenuItem[]>(
     () =>

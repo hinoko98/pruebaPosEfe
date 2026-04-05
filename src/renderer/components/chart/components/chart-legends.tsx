@@ -1,4 +1,4 @@
-import { mergeClasses } from 'minimal-shared/utils';
+import { mergeClasses } from "@/lib/classnames";
 
 import { styled } from '@mui/material/styles';
 

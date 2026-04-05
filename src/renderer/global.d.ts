@@ -1,9 +1,24 @@
 import type { LoginInput, LoginResult, CreateUserInput, UpdateUserInput } from "~/main/electron/ipc/schemas/auth.schema";
 import type {
+  AccountingRangeInput,
+  CreateAccountingCreditInput,
+  CreateAccountingCreditNoteInput,
+  CreateAccountingExpenseInput,
+  CreateAccountingPaymentInput,
+} from "~/main/electron/ipc/schemas/accounting.schema";
+import type {
+  CreateCorrespondentPlatformInput,
   CreateCorrespondentClosureInput,
+  CreateCorrespondentTransactionTypeInput,
   CreateCorrespondentTransactionInput,
+  DeleteCorrespondentPlatformInput,
+  DeleteCorrespondentTransactionTypeInput,
+  GetCorrespondentTransactionDetailInput,
   ListCorrespondentClosuresInput,
   ListCorrespondentTransactionsInput,
+  UpdateCorrespondentPlatformInput,
+  UpdateCorrespondentTransactionTypeInput,
+  UpdateCorrespondentTransactionInput,
 } from "~/main/electron/ipc/schemas/correspondent.schema";
 import type { CreateProductInput, UpdateProductInput } from "~/main/electron/ipc/schemas/product.schema";
 import type { CreateRoleProfileInput, UpdateRoleProfileInput } from "~/main/electron/ipc/schemas/roles.schema";
@@ -59,6 +74,10 @@ type CorrespondentCatalogResponse = {
     requiresEvidence: boolean;
     supportsOcr: boolean;
     supportsFileImport: boolean;
+    createdAt: string;
+    updatedAt: string;
+    createdBy: string | null;
+    updatedBy: string | null;
     types: Array<{
       id: string;
       code: string;
@@ -66,6 +85,10 @@ type CorrespondentCatalogResponse = {
       direction: "IN" | "OUT" | "NEUTRAL";
       requiresCustomerDocument: boolean;
       requiresExternalReference: boolean;
+      createdAt: string;
+      updatedAt: string;
+      createdBy: string | null;
+      updatedBy: string | null;
     }>;
     commissionRules: Array<{
       id: string;
@@ -102,6 +125,7 @@ type CorrespondentDashboardResponse = {
   }>;
   recentTransactions: Array<{
     id: string;
+    approvalCode: string | null;
     platform: string;
     type: string;
     amount: number;
@@ -120,6 +144,7 @@ type CorrespondentTransactionsResponse = {
   message?: string;
   transactions: Array<{
     id: string;
+    approvalCode: string | null;
     platformId: string;
     platform: string;
     typeId: string;
@@ -145,11 +170,43 @@ type CorrespondentTransactionsResponse = {
   }>;
 };
 
+type CorrespondentTransactionDetailResponse = {
+  success: boolean;
+  message?: string;
+  transaction?: {
+    id: string;
+    approvalCode: string | null;
+    platformId: string;
+    platform: string;
+    typeId: string;
+    type: string;
+    amount: number;
+    commissionAmount: number;
+    netAmount: number;
+    performedAt: string;
+    createdAt: string;
+    updatedAt: string;
+    registeredBy: string;
+    note: string | null;
+    status: "REGISTERED" | "VOIDED";
+    auditTrail: Array<{
+      id: string;
+      action: string;
+      createdAt: string;
+      user: string | null;
+      beforeJson: string | null;
+      afterJson: string | null;
+      context: string | null;
+    }>;
+  };
+};
+
 type CorrespondentCreateTransactionResponse = {
   success: boolean;
   message?: string;
   transaction?: {
     id: string;
+    approvalCode?: string | null;
     platform: string;
     type: string;
     amount: number;
@@ -163,6 +220,12 @@ type CorrespondentClosuresResponse = {
   success: boolean;
   message?: string;
   businessDate: string;
+  totals: {
+    totalIn: number;
+    totalOut: number;
+    netTotal: number;
+    transactionsCount: number;
+  };
   closures: Array<{
     platformId: string;
     platform: string;
@@ -172,8 +235,16 @@ type CorrespondentClosuresResponse = {
     expectedBalance: number;
     transactionsCount: number;
     pendingTransactions: number;
+    breakdown: Array<{
+      typeId: string;
+      type: string;
+      direction: "IN" | "OUT" | "NEUTRAL";
+      total: number;
+      count: number;
+    }>;
     closure: {
       id: string;
+      expectedBalance: number;
       reportedBalance: number;
       differenceAmount: number;
       status: "CLOSED" | "WITH_DIFFERENCE";
@@ -194,6 +265,104 @@ type CorrespondentCreateClosureResponse = {
     differenceAmount: number;
     status: "CLOSED" | "WITH_DIFFERENCE";
   };
+};
+
+type CorrespondentPlatformMutationResponse = {
+  success: boolean;
+  message?: string;
+  platformId?: string;
+  typeId?: string;
+};
+
+type AccountingSummaryResponse = {
+  success: boolean;
+  message?: string;
+  summary: {
+    pendingCreditsCount: number;
+    pendingCreditsBalance: number;
+    paymentsTotal: number;
+    creditNotesTotal: number;
+    expensesTotal: number;
+    netOperationalBalance: number;
+  };
+  customers: Array<{
+    id: string;
+    internalCode: string | null;
+    name: string;
+    document: string | null;
+    phone: string | null;
+  }>;
+  sales: Array<{
+    id: string;
+    invoiceNumber: string;
+    customer: string;
+    customerId: string | null;
+    total: number;
+    status: "COMPLETED" | "CANCELLED" | "PARTIALLY_RETURNED" | "RETURNED" | "CREDIT";
+    createdAt: string;
+    returnedTotal: number;
+    availableCreditTotal: number;
+    availableCreditNoteTotal: number;
+    credit: {
+      id: string;
+      total: number;
+      balance: number;
+      status: "PENDING" | "PARTIAL" | "PAID" | "OVERDUE" | "CANCELLED";
+      dueDate: string | null;
+    } | null;
+  }>;
+  credits: Array<{
+    id: string;
+    saleId: string;
+    invoiceNumber: string;
+    customerId: string;
+    customerName: string;
+    total: number;
+    balance: number;
+    paidAmount: number;
+    status: "PENDING" | "PARTIAL" | "PAID" | "OVERDUE" | "CANCELLED";
+    dueDate: string | null;
+    createdAt: string;
+  }>;
+  payments: Array<{
+    id: string;
+    creditId: string | null;
+    saleId: string | null;
+    invoiceNumber: string | null;
+    customerName: string;
+    method: "CASH" | "CARD" | "TRANSFER";
+    amount: number;
+    note: string | null;
+    createdAt: string;
+  }>;
+  creditNotes: Array<{
+    id: string;
+    saleId: string;
+    invoiceNumber: string;
+    customerName: string;
+    total: number;
+    reason: string | null;
+    createdAt: string;
+  }>;
+  expenses: Array<{
+    id: string;
+    sessionId: string;
+    registerName: string;
+    userName: string;
+    type: "EXPENSE_OUT" | "WITHDRAWAL_OUT";
+    amount: number;
+    note: string | null;
+    createdAt: string;
+  }>;
+};
+
+type AccountingMutationResponse = {
+  success: boolean;
+  message?: string;
+  creditId?: string;
+  paymentId?: string;
+  creditNoteId?: string;
+  expenseId?: string;
 };
 
 type AppStatusResponse = {
@@ -273,6 +442,7 @@ type UsersListResponse = {
   message?: string;
   users: Array<{
     id: string;
+    internalCode: string | null;
     name: string | null;
     firstName: string | null;
     lastName: string | null;
@@ -365,6 +535,7 @@ type CustomersListResponse = {
   message?: string;
   customers: Array<{
     id: string;
+    internalCode: string | null;
     name: string;
     document: string | null;
     phone: string | null;
@@ -383,6 +554,7 @@ type SuppliersListResponse = {
   message?: string;
   suppliers: Array<{
     id: string;
+    internalCode: string | null;
     name: string;
     document: string | null;
     phone: string | null;
@@ -541,12 +713,36 @@ declare global {
       createCorrespondentTransaction: (
         payload: CreateCorrespondentTransactionInput
       ) => Promise<CorrespondentCreateTransactionResponse>;
+      getCorrespondentTransactionDetail: (
+        payload: GetCorrespondentTransactionDetailInput
+      ) => Promise<CorrespondentTransactionDetailResponse>;
+      updateCorrespondentTransaction: (
+        payload: UpdateCorrespondentTransactionInput
+      ) => Promise<CorrespondentCreateTransactionResponse>;
       listCorrespondentClosures: (
         payload?: ListCorrespondentClosuresInput
       ) => Promise<CorrespondentClosuresResponse>;
       createCorrespondentClosure: (
         payload: CreateCorrespondentClosureInput
       ) => Promise<CorrespondentCreateClosureResponse>;
+      createCorrespondentPlatform: (
+        payload: CreateCorrespondentPlatformInput
+      ) => Promise<CorrespondentPlatformMutationResponse>;
+      updateCorrespondentPlatform: (
+        payload: UpdateCorrespondentPlatformInput
+      ) => Promise<CorrespondentPlatformMutationResponse>;
+      deleteCorrespondentPlatform: (
+        payload: DeleteCorrespondentPlatformInput
+      ) => Promise<CorrespondentPlatformMutationResponse>;
+      createCorrespondentTransactionType: (
+        payload: CreateCorrespondentTransactionTypeInput
+      ) => Promise<CorrespondentPlatformMutationResponse>;
+      updateCorrespondentTransactionType: (
+        payload: UpdateCorrespondentTransactionTypeInput
+      ) => Promise<CorrespondentPlatformMutationResponse>;
+      deleteCorrespondentTransactionType: (
+        payload: DeleteCorrespondentTransactionTypeInput
+      ) => Promise<CorrespondentPlatformMutationResponse>;
       getAppStatus: () => Promise<AppStatusResponse>;
       getBusinessSettings: () => Promise<BusinessSettingsResponse>;
       updateBusinessSettings: (payload: {
@@ -588,6 +784,7 @@ declare global {
       deleteProductSubcategory: (id: string) => Promise<GenericMutationResponse>;
       listCustomers: () => Promise<CustomersListResponse>;
       createCustomer: (payload: {
+        internalCode?: string | null;
         firstName: string;
         lastName?: string;
         documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
@@ -599,6 +796,7 @@ declare global {
       }) => Promise<GenericMutationResponse>;
       updateCustomer: (payload: {
         id: string;
+        internalCode?: string | null;
         firstName: string;
         lastName?: string;
         documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
@@ -610,6 +808,7 @@ declare global {
       }) => Promise<GenericMutationResponse>;
       listSuppliers: () => Promise<SuppliersListResponse>;
       createSupplier: (payload: {
+        internalCode?: string | null;
         name: string;
         contactName?: string | null;
         documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
@@ -621,6 +820,7 @@ declare global {
       }) => Promise<GenericMutationResponse>;
       updateSupplier: (payload: {
         id: string;
+        internalCode?: string | null;
         name: string;
         contactName?: string | null;
         documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
@@ -654,6 +854,11 @@ declare global {
       }) => Promise<SalesListResponse>;
       getSaleDetail: (saleId: string) => Promise<SaleDetailResponse>;
       printSaleInvoice: (saleId: string) => Promise<{ success: boolean; message?: string }>;
+      getAccountingSummary: (payload?: AccountingRangeInput) => Promise<AccountingSummaryResponse>;
+      createAccountingCredit: (payload: CreateAccountingCreditInput) => Promise<AccountingMutationResponse>;
+      createAccountingPayment: (payload: CreateAccountingPaymentInput) => Promise<AccountingMutationResponse>;
+      createAccountingCreditNote: (payload: CreateAccountingCreditNoteInput) => Promise<AccountingMutationResponse>;
+      createAccountingExpense: (payload: CreateAccountingExpenseInput) => Promise<AccountingMutationResponse>;
     };
   }
 }
