@@ -16,11 +16,20 @@ import {
 } from "@prisma/client";
 
 import {
+  createCorrespondentPlatformSchema,
   createCorrespondentClosureSchema,
   createCorrespondentTransactionSchema,
+  createCorrespondentTransactionTypeSchema,
+  deleteCorrespondentPlatformSchema,
+  deleteCorrespondentTransactionTypeSchema,
+  getCorrespondentTransactionDetailSchema,
   listCorrespondentClosuresSchema,
   listCorrespondentTransactionsSchema,
+  updateCorrespondentPlatformSchema,
+  updateCorrespondentTransactionTypeSchema,
+  updateCorrespondentTransactionSchema,
 } from "../ipc/schemas/correspondent.schema";
+import { isValidCode, normalizeCodeInput, resolveLooseCode } from "../../../shared/internalCodes";
 
 type CurrentSessionUser = {
   id: string;
@@ -137,6 +146,110 @@ function serializeJson(value: unknown) {
   return JSON.stringify(value ?? null);
 }
 
+function normalizeCode(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toUpperCase();
+}
+
+async function buildUniquePlatformCode(prisma: PrismaClient, name: string) {
+  const baseCode = normalizeCode(name) || "CORRESPONSAL";
+  let code = baseCode;
+  let counter = 2;
+
+  while (await prisma.correspondentPlatform.findUnique({ where: { code }, select: { id: true } })) {
+    code = `${baseCode}_${counter}`;
+    counter += 1;
+  }
+
+  return code;
+}
+
+async function buildUniqueTypeCode(prisma: PrismaClient, platformId: string, name: string) {
+  const baseCode = normalizeCode(name) || "TIPO";
+  let code = baseCode;
+  let counter = 2;
+
+  while (
+    await prisma.correspondentTransactionType.findUnique({
+      where: { platformId_code: { platformId, code } },
+      select: { id: true },
+    })
+  ) {
+    code = `${baseCode}_${counter}`;
+    counter += 1;
+  }
+
+  return code;
+}
+
+type CatalogAuditActor = {
+  user: string | null;
+  at: string | null;
+};
+
+function parseContextId(context: string | null | undefined, key: "platform" | "type") {
+  if (!context) return null;
+  const match = context.match(new RegExp(`${key}:([^;]+)`));
+  return match?.[1] ?? null;
+}
+
+async function buildCorrespondentCatalogAuditMaps(prisma: PrismaClient) {
+  const logs = await prisma.correspondentAuditLog.findMany({
+    where: {
+      action: {
+        in: ["create_platform", "update_platform", "create_transaction_type", "update_transaction_type"],
+      },
+    },
+    include: {
+      user: {
+        select: {
+          username: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const platformCreatedBy = new Map<string, CatalogAuditActor>();
+  const platformUpdatedBy = new Map<string, CatalogAuditActor>();
+  const typeCreatedBy = new Map<string, CatalogAuditActor>();
+  const typeUpdatedBy = new Map<string, CatalogAuditActor>();
+
+  for (const log of logs) {
+    const actor = {
+      user: log.user ? log.user.name ?? log.user.username : null,
+      at: log.createdAt.toISOString(),
+    };
+    const platformId = parseContextId(log.context, "platform");
+    const typeId = parseContextId(log.context, "type");
+
+    if (log.action === "create_platform" && platformId && !platformCreatedBy.has(platformId)) {
+      platformCreatedBy.set(platformId, actor);
+    }
+    if (log.action === "update_platform" && platformId) {
+      platformUpdatedBy.set(platformId, actor);
+    }
+    if (log.action === "create_transaction_type" && typeId && !typeCreatedBy.has(typeId)) {
+      typeCreatedBy.set(typeId, actor);
+    }
+    if (log.action === "update_transaction_type" && typeId) {
+      typeUpdatedBy.set(typeId, actor);
+    }
+  }
+
+  return {
+    platformCreatedBy,
+    platformUpdatedBy,
+    typeCreatedBy,
+    typeUpdatedBy,
+  };
+}
+
 export async function ensureCorrespondentSchemaIfNeeded(prismaClient: PrismaClient) {
   const statements = [
     `PRAGMA foreign_keys = ON;`,
@@ -219,6 +332,7 @@ export async function ensureCorrespondentSchemaIfNeeded(prismaClient: PrismaClie
     `CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_closedByUserId_idx" ON "CorrespondentDailyClosure"("closedByUserId");`,
     `CREATE TABLE IF NOT EXISTS "CorrespondentTransaction" (
       "id" TEXT NOT NULL PRIMARY KEY,
+      "approvalCode" TEXT,
       "platformId" TEXT NOT NULL,
       "typeId" TEXT NOT NULL,
       "cashSessionId" TEXT,
@@ -297,6 +411,57 @@ export async function ensureCorrespondentSchemaIfNeeded(prismaClient: PrismaClie
   for (const statement of statements) {
     await prismaClient.$executeRawUnsafe(statement);
   }
+
+  const transactionColumns = await prismaClient.$queryRawUnsafe<Array<{ name: string }>>(
+    `PRAGMA table_info("CorrespondentTransaction");`
+  );
+  const transactionColumnSet = new Set(transactionColumns.map((column) => column.name));
+
+  if (!transactionColumnSet.has("approvalCode")) {
+    await prismaClient.$executeRawUnsafe(`ALTER TABLE "CorrespondentTransaction" ADD COLUMN "approvalCode" TEXT;`);
+  }
+
+  const transactions = await prismaClient.correspondentTransaction.findMany({
+    select: {
+      id: true,
+      approvalCode: true,
+    },
+    orderBy: [{ createdAt: "asc" }, { performedAt: "asc" }],
+  });
+
+  const assignedApprovalCodes: string[] = [];
+  const assignedSet = new Set<string>();
+
+  for (const transaction of transactions) {
+    const normalizedCurrentCode = normalizeCodeInput(transaction.approvalCode || "");
+    const canKeepCurrentCode =
+      Boolean(normalizedCurrentCode) &&
+      isValidCode(normalizedCurrentCode, 4, 40) &&
+      !assignedSet.has(normalizedCurrentCode);
+
+    const approvalCode = canKeepCurrentCode
+      ? normalizedCurrentCode
+      : resolveLooseCode({
+          existingCodes: assignedApprovalCodes,
+          generatedPrefix: "APR",
+          digits: 6,
+          maxLength: 40,
+        });
+
+    if (approvalCode !== transaction.approvalCode) {
+      await prismaClient.correspondentTransaction.update({
+        where: { id: transaction.id },
+        data: { approvalCode },
+      });
+    }
+
+    assignedApprovalCodes.push(approvalCode);
+    assignedSet.add(approvalCode);
+  }
+
+  await prismaClient.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentTransaction_approvalCode_key" ON "CorrespondentTransaction"("approvalCode");`
+  );
 }
 
 export async function seedCorrespondentCatalogIfNeeded(prismaClient: PrismaClient) {
@@ -549,6 +714,31 @@ async function getCorrespondentTransactionsForDay(
   });
 }
 
+async function getCorrespondentTransactionDetail(prisma: PrismaClient, transactionId: string) {
+  return prisma.correspondentTransaction.findUnique({
+    where: { id: transactionId },
+    include: {
+      platform: true,
+      type: true,
+      registeredBy: { select: { id: true, username: true, name: true } },
+      auditLogs: {
+        include: {
+          user: {
+            select: { id: true, username: true, name: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      },
+      dailyClosure: {
+        select: {
+          id: true,
+          businessDate: true,
+        },
+      },
+    },
+  });
+}
+
 export function registerCorrespondentIpcHandlers({
   app,
   ipcMain,
@@ -561,20 +751,23 @@ export function registerCorrespondentIpcHandlers({
       return { success: false, message: "Debes iniciar sesion", platforms: [] };
     }
 
-    const platforms = await prisma.correspondentPlatform.findMany({
-      where: { isActive: true },
-      include: {
-        transactionTypes: {
-          where: { isActive: true },
-          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    const [platforms, auditMaps] = await Promise.all([
+      prisma.correspondentPlatform.findMany({
+        where: { isActive: true },
+        include: {
+          transactionTypes: {
+            where: { isActive: true },
+            orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          },
+          commissionRules: {
+            where: { isActive: true },
+            orderBy: [{ validFrom: "desc" }],
+          },
         },
-        commissionRules: {
-          where: { isActive: true },
-          orderBy: [{ validFrom: "desc" }],
-        },
-      },
-      orderBy: { name: "asc" },
-    });
+        orderBy: [{ createdAt: "asc" }, { name: "asc" }],
+      }),
+      buildCorrespondentCatalogAuditMaps(prisma),
+    ]);
 
     return {
       success: true,
@@ -585,6 +778,13 @@ export function registerCorrespondentIpcHandlers({
         requiresEvidence: platform.requiresEvidence,
         supportsOcr: platform.supportsOcr,
         supportsFileImport: platform.supportsFileImport,
+        createdAt: platform.createdAt.toISOString(),
+        updatedAt: platform.updatedAt.toISOString(),
+        createdBy: auditMaps.platformCreatedBy.get(platform.id)?.user ?? null,
+        updatedBy:
+          auditMaps.platformUpdatedBy.get(platform.id)?.user ??
+          auditMaps.platformCreatedBy.get(platform.id)?.user ??
+          null,
         types: platform.transactionTypes.map((type) => ({
           id: type.id,
           code: type.code,
@@ -592,6 +792,13 @@ export function registerCorrespondentIpcHandlers({
           direction: type.direction,
           requiresCustomerDocument: type.requiresCustomerDocument,
           requiresExternalReference: type.requiresExternalReference,
+          createdAt: type.createdAt.toISOString(),
+          updatedAt: type.updatedAt.toISOString(),
+          createdBy: auditMaps.typeCreatedBy.get(type.id)?.user ?? null,
+          updatedBy:
+            auditMaps.typeUpdatedBy.get(type.id)?.user ??
+            auditMaps.typeCreatedBy.get(type.id)?.user ??
+            null,
         })),
         commissionRules: platform.commissionRules.map((rule) => ({
           id: rule.id,
@@ -666,6 +873,7 @@ export function registerCorrespondentIpcHandlers({
       perPlatform: Object.values(perPlatformMap).sort((a, b) => a.platform.localeCompare(b.platform, "es")),
       recentTransactions: transactions.slice(0, 10).map((transaction) => ({
         id: transaction.id,
+        approvalCode: transaction.approvalCode,
         platform: transaction.platform.name,
         type: transaction.type.name,
         amount: transaction.amount,
@@ -708,12 +916,25 @@ export function registerCorrespondentIpcHandlers({
             : undefined,
         OR: search
           ? [
+              { approvalCode: { contains: search } },
               { externalReference: { contains: search } },
               { customerName: { contains: search } },
               { customerDocument: { contains: search } },
               { targetAccount: { contains: search } },
               { targetPhone: { contains: search } },
               { note: { contains: search } },
+              { platform: { is: { name: { contains: search } } } },
+              { type: { is: { name: { contains: search } } } },
+              {
+                registeredBy: {
+                  is: {
+                    OR: [
+                      { username: { contains: search } },
+                      { name: { contains: search } },
+                    ],
+                  },
+                },
+              },
             ]
           : undefined,
       },
@@ -732,6 +953,7 @@ export function registerCorrespondentIpcHandlers({
       success: true,
       transactions: transactions.map((transaction) => ({
         id: transaction.id,
+        approvalCode: transaction.approvalCode,
         platformId: transaction.platformId,
         platform: transaction.platform.name,
         typeId: transaction.typeId,
@@ -755,6 +977,54 @@ export function registerCorrespondentIpcHandlers({
         closureId: transaction.dailyClosure?.id ?? null,
         closureStatus: transaction.dailyClosure?.status ?? null,
       })),
+    };
+  });
+
+  ipcMain.handle("correspondent:transaction:detail", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser) {
+      return { success: false, message: "Debes iniciar sesion" };
+    }
+
+    const parsed = getCorrespondentTransactionDetailSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Transaccion invalida" };
+    }
+
+    const transaction = await getCorrespondentTransactionDetail(prisma, parsed.data.transactionId);
+
+    if (!transaction) {
+      return { success: false, message: "La transaccion ya no existe" };
+    }
+
+    return {
+      success: true,
+      transaction: {
+        id: transaction.id,
+        approvalCode: transaction.approvalCode,
+        platformId: transaction.platformId,
+        platform: transaction.platform.name,
+        typeId: transaction.typeId,
+        type: transaction.type.name,
+        amount: transaction.amount,
+        commissionAmount: transaction.commissionAmount,
+        netAmount: transaction.netAmount,
+        performedAt: transaction.performedAt.toISOString(),
+        createdAt: transaction.createdAt.toISOString(),
+        updatedAt: transaction.updatedAt.toISOString(),
+        registeredBy: transaction.registeredBy.name ?? transaction.registeredBy.username,
+        note: transaction.note,
+        status: transaction.status,
+        auditTrail: transaction.auditLogs.map((entry) => ({
+          id: entry.id,
+          action: entry.action,
+          createdAt: entry.createdAt.toISOString(),
+          user: entry.user ? entry.user.name ?? entry.user.username : null,
+          beforeJson: entry.beforeJson,
+          afterJson: entry.afterJson,
+          context: entry.context,
+        })),
+      },
     };
   });
 
@@ -786,18 +1056,6 @@ export function registerCorrespondentIpcHandlers({
       return { success: false, message: "El tipo de transaccion no corresponde a la plataforma" };
     }
 
-    if (platform.requiresEvidence && !data.evidence) {
-      return { success: false, message: "Esta plataforma requiere evidencia del comprobante" };
-    }
-
-    if (type.requiresExternalReference && !data.externalReference?.trim()) {
-      return { success: false, message: "La referencia externa es obligatoria para este tipo" };
-    }
-
-    if (type.requiresCustomerDocument && !data.customerDocument?.trim()) {
-      return { success: false, message: "El documento del cliente es obligatorio para este tipo" };
-    }
-
     const duplicate = await prisma.correspondentTransaction.findFirst({
       where: {
         platformId: platform.id,
@@ -825,8 +1083,22 @@ export function registerCorrespondentIpcHandlers({
       : null;
 
     try {
+      const existingApprovalCodes = (
+        await prisma.correspondentTransaction.findMany({
+          select: { approvalCode: true },
+        })
+      ).map((transaction) => transaction.approvalCode);
+      const approvalCode = resolveLooseCode({
+        desiredCode: data.approvalCode,
+        existingCodes: existingApprovalCodes,
+        generatedPrefix: "APR",
+        digits: 6,
+        maxLength: 40,
+      });
+
       const transaction = await prisma.correspondentTransaction.create({
         data: {
+          approvalCode,
           platformId: platform.id,
           typeId: type.id,
           cashSessionId: activeCashSession?.id ?? null,
@@ -873,6 +1145,7 @@ export function registerCorrespondentIpcHandlers({
         transactionId: transaction.id,
         action: "create_transaction",
         afterJson: {
+          approvalCode: transaction.approvalCode,
           platform: transaction.platform.name,
           type: transaction.type.name,
           amount: transaction.amount,
@@ -885,6 +1158,7 @@ export function registerCorrespondentIpcHandlers({
         success: true,
         transaction: {
           id: transaction.id,
+          approvalCode: transaction.approvalCode,
           platform: transaction.platform.name,
           type: transaction.type.name,
           amount: transaction.amount,
@@ -895,6 +1169,491 @@ export function registerCorrespondentIpcHandlers({
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo registrar la transaccion";
+      return { success: false, message };
+    }
+  });
+
+  ipcMain.handle("correspondent:transaction:update", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser) {
+      return { success: false, message: "Debes iniciar sesion para editar movimientos" };
+    }
+
+    const parsed = updateCorrespondentTransactionSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Datos invalidos para actualizar la transaccion" };
+    }
+
+    const existingTransaction = await prisma.correspondentTransaction.findUnique({
+      where: { id: parsed.data.transactionId },
+      include: {
+        platform: true,
+        type: true,
+      },
+    });
+
+    if (!existingTransaction) {
+      return { success: false, message: "La transaccion ya no existe" };
+    }
+
+    if (existingTransaction.dailyClosureId) {
+      return { success: false, message: "No puedes editar una transaccion que ya hace parte de un cuadre" };
+    }
+
+    if (existingTransaction.status === CorrespondentTransactionStatus.VOIDED) {
+      return { success: false, message: "No puedes editar una transaccion anulada" };
+    }
+
+    const nextType = await prisma.correspondentTransactionType.findUnique({
+      where: { id: parsed.data.typeId },
+    });
+
+    if (!nextType || !nextType.isActive || nextType.platformId !== existingTransaction.platformId) {
+      return { success: false, message: "El nuevo tipo no pertenece al mismo corresponsal" };
+    }
+
+    const nextPerformedAt = new Date(parsed.data.performedAt);
+    const nextCommissionAmount = await resolveCommissionAmount(
+      prisma,
+      existingTransaction.platformId,
+      nextType.id,
+      parsed.data.amount,
+      nextPerformedAt
+    );
+    const nextNetAmount =
+      nextType.direction === CorrespondentDirection.OUT
+        ? parsed.data.amount - nextCommissionAmount
+        : parsed.data.amount + nextCommissionAmount;
+
+    try {
+      const existingApprovalCodes = (
+        await prisma.correspondentTransaction.findMany({
+          where: { NOT: { id: existingTransaction.id } },
+          select: { approvalCode: true },
+        })
+      ).map((transaction) => transaction.approvalCode);
+      const approvalCode = resolveLooseCode({
+        desiredCode: parsed.data.approvalCode ?? existingTransaction.approvalCode,
+        existingCodes: existingApprovalCodes,
+        generatedPrefix: "APR",
+        digits: 6,
+        maxLength: 40,
+      });
+
+      const updatedTransaction = await prisma.correspondentTransaction.update({
+        where: { id: existingTransaction.id },
+        data: {
+          approvalCode,
+          typeId: nextType.id,
+          amount: parsed.data.amount,
+          commissionAmount: nextCommissionAmount,
+          netAmount: nextNetAmount,
+          performedAt: nextPerformedAt,
+          reviewedByUserId: currentSessionUser.id,
+        },
+        include: {
+          platform: true,
+          type: true,
+          evidences: { select: { id: true } },
+        },
+      });
+
+      await logCorrespondentAction({
+        prisma,
+        currentSessionUser,
+        transactionId: updatedTransaction.id,
+        action: "update_transaction",
+        beforeJson: {
+          approvalCode: existingTransaction.approvalCode,
+          type: existingTransaction.type.name,
+          amount: existingTransaction.amount,
+          performedAt: existingTransaction.performedAt.toISOString(),
+          commissionAmount: existingTransaction.commissionAmount,
+        },
+        afterJson: {
+          approvalCode: updatedTransaction.approvalCode,
+          type: updatedTransaction.type.name,
+          amount: updatedTransaction.amount,
+          performedAt: updatedTransaction.performedAt.toISOString(),
+          commissionAmount: updatedTransaction.commissionAmount,
+        },
+      });
+
+      return {
+        success: true,
+        transaction: {
+          id: updatedTransaction.id,
+          approvalCode: updatedTransaction.approvalCode,
+          platform: updatedTransaction.platform.name,
+          type: updatedTransaction.type.name,
+          amount: updatedTransaction.amount,
+          commissionAmount: updatedTransaction.commissionAmount,
+          netAmount: updatedTransaction.netAmount,
+          hasEvidence: updatedTransaction.evidences.length > 0,
+        },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo actualizar la transaccion";
+      return { success: false, message };
+    }
+  });
+
+  ipcMain.handle("correspondent:platform:create", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+      return { success: false, message: "Solo el administrador puede crear corresponsales" };
+    }
+
+    const parsed = createCorrespondentPlatformSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Datos invalidos para el corresponsal" };
+    }
+
+    const platformName = parsed.data.name.trim();
+    const duplicate = await prisma.correspondentPlatform.findFirst({
+      where: { name: { equals: platformName } },
+      select: { id: true },
+    });
+
+    if (duplicate) {
+      return { success: false, message: "Ya existe un corresponsal con ese nombre" };
+    }
+
+    try {
+      const created = await prisma.correspondentPlatform.create({
+        data: {
+          code: await buildUniquePlatformCode(prisma, platformName),
+          name: platformName,
+          isActive: true,
+          requiresEvidence: parsed.data.requiresEvidence,
+          supportsOcr: parsed.data.supportsOcr,
+          supportsFileImport: parsed.data.supportsFileImport,
+        },
+      });
+
+      await prisma.correspondentCommissionRule.create({
+        data: {
+          platformId: created.id,
+          mode: CommissionMode.NONE,
+          value: 0,
+          isActive: true,
+        },
+      });
+
+      await logCorrespondentAction({
+        prisma,
+        currentSessionUser,
+        action: "create_platform",
+        context: `platform:${created.id}`,
+        afterJson: {
+          platform: created.name,
+          code: created.code,
+        },
+      });
+
+      return { success: true, platformId: created.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo crear el corresponsal";
+      return { success: false, message };
+    }
+  });
+
+  ipcMain.handle("correspondent:platform:update", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+      return { success: false, message: "Solo el administrador puede editar corresponsales" };
+    }
+
+    const parsed = updateCorrespondentPlatformSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Datos invalidos para actualizar el corresponsal" };
+    }
+
+    const existingPlatform = await prisma.correspondentPlatform.findUnique({
+      where: { id: parsed.data.platformId },
+    });
+
+    if (!existingPlatform) {
+      return { success: false, message: "El corresponsal ya no existe" };
+    }
+
+    const duplicate = await prisma.correspondentPlatform.findFirst({
+      where: {
+        name: { equals: parsed.data.name.trim() },
+        NOT: { id: existingPlatform.id },
+      },
+      select: { id: true },
+    });
+
+    if (duplicate) {
+      return { success: false, message: "Ya existe otro corresponsal con ese nombre" };
+    }
+
+    try {
+      const updated = await prisma.correspondentPlatform.update({
+        where: { id: existingPlatform.id },
+        data: {
+          name: parsed.data.name.trim(),
+          requiresEvidence: parsed.data.requiresEvidence,
+          supportsOcr: parsed.data.supportsOcr,
+          supportsFileImport: parsed.data.supportsFileImport,
+        },
+      });
+
+      await logCorrespondentAction({
+        prisma,
+        currentSessionUser,
+        action: "update_platform",
+        context: `platform:${updated.id}`,
+        beforeJson: {
+          name: existingPlatform.name,
+          requiresEvidence: existingPlatform.requiresEvidence,
+          supportsOcr: existingPlatform.supportsOcr,
+          supportsFileImport: existingPlatform.supportsFileImport,
+        },
+        afterJson: {
+          name: updated.name,
+          requiresEvidence: updated.requiresEvidence,
+          supportsOcr: updated.supportsOcr,
+          supportsFileImport: updated.supportsFileImport,
+        },
+      });
+
+      return { success: true, platformId: updated.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo actualizar el corresponsal";
+      return { success: false, message };
+    }
+  });
+
+  ipcMain.handle("correspondent:platform:delete", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+      return { success: false, message: "Solo el administrador puede eliminar corresponsales" };
+    }
+
+    const parsed = deleteCorrespondentPlatformSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Corresponsal invalido" };
+    }
+
+    const existingPlatform = await prisma.correspondentPlatform.findUnique({
+      where: { id: parsed.data.platformId },
+      include: {
+        transactionTypes: {
+          select: { id: true },
+        },
+      },
+    });
+
+    if (!existingPlatform) {
+      return { success: false, message: "El corresponsal ya no existe" };
+    }
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.correspondentPlatform.update({
+          where: { id: existingPlatform.id },
+          data: { isActive: false },
+        });
+
+        if (existingPlatform.transactionTypes.length > 0) {
+          await tx.correspondentTransactionType.updateMany({
+            where: { platformId: existingPlatform.id },
+            data: { isActive: false },
+          });
+        }
+      });
+
+      await logCorrespondentAction({
+        prisma,
+        currentSessionUser,
+        action: "delete_platform",
+        context: `platform:${existingPlatform.id}`,
+        beforeJson: {
+          name: existingPlatform.name,
+        },
+      });
+
+      return { success: true, platformId: existingPlatform.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo eliminar el corresponsal";
+      return { success: false, message };
+    }
+  });
+
+  ipcMain.handle("correspondent:type:create", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+      return { success: false, message: "Solo el administrador puede crear tipos" };
+    }
+
+    const parsed = createCorrespondentTransactionTypeSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Datos invalidos para el tipo" };
+    }
+
+    const platform = await prisma.correspondentPlatform.findUnique({
+      where: { id: parsed.data.platformId },
+      include: {
+        transactionTypes: {
+          select: { sortOrder: true },
+          orderBy: { sortOrder: "desc" },
+          take: 1,
+        },
+      },
+    });
+
+    if (!platform || !platform.isActive) {
+      return { success: false, message: "El corresponsal ya no existe" };
+    }
+
+    const typeName = parsed.data.name.trim();
+    const duplicate = await prisma.correspondentTransactionType.findFirst({
+      where: {
+        platformId: platform.id,
+        name: { equals: typeName },
+      },
+      select: { id: true },
+    });
+
+    if (duplicate) {
+      return { success: false, message: "Ese corresponsal ya tiene un tipo con ese nombre" };
+    }
+
+    try {
+      const created = await prisma.correspondentTransactionType.create({
+        data: {
+          platformId: platform.id,
+          code: await buildUniqueTypeCode(prisma, platform.id, typeName),
+          name: typeName,
+          direction: parsed.data.direction,
+          isActive: true,
+          sortOrder: (platform.transactionTypes[0]?.sortOrder ?? 0) + 10,
+        },
+      });
+
+      await logCorrespondentAction({
+        prisma,
+        currentSessionUser,
+        action: "create_transaction_type",
+        context: `platform:${platform.id};type:${created.id}`,
+        afterJson: {
+          platform: platform.name,
+          type: created.name,
+          direction: created.direction,
+        },
+      });
+
+      return { success: true, typeId: created.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo crear el tipo";
+      return { success: false, message };
+    }
+  });
+
+  ipcMain.handle("correspondent:type:update", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+      return { success: false, message: "Solo el administrador puede editar tipos" };
+    }
+
+    const parsed = updateCorrespondentTransactionTypeSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Datos invalidos para actualizar el tipo" };
+    }
+
+    const existingType = await prisma.correspondentTransactionType.findUnique({
+      where: { id: parsed.data.typeId },
+    });
+
+    if (!existingType) {
+      return { success: false, message: "El tipo ya no existe" };
+    }
+
+    const duplicate = await prisma.correspondentTransactionType.findFirst({
+      where: {
+        platformId: existingType.platformId,
+        name: { equals: parsed.data.name.trim() },
+        NOT: { id: existingType.id },
+      },
+      select: { id: true },
+    });
+
+    if (duplicate) {
+      return { success: false, message: "Ya existe otro tipo con ese nombre en el corresponsal" };
+    }
+
+    try {
+      const updated = await prisma.correspondentTransactionType.update({
+        where: { id: existingType.id },
+        data: {
+          name: parsed.data.name.trim(),
+          direction: parsed.data.direction,
+        },
+      });
+
+      await logCorrespondentAction({
+        prisma,
+        currentSessionUser,
+        action: "update_transaction_type",
+        context: `platform:${existingType.platformId};type:${updated.id}`,
+        beforeJson: {
+          name: existingType.name,
+          direction: existingType.direction,
+        },
+        afterJson: {
+          name: updated.name,
+          direction: updated.direction,
+        },
+      });
+
+      return { success: true, typeId: updated.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo actualizar el tipo";
+      return { success: false, message };
+    }
+  });
+
+  ipcMain.handle("correspondent:type:delete", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+      return { success: false, message: "Solo el administrador puede eliminar tipos" };
+    }
+
+    const parsed = deleteCorrespondentTransactionTypeSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Tipo invalido" };
+    }
+
+    const existingType = await prisma.correspondentTransactionType.findUnique({
+      where: { id: parsed.data.typeId },
+    });
+
+    if (!existingType) {
+      return { success: false, message: "El tipo ya no existe" };
+    }
+
+    try {
+      await prisma.correspondentTransactionType.update({
+        where: { id: existingType.id },
+        data: { isActive: false },
+      });
+
+      await logCorrespondentAction({
+        prisma,
+        currentSessionUser,
+        action: "delete_transaction_type",
+        context: `platform:${existingType.platformId};type:${existingType.id}`,
+        beforeJson: {
+          name: existingType.name,
+          direction: existingType.direction,
+        },
+      });
+
+      return { success: true, typeId: existingType.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo eliminar el tipo";
       return { success: false, message };
     }
   });
@@ -914,7 +1673,7 @@ export function registerCorrespondentIpcHandlers({
     const [platforms, closures, transactions] = await Promise.all([
       prisma.correspondentPlatform.findMany({
         where: { isActive: true },
-        orderBy: { name: "asc" },
+        orderBy: [{ createdAt: "asc" }, { name: "asc" }],
       }),
       prisma.correspondentDailyClosure.findMany({
         where: { businessDate },
@@ -932,14 +1691,49 @@ export function registerCorrespondentIpcHandlers({
       acc[transaction.platformId] = [...(acc[transaction.platformId] ?? []), transaction];
       return acc;
     }, {});
+    const totals = summarizeCorrespondentTransactions(transactions);
 
     return {
       success: true,
       businessDate: businessDate.toISOString(),
+      totals: {
+        totalIn: totals.totalIn,
+        totalOut: totals.totalOut,
+        netTotal: totals.totalIn - totals.totalOut,
+        transactionsCount: totals.transactionsCount,
+      },
       closures: platforms.map((platform) => {
         const platformTransactions = transactionsByPlatform[platform.id] ?? [];
         const summary = summarizeCorrespondentTransactions(platformTransactions);
         const closure = closureByPlatform.get(platform.id) ?? null;
+        const breakdownMap = platformTransactions.reduce<
+          Record<
+            string,
+            {
+              typeId: string;
+              type: string;
+              direction: CorrespondentDirection;
+              total: number;
+              count: number;
+            }
+          >
+        >((acc, transaction) => {
+          if (transaction.status === CorrespondentTransactionStatus.VOIDED) {
+            return acc;
+          }
+
+          const current = acc[transaction.typeId] ?? {
+            typeId: transaction.typeId,
+            type: transaction.type.name,
+            direction: transaction.type.direction,
+            total: 0,
+            count: 0,
+          };
+          current.total += transaction.amount;
+          current.count += 1;
+          acc[transaction.typeId] = current;
+          return acc;
+        }, {});
 
         return {
           platformId: platform.id,
@@ -950,9 +1744,11 @@ export function registerCorrespondentIpcHandlers({
           expectedBalance: summary.totalIn - summary.totalOut + summary.totalCommission,
           transactionsCount: summary.transactionsCount,
           pendingTransactions: summary.pendingClosureCount,
+          breakdown: Object.values(breakdownMap).sort((a, b) => a.type.localeCompare(b.type, "es")),
           closure: closure
             ? {
                 id: closure.id,
+                expectedBalance: closure.expectedBalance,
                 reportedBalance: closure.reportedBalance,
                 differenceAmount: closure.differenceAmount,
                 status: closure.status,
@@ -1006,7 +1802,7 @@ export function registerCorrespondentIpcHandlers({
         transaction.status === CorrespondentTransactionStatus.REGISTERED && !transaction.dailyClosureId
     );
     const summary = summarizeCorrespondentTransactions(openTransactions);
-    const expectedBalance = summary.totalIn - summary.totalOut + summary.totalCommission;
+    const expectedBalance = data.openingBalance + summary.totalIn - summary.totalOut + summary.totalCommission;
     const differenceAmount = data.reportedBalance - expectedBalance;
 
     try {

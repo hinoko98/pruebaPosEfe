@@ -116,6 +116,7 @@ enum CorrespondentClosureStatus {
 
 model User {
   id           String   @id @default(uuid())
+  internalCode String?  @unique
   username     String   @unique
   firstName    String?
   lastName     String?
@@ -322,6 +323,7 @@ model SalePayment {
 
 model Customer {
   id          String   @id @default(uuid())
+  internalCode String? @unique
   name        String
   document    String?  @unique
   phone       String?
@@ -378,6 +380,7 @@ model CustomerPayment {
 
 model Supplier {
   id          String   @id @default(uuid())
+  internalCode String? @unique
   name        String
   taxId       String?  @unique
   phone       String?
@@ -667,6 +670,7 @@ model CorrespondentDailyClosure {
 
 model CorrespondentTransaction {
   id                   String                            @id @default(uuid())
+  approvalCode         String?                           @unique
   platformId           String
   typeId               String
   cashSessionId        String?
