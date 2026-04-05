@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -20,26 +21,23 @@ import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+
 import FloatingAlert from "@/components/feedback/FloatingAlert";
+import HelpHint from "@/components/ui/HelpHint";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
 import { useTablePagination } from "@/hooks/useTablePagination";
+import { copyText } from "@/lib/clipboard";
+import { buildSuggestedManagedCode, normalizePrefixedCode } from "@/lib/internal-code";
 
-const TIPOS_DOCUMENTO = [
-  "NIT",
-  "Cédula",
-  "Cédula de extranjería",
-  "Pasaporte",
-  "Tarjeta de identidad",
-] as const;
-
-type TipoDocumento = (typeof TIPOS_DOCUMENTO)[number];
 type SupplierRow = Awaited<ReturnType<typeof window.api.listSuppliers>>["suppliers"][number];
+type SupplierDocumentType = NonNullable<Parameters<typeof window.api.createSupplier>[0]["documentType"]>;
 type SupplierFormState = {
+  internalCode: string;
   name: string;
   contactName: string;
-  documentType: TipoDocumento;
+  documentType: SupplierDocumentType;
   documentNumber: string;
   phone: string;
   email: string;
@@ -47,10 +45,19 @@ type SupplierFormState = {
   isActive: boolean;
 };
 
+const DOCUMENT_TYPES: SupplierDocumentType[] = [
+  "NIT",
+  "Cédula",
+  "Cédula de extranjería",
+  "Pasaporte",
+  "Tarjeta de identidad",
+];
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function emptyForm(): SupplierFormState {
   return {
+    internalCode: "",
     name: "",
     contactName: "",
     documentType: "NIT",
@@ -64,12 +71,12 @@ function emptyForm(): SupplierFormState {
 
 function splitDocument(document: string | null) {
   if (!document) {
-    return { documentType: "NIT" as TipoDocumento, documentNumber: "" };
+    return { documentType: "NIT" as SupplierDocumentType, documentNumber: "" };
   }
 
-  const foundType = TIPOS_DOCUMENTO.find((type) => document.startsWith(`${type}: `));
+  const foundType = DOCUMENT_TYPES.find((type) => document.startsWith(`${type}: `));
   if (!foundType) {
-    return { documentType: "NIT" as TipoDocumento, documentNumber: document };
+    return { documentType: "NIT" as SupplierDocumentType, documentNumber: document };
   }
 
   return {
@@ -82,6 +89,7 @@ function supplierToForm(supplier: SupplierRow): SupplierFormState {
   const documentParts = splitDocument(supplier.document);
 
   return {
+    internalCode: supplier.internalCode || "",
     name: supplier.name,
     contactName: supplier.contactName || "",
     documentType: documentParts.documentType,
@@ -94,15 +102,9 @@ function supplierToForm(supplier: SupplierRow): SupplierFormState {
 }
 
 function validateForm(form: SupplierFormState) {
-  if (form.name.trim().length < 2) {
-    return "El nombre del proveedor es obligatorio.";
-  }
-  if (form.phone && !/^\d{10}$/.test(form.phone)) {
-    return "El teléfono debe tener 10 números.";
-  }
-  if (form.email && !EMAIL_REGEX.test(form.email)) {
-    return "El correo no tiene un formato válido.";
-  }
+  if (form.name.trim().length < 2) return "El nombre del proveedor es obligatorio.";
+  if (form.phone && !/^\d{10}$/.test(form.phone)) return "El telefono debe tener 10 numeros.";
+  if (form.email && !EMAIL_REGEX.test(form.email)) return "El correo no tiene un formato valido.";
   return null;
 }
 
@@ -125,6 +127,7 @@ export default function SuppliersView() {
       setLoading(false);
       return;
     }
+
     setSuppliers(response.suppliers);
     setLoading(false);
   };
@@ -140,6 +143,7 @@ export default function SuppliersView() {
     return suppliers.filter((supplier) =>
       [
         supplier.name,
+        supplier.internalCode || "",
         supplier.document || "",
         supplier.phone || "",
         supplier.email || "",
@@ -160,7 +164,10 @@ export default function SuppliersView() {
 
   const openCreate = () => {
     setEditingSupplier(null);
-    setForm(emptyForm());
+    setForm({
+      ...emptyForm(),
+      internalCode: buildSuggestedManagedCode(suppliers.map((supplier) => supplier.internalCode), "PRV", 4),
+    });
     setFormError(null);
     setDialogOpen(true);
   };
@@ -178,6 +185,17 @@ export default function SuppliersView() {
     setFormError(null);
   };
 
+  const handleCopyCode = async (value: string | null) => {
+    if (!value) return;
+
+    try {
+      await copyText(value);
+      setFeedback({ severity: "success", message: `Codigo ${value} copiado.` });
+    } catch {
+      setFeedback({ severity: "error", message: "No se pudo copiar el codigo." });
+    }
+  };
+
   const handleSave = async () => {
     const validationError = validateForm(form);
     if (validationError) {
@@ -186,6 +204,7 @@ export default function SuppliersView() {
     }
 
     const payload = {
+      internalCode: form.internalCode.trim() || undefined,
       name: form.name.trim(),
       contactName: form.contactName.trim() || undefined,
       documentType: form.documentType,
@@ -216,11 +235,9 @@ export default function SuppliersView() {
   return (
     <Stack spacing={3}>
       <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
-        <Box>
+        <Box display="flex" alignItems="center" gap={0.5}>
           <Typography variant="h4">Proveedores</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Directorio real de proveedores con creación por modal y usuario responsable.
-          </Typography>
+          <HelpHint title="Centraliza proveedores, códigos internos y datos de contacto para compras y control administrativo." />
         </Box>
 
         {canCreateSuppliers ? (
@@ -246,7 +263,7 @@ export default function SuppliersView() {
         <Stack spacing={2}>
           <TextField
             label="Buscar proveedor"
-            placeholder="Nombre, documento, contacto, teléfono o correo"
+            placeholder="Codigo, nombre, documento, contacto, telefono o correo"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -260,7 +277,7 @@ export default function SuppliersView() {
                   <TableRow>
                     <TableCell>Proveedor</TableCell>
                     <TableCell>Documento</TableCell>
-                    <TableCell>Teléfono</TableCell>
+                    <TableCell>Telefono</TableCell>
                     <TableCell>Correo</TableCell>
                     <TableCell>Estado</TableCell>
                     <TableCell>Registrado por</TableCell>
@@ -273,6 +290,18 @@ export default function SuppliersView() {
                       <TableCell>
                         <Stack spacing={0.25}>
                           <Typography fontWeight={600}>{supplier.name}</Typography>
+                          <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap">
+                            <Chip size="small" label={supplier.internalCode || "Sin codigo"} variant="outlined" />
+                            {supplier.internalCode ? (
+                              <Button
+                                size="small"
+                                startIcon={<ContentCopyOutlinedIcon fontSize="small" />}
+                                onClick={() => void handleCopyCode(supplier.internalCode)}
+                              >
+                                Copiar
+                              </Button>
+                            ) : null}
+                          </Box>
                           <Typography variant="caption" color="text.secondary">
                             Contacto: {supplier.contactName || "No definido"}
                           </Typography>
@@ -328,6 +357,13 @@ export default function SuppliersView() {
           <Stack spacing={2} sx={{ mt: 1 }}>
             <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "1fr 1fr" }} gap={2}>
               <TextField
+                label="Codigo interno"
+                value={form.internalCode}
+                onChange={(event) => setForm((prev) => ({ ...prev, internalCode: normalizePrefixedCode(event.target.value, "PRV") }))}
+                helperText="Visible en tabla y busqueda. Si lo dejas vacio, el sistema genera uno."
+              />
+              <Box />
+              <TextField
                 label="Nombre comercial"
                 value={form.name}
                 onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
@@ -342,9 +378,11 @@ export default function SuppliersView() {
                 select
                 label="Tipo de documento"
                 value={form.documentType}
-                onChange={(event) => setForm((prev) => ({ ...prev, documentType: event.target.value as TipoDocumento }))}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, documentType: event.target.value as SupplierDocumentType }))
+                }
               >
-                {TIPOS_DOCUMENTO.map((type) => (
+                {DOCUMENT_TYPES.map((type) => (
                   <MenuItem key={type} value={type}>{type}</MenuItem>
                 ))}
               </TextField>
@@ -354,10 +392,10 @@ export default function SuppliersView() {
                 onChange={(event) => setForm((prev) => ({ ...prev, documentNumber: event.target.value }))}
               />
               <TextField
-                label="Teléfono"
+                label="Telefono"
                 value={form.phone}
                 onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value.replace(/\D/g, "").slice(0, 10) }))}
-                helperText="Debe tener 10 números"
+                helperText="Debe tener 10 numeros"
               />
               <TextField
                 label="Correo"
@@ -366,7 +404,7 @@ export default function SuppliersView() {
                 type="email"
               />
               <TextField
-                label="Dirección"
+                label="Direccion"
                 value={form.address}
                 onChange={(event) => setForm((prev) => ({ ...prev, address: event.target.value }))}
               />

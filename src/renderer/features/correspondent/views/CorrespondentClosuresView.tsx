@@ -12,6 +12,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import FloatingAlert from "@/components/feedback/FloatingAlert";
+import HelpHint from "@/components/ui/HelpHint";
 import { CorrespondentModuleNav } from "@/features/correspondent/components/CorrespondentModuleNav";
 import type { CorrespondentClosureItem } from "@/features/correspondent/types";
 import { formatCurrency, toDateInputValue } from "@/features/correspondent/utils";
@@ -28,6 +29,7 @@ export default function CorrespondentClosuresView() {
     transactionsCount: 0,
   });
   const [reportedValues, setReportedValues] = useState<Record<string, string>>({});
+  const [openingBalances, setOpeningBalances] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [savingPlatform, setSavingPlatform] = useState<string | null>(null);
@@ -54,6 +56,14 @@ export default function CorrespondentClosuresView() {
           ])
         )
       );
+      setOpeningBalances(
+        Object.fromEntries(
+          response.closures.map((closure) => [
+            closure.platformId,
+            String((closure.closure?.expectedBalance ?? closure.expectedBalance) - closure.expectedBalance),
+          ])
+        )
+      );
       setNotes(
         Object.fromEntries(response.closures.map((closure) => [closure.platformId, closure.closure?.note ?? ""]))
       );
@@ -77,6 +87,7 @@ export default function CorrespondentClosuresView() {
       const response = await window.api.createCorrespondentClosure({
         platformId,
         businessDate: new Date(`${businessDate}T00:00:00`).toISOString(),
+        openingBalance: Number(openingBalances[platformId] || 0),
         reportedBalance: Number(reportedValues[platformId] || 0),
         note: notes[platformId] || undefined,
       });
@@ -111,11 +122,9 @@ export default function CorrespondentClosuresView() {
         <CardContent>
           <Stack spacing={2}>
             <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
-              <Box>
+              <Box display="flex" alignItems="center" gap={0.5}>
                 <Typography variant="h5">Cuadre de caja</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Resumen consolidado del dia con entradas, salidas y desglose por tipo para cada corresponsal.
-                </Typography>
+                <HelpHint title="Resumen consolidado del dia con entradas, salidas y desglose por tipo para cada corresponsal." />
               </Box>
               <Stack direction="row" spacing={1}>
                 <TextField
@@ -174,6 +183,14 @@ export default function CorrespondentClosuresView() {
           <Card key={item.platformId}>
             <CardContent>
               <Stack spacing={2}>
+                {(() => {
+                  const openingBalance = Number(openingBalances[item.platformId] || 0);
+                  const expectedPlatformBalance = item.closure?.expectedBalance ?? openingBalance + item.expectedBalance;
+                  const countedValue = Number(reportedValues[item.platformId] || 0);
+                  const currentDifference = countedValue - expectedPlatformBalance;
+
+                  return (
+                    <>
                 <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={2}>
                   <Box>
                     <Typography variant="h6">{item.platform}</Typography>
@@ -195,7 +212,7 @@ export default function CorrespondentClosuresView() {
                   <TextField label="Entradas" value={formatCurrency(item.totalIn)} InputProps={{ readOnly: true }} />
                   <TextField label="Salidas" value={formatCurrency(item.totalOut)} InputProps={{ readOnly: true }} />
                   <TextField
-                    label="Recaudo esperado"
+                    label="Movimiento del dia"
                     value={formatCurrency(item.expectedBalance)}
                     InputProps={{ readOnly: true }}
                   />
@@ -226,13 +243,29 @@ export default function CorrespondentClosuresView() {
                 </Typography>
 
                 <TextField
-                  label="Valor reportado"
+                  label="Saldo base en plataforma"
+                  type="number"
+                  value={openingBalances[item.platformId] ?? ""}
+                  onChange={(event) =>
+                    setOpeningBalances((prev) => ({ ...prev, [item.platformId]: event.target.value }))
+                  }
+                  disabled={Boolean(item.closure)}
+                  inputProps={{ step: "100" }}
+                />
+                <TextField
+                  label="Saldo esperado en plataforma"
+                  value={formatCurrency(expectedPlatformBalance)}
+                  InputProps={{ readOnly: true }}
+                />
+                <TextField
+                  label="Saldo actual en plataforma"
                   type="number"
                   value={reportedValues[item.platformId] ?? ""}
                   onChange={(event) =>
                     setReportedValues((prev) => ({ ...prev, [item.platformId]: event.target.value }))
                   }
                   disabled={Boolean(item.closure)}
+                  inputProps={{ step: "100" }}
                 />
                 <TextField
                   label="Observacion"
@@ -247,6 +280,10 @@ export default function CorrespondentClosuresView() {
                   <Alert severity={item.closure.status === "CLOSED" ? "success" : "warning"}>
                     Cerrado por {item.closure.closedBy} con diferencia de {formatCurrency(item.closure.differenceAmount)}.
                   </Alert>
+                ) : currentDifference !== 0 ? (
+                  <Alert severity={currentDifference < 0 ? "warning" : "info"}>
+                    Diferencia actual: {formatCurrency(currentDifference)}.
+                  </Alert>
                 ) : null}
 
                 <Button
@@ -256,6 +293,9 @@ export default function CorrespondentClosuresView() {
                 >
                   {savingPlatform === item.platformId ? "Cerrando..." : "Cerrar plataforma"}
                 </Button>
+                    </>
+                  );
+                })()}
               </Stack>
             </CardContent>
           </Card>

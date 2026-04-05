@@ -41,6 +41,7 @@ export type CorrespondentPlatform = {
 
 export type CorrespondentTransactionItem = {
   id: string;
+  approvalCode: string | null;
   platformId: string;
   platform: string;
   typeId: string;
@@ -67,6 +68,7 @@ export type CorrespondentTransactionItem = {
 
 export type CorrespondentTransactionDetail = {
   id: string;
+  approvalCode: string | null;
   platformId: string;
   platform: string;
   typeId: string;
@@ -113,6 +115,7 @@ export type CorrespondentDashboard = {
   }>;
   recentTransactions: Array<{
     id: string;
+    approvalCode: string | null;
     platform: string;
     type: string;
     amount: number;
@@ -144,6 +147,7 @@ export type CorrespondentClosureItem = {
   }>;
   closure: {
     id: string;
+    expectedBalance: number;
     reportedBalance: number;
     differenceAmount: number;
     status: CorrespondentClosureStatus;

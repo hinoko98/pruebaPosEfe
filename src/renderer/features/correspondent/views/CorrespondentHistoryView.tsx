@@ -63,6 +63,7 @@ export default function CorrespondentHistoryView() {
   const [editTransactionId, setEditTransactionId] = useState("");
   const [editPlatformId, setEditPlatformId] = useState("");
   const [editTypeId, setEditTypeId] = useState("");
+  const [editApprovalCode, setEditApprovalCode] = useState("");
   const [editAmount, setEditAmount] = useState("");
   const [editPerformedAt, setEditPerformedAt] = useState("");
 
@@ -131,6 +132,7 @@ export default function CorrespondentHistoryView() {
     setEditTransactionId(transaction.id);
     setEditPlatformId(transaction.platformId);
     setEditTypeId(transaction.typeId);
+    setEditApprovalCode(transaction.approvalCode ?? "");
     setEditAmount(String(transaction.amount));
     setEditPerformedAt(toDateTimeInputValue(transaction.performedAt));
     setEditOpen(true);
@@ -142,6 +144,7 @@ export default function CorrespondentHistoryView() {
       const response = await window.api.updateCorrespondentTransaction({
         transactionId: editTransactionId,
         typeId: editTypeId,
+        approvalCode: editApprovalCode,
         amount: Number(editAmount),
         performedAt: new Date(editPerformedAt).toISOString(),
       });
@@ -168,6 +171,7 @@ export default function CorrespondentHistoryView() {
 
     return transactions.filter((transaction) => {
       const raw = [
+        transaction.approvalCode,
         transaction.platform,
         transaction.type,
         transaction.registeredBy,
@@ -259,7 +263,7 @@ export default function CorrespondentHistoryView() {
                 label="Buscar"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Tipo, referencia, usuario"
+                placeholder="Aprobacion, tipo, corresponsal o usuario"
               />
             </Box>
           </Stack>
@@ -272,6 +276,7 @@ export default function CorrespondentHistoryView() {
             <Table size="small">
               <TableHead>
                 <TableRow>
+                  <TableCell>Aprobacion / ID</TableCell>
                   <TableCell>No. transaccion</TableCell>
                   <TableCell>Fecha</TableCell>
                   <TableCell>Hora</TableCell>
@@ -285,6 +290,7 @@ export default function CorrespondentHistoryView() {
               <TableBody>
                 {transactionsPagination.paginatedRows.map((transaction) => (
                   <TableRow key={transaction.id} hover>
+                    <TableCell>{transaction.approvalCode || "-"}</TableCell>
                     <TableCell>{transactionLabel(transaction.id)}</TableCell>
                     <TableCell>{formatDate(transaction.performedAt)}</TableCell>
                     <TableCell>{formatTime(transaction.performedAt)}</TableCell>
@@ -307,7 +313,7 @@ export default function CorrespondentHistoryView() {
                 ))}
                 {filteredTransactions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} align="center">
+                    <TableCell colSpan={9} align="center">
                       No hay transacciones para ese filtro.
                     </TableCell>
                   </TableRow>
@@ -334,6 +340,7 @@ export default function CorrespondentHistoryView() {
           {detail ? (
             <Stack spacing={2} pt={1}>
               <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(2, 1fr)" }} gap={2}>
+                <TextField label="Aprobacion / ID" value={detail.approvalCode || "-"} InputProps={{ readOnly: true }} />
                 <TextField label="No. transaccion" value={transactionLabel(detail.id)} InputProps={{ readOnly: true }} />
                 <TextField label="Corresponsal" value={detail.platform} InputProps={{ readOnly: true }} />
                 <TextField label="Tipo" value={detail.type} InputProps={{ readOnly: true }} />
@@ -379,6 +386,12 @@ export default function CorrespondentHistoryView() {
         <DialogTitle>Editar transaccion</DialogTitle>
         <DialogContent>
           <Stack spacing={2} pt={1}>
+            <TextField
+              label="Aprobacion / ID interno"
+              value={editApprovalCode}
+              onChange={(event) => setEditApprovalCode(event.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ""))}
+              fullWidth
+            />
             <TextField
               select
               label="Tipo"

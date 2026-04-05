@@ -14,7 +14,6 @@ export default function ProfileView() {
   const { user, login } = useAuth();
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -23,7 +22,6 @@ export default function ProfileView() {
     if (!user) return;
     setName(user.name ?? "");
     setUsername(user.username ?? "");
-    setEmail(user.email ?? "");
   }, [user]);
 
   const canSave = useMemo(() => {
@@ -92,14 +90,6 @@ export default function ProfileView() {
               fullWidth
               autoComplete="username"
               helperText="Idealmente no cambies esto sin una regla de negocio. Puedes bloquearlo después."
-            />
-
-            <TextField
-              label="Correo (opcional)"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              fullWidth
-              autoComplete="email"
             />
 
             <Box sx={{ display: "flex", justifyContent: "flex-end", pt: 1 }}>

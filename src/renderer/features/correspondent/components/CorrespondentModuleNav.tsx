@@ -8,6 +8,7 @@ import CardContent from "@mui/material/CardContent";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
+import HelpHint from "@/components/ui/HelpHint";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 
 type NavItem = {
@@ -45,11 +46,9 @@ export function CorrespondentModuleNav() {
     <Card>
       <CardContent>
         <Stack spacing={2}>
-          <Box>
+          <Box display="flex" alignItems="center" gap={0.5}>
             <Typography variant="h5">Modulo corresponsal</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Cuatro vistas separadas para registrar, consultar, cuadrar y administrar los corresponsales.
-            </Typography>
+            <HelpHint title="Cuatro vistas separadas para registrar, consultar, cuadrar y administrar los corresponsales." />
           </Box>
 
           <Box display="flex" gap={1} flexWrap="wrap">
