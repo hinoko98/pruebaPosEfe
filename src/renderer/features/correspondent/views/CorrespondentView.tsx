@@ -29,7 +29,7 @@ import type { CorrespondentDashboard, CorrespondentPlatform } from "@/features/c
 import { formatCurrency, formatDate, formatTime } from "@/features/correspondent/utils";
 
 type FeedbackState = { severity: "success" | "error" | "info"; message: string } | null;
-type TransactionDraftRow = { id: string; typeId: string; amount: string };
+type TransactionDraftRow = { id: string; platformId: string; typeId: string; amount: string };
 
 const CASH_DENOMINATIONS = [100000, 50000, 20000, 10000, 5000, 2000] as const;
 
@@ -47,6 +47,7 @@ function sanitizeNumericInput(value: string) {
 function createTransactionDraftRow(platform: CorrespondentPlatform | null): TransactionDraftRow {
   return {
     id: crypto.randomUUID(),
+    platformId: platform?.id ?? "",
     typeId: platform?.types[0]?.id ?? "",
     amount: "",
   };
@@ -67,7 +68,7 @@ function SectionCard({
     <Card
       variant="outlined"
       sx={{
-        borderRadius: 2,
+        borderRadius: 1.25,
         borderColor: theme.palette.divider,
         bgcolor: isDark ? alpha(theme.palette.common.white, 0.03) : theme.palette.background.paper,
         boxShadow: "none",
@@ -94,7 +95,7 @@ function MetricCard({ title, value, helper }: { title: string; value: string; he
   return (
     <Card
       sx={{
-        borderRadius: 2,
+        borderRadius: 1.25,
         border: `1px solid ${theme.palette.divider}`,
         boxShadow: "none",
         bgcolor: isDark ? alpha(theme.palette.common.white, 0.03) : theme.palette.background.paper,
@@ -136,21 +137,26 @@ export default function CorrespondentView() {
     () => catalog.find((platform) => platform.id === activePlatformId) ?? null,
     [catalog, activePlatformId]
   );
+  const platformsById = useMemo(
+    () => new Map(catalog.map((platform) => [platform.id, platform])),
+    [catalog]
+  );
 
   const transactionDrafts = useMemo(
     () =>
       transactionRows.map((row) => ({
         ...row,
-        type: activePlatform?.types.find((type) => type.id === row.typeId) ?? null,
+        platform: platformsById.get(row.platformId) ?? null,
+        type: (platformsById.get(row.platformId)?.types ?? []).find((type) => type.id === row.typeId) ?? null,
         amountValue: row.amount ? Number(row.amount) : 0,
         signedAmount:
-          (activePlatform?.types.find((type) => type.id === row.typeId)?.direction ?? "IN") === "OUT"
+          (((platformsById.get(row.platformId)?.types ?? []).find((type) => type.id === row.typeId)?.direction ?? "IN") === "OUT")
             ? -(row.amount ? Number(row.amount) : 0)
             : row.amount
               ? Number(row.amount)
               : 0,
       })),
-    [activePlatform, transactionRows]
+    [platformsById, transactionRows]
   );
 
   const transactionAmount = transactionDrafts.reduce((sum, row) => sum + row.signedAmount, 0);
@@ -170,6 +176,17 @@ export default function CorrespondentView() {
   const coinsValue = coinsTotal ? Number(coinsTotal) : 0;
   const transferValue = transferAmount ? Number(transferAmount) : 0;
   const totalReceivedFromCounter = billsTotal + coinsValue + transferValue;
+  const activePlatformsInDraft = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          transactionDrafts
+            .map((row) => row.platform?.name)
+            .filter((value): value is string => Boolean(value))
+        )
+      ),
+    [transactionDrafts]
+  );
 
   useEffect(() => {
     void loadData();
@@ -256,35 +273,42 @@ export default function CorrespondentView() {
   }
 
   function handleAddTransactionRow() {
-    setTransactionRows((current) => [...current, createTransactionDraftRow(activePlatform)]);
+    setTransactionRows((current) => [...current, createTransactionDraftRow(activePlatform ?? platformsById.get(generalPlatformId) ?? null)]);
   }
 
   function handleTransactionRowChange(rowId: string, patch: Partial<TransactionDraftRow>) {
-    setTransactionRows((current) =>
-      current.map((row) =>
-        row.id === rowId
-          ? {
-              ...row,
-              ...patch,
-            }
-          : row
-      )
-    );
+    setTransactionRows((current) => {
+      return current.map((row) => {
+        if (row.id !== rowId) return row;
+        const nextRow = {
+          ...row,
+          ...patch,
+        };
+        if (patch.platformId !== undefined) {
+          const nextPlatform = platformsById.get(patch.platformId) ?? null;
+          const currentTypeExists = nextPlatform?.types.some((type) => type.id === nextRow.typeId);
+          nextRow.typeId = currentTypeExists ? nextRow.typeId : nextPlatform?.types[0]?.id ?? "";
+        }
+        return nextRow;
+      });
+    });
   }
 
   function handleRemoveTransactionRow(rowId: string) {
     setTransactionRows((current) =>
-      current.length === 1 ? [createTransactionDraftRow(activePlatform)] : current.filter((row) => row.id !== rowId)
+      current.length === 1
+        ? [createTransactionDraftRow(activePlatform ?? platformsById.get(generalPlatformId) ?? null)]
+        : current.filter((row) => row.id !== rowId)
     );
   }
 
   async function handleRegister() {
-    if (!activePlatform || transactionDrafts.length === 0) {
+    if (transactionDrafts.length === 0) {
       setFeedback({ severity: "error", message: "Agrega al menos una transaccion para continuar." });
       return;
     }
 
-    const invalidRow = transactionDrafts.find((row) => !row.typeId || row.amountValue <= 0);
+    const invalidRow = transactionDrafts.find((row) => !row.platformId || !row.typeId || row.amountValue <= 0);
     if (invalidRow) {
       setFeedback({ severity: "error", message: "Completa tipo y valor en cada transaccion antes de guardar." });
       return;
@@ -297,7 +321,7 @@ export default function CorrespondentView() {
 
       for (const row of transactionDrafts) {
         const response = await window.api.createCorrespondentTransaction({
-          platformId: activePlatform.id,
+          platformId: row.platformId,
           typeId: row.typeId,
           amount: row.amountValue,
           note: null,
@@ -384,7 +408,7 @@ export default function CorrespondentView() {
 
       <Card
         sx={{
-          borderRadius: 2,
+          borderRadius: 1.25,
           border: `1px solid ${theme.palette.divider}`,
           boxShadow: "none",
           bgcolor: isDark ? alpha(theme.palette.common.white, 0.02) : theme.palette.background.paper,
@@ -443,7 +467,7 @@ export default function CorrespondentView() {
                       display: "block",
                       textAlign: "left",
                       p: 0,
-                      borderRadius: 2,
+                      borderRadius: 1.25,
                       overflow: "hidden",
                       borderColor: alpha(theme.palette.primary.main, isDark ? 0.22 : 0.12),
                       background: isDark
@@ -531,7 +555,7 @@ export default function CorrespondentView() {
         </CardContent>
       </Card>
 
-      <Card sx={{ borderRadius: 2, border: `1px solid ${theme.palette.divider}`, boxShadow: "none" }}>
+      <Card sx={{ borderRadius: 1.25, border: `1px solid ${theme.palette.divider}`, boxShadow: "none" }}>
         <CardContent>
           <Stack spacing={2}>
             <Typography variant="h6" sx={{ fontWeight: 700 }}>
@@ -548,7 +572,7 @@ export default function CorrespondentView() {
                     key={transaction.id}
                     variant="outlined"
                     sx={{
-                      borderRadius: 2,
+                      borderRadius: 1.25,
                       borderColor: theme.palette.divider,
                       bgcolor: isDark ? alpha(theme.palette.common.white, 0.03) : theme.palette.background.paper,
                     }}
@@ -598,7 +622,7 @@ export default function CorrespondentView() {
         maxWidth="xs"
         PaperProps={{
           sx: {
-            borderRadius: 2,
+            borderRadius: 1.25,
             backgroundImage: isDark
               ? `linear-gradient(180deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.background.default, 0.98)} 100%)`
               : "linear-gradient(180deg, rgba(248,250,252,1) 0%, rgba(255,255,255,1) 100%)",
@@ -612,7 +636,7 @@ export default function CorrespondentView() {
             <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
               <Box display="flex" alignItems="center" gap={0.5}>
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                  {activePlatform?.name}
+                  Registro general
                 </Typography>
                 <HelpHint title="Registra la transaccion y usa el apoyo visual de caja sin cambiar de pantalla." />
               </Box>
@@ -624,6 +648,14 @@ export default function CorrespondentView() {
                       : `${transactionDrafts.length} transacciones en captura`
                   }
                   color="primary"
+                  variant="outlined"
+                />
+                <Chip
+                  label={
+                    activePlatformsInDraft.length <= 1
+                      ? activePlatformsInDraft[0] ?? "Sin corresponsal"
+                      : `${activePlatformsInDraft.length} corresponsales en captura`
+                  }
                   variant="outlined"
                 />
                 <Chip
@@ -643,25 +675,6 @@ export default function CorrespondentView() {
 
         <DialogContent dividers sx={{ borderColor: theme.palette.divider, px: 2, py: 1.5 }}>
           <Stack spacing={1.5}>
-            <SectionCard
-              title="Corresponsal"
-              tooltip="Puedes cambiar aqui la plataforma antes de registrar el movimiento, sin cerrar el modal."
-            >
-              <TextField
-                select
-                fullWidth
-                size="small"
-                label="Corresponsal"
-                value={activePlatformId ?? ""}
-                onChange={(event) => setActivePlatformId(event.target.value)}
-              >
-                {catalog.map((platform) => (
-                  <MenuItem key={platform.id} value={platform.id}>
-                    {platform.name}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </SectionCard>
             <SectionCard
               title="Datos"
               tooltip="Estos campos si quedan guardados en la base de datos y ayudan a trazabilidad y control interno."
@@ -688,16 +701,31 @@ export default function CorrespondentView() {
                     <Box
                       key={row.id}
                       display="grid"
-                      gridTemplateColumns={{ xs: "1fr 108px auto", sm: "1.25fr 0.8fr auto auto" }}
+                      gridTemplateColumns={{ xs: "1fr 1fr", sm: "1.1fr 1.1fr 0.8fr auto auto" }}
                       gap={1}
                       alignItems="center"
-                        sx={{
-                          p: 1,
-                          borderRadius: 1.5,
-                          border: `1px solid ${theme.palette.divider}`,
-                          bgcolor: isDark ? alpha(theme.palette.common.white, 0.04) : theme.palette.background.paper,
-                        }}
+                      sx={{
+                        p: 1,
+                        borderRadius: 1,
+                        border: `1px solid ${theme.palette.divider}`,
+                        bgcolor: isDark ? alpha(theme.palette.common.white, 0.04) : theme.palette.background.paper,
+                      }}
+                    >
+                      <TextField
+                        select
+                        label={transactionDrafts.length > 1 ? `Corresponsal ${index + 1}` : "Corresponsal"}
+                        value={row.platformId}
+                        onChange={(event) => handleTransactionRowChange(row.id, { platformId: event.target.value })}
+                        size="small"
+                        fullWidth
+                        sx={{ gridColumn: { xs: "1 / -1", sm: "auto" } }}
                       >
+                        {catalog.map((platform) => (
+                          <MenuItem key={platform.id} value={platform.id}>
+                            {platform.name}
+                          </MenuItem>
+                        ))}
+                      </TextField>
                       <TextField
                         select
                         label={transactionDrafts.length > 1 ? `Tipo ${index + 1}` : "Tipo de transaccion"}
@@ -705,8 +733,9 @@ export default function CorrespondentView() {
                         onChange={(event) => handleTransactionRowChange(row.id, { typeId: event.target.value })}
                         size="small"
                         fullWidth
+                        sx={{ gridColumn: { xs: "1 / -1", sm: "auto" } }}
                       >
-                        {(activePlatform?.types ?? []).map((type) => (
+                        {(row.platform?.types ?? []).map((type) => (
                           <MenuItem key={type.id} value={type.id}>
                             {type.name}
                           </MenuItem>
@@ -733,7 +762,7 @@ export default function CorrespondentView() {
                           color="error"
                           variant="text"
                           onClick={() => handleRemoveTransactionRow(row.id)}
-                          sx={{ minWidth: "auto", px: 1 }}
+                          sx={{ minWidth: "auto", px: 1, borderRadius: 1 }}
                         >
                           Quitar
                         </Button>
@@ -797,13 +826,14 @@ export default function CorrespondentView() {
                 <Box display="flex" gap={1} flexWrap="wrap">
                   <Button
                     size="small"
-                        variant={denominationOpen ? "contained" : "outlined"}
+                    variant={denominationOpen ? "contained" : "outlined"}
                     startIcon={<CalculateOutlinedIcon />}
                     onClick={() => setDenominationOpen((current) => !current)}
+                    sx={{ borderRadius: 1 }}
                   >
                     {denominationOpen ? "Ocultar calculadora" : "Calcular efectivo recibido"}
                   </Button>
-                  <Button size="small" variant="text" startIcon={<RestartAltOutlinedIcon />} onClick={clearCounter}>
+                  <Button size="small" variant="text" startIcon={<RestartAltOutlinedIcon />} onClick={clearCounter} sx={{ borderRadius: 1 }}>
                     Limpiar conteo
                   </Button>
                 </Box>
@@ -820,7 +850,7 @@ export default function CorrespondentView() {
                           key={row.denomination}
                           variant="outlined"
                           sx={{
-                            borderRadius: 1.5,
+                            borderRadius: 1,
                             borderColor: theme.palette.divider,
                             bgcolor: isDark ? alpha(theme.palette.common.white, 0.03) : theme.palette.background.paper,
                           }}
@@ -876,7 +906,7 @@ export default function CorrespondentView() {
                     </Box>
 
                     <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={1}>
-                      <Card variant="outlined" sx={{ borderRadius: 1.5, borderColor: theme.palette.divider }}>
+                      <Card variant="outlined" sx={{ borderRadius: 1, borderColor: theme.palette.divider }}>
                         <CardContent sx={{ p: 1.25, "&:last-child": { pb: 1.25 } }}>
                           <Typography variant="caption" color="text.secondary">
                             Total billetes
@@ -886,7 +916,7 @@ export default function CorrespondentView() {
                           </Typography>
                         </CardContent>
                       </Card>
-                      <Card variant="outlined" sx={{ borderRadius: 1.5, borderColor: theme.palette.divider }}>
+                      <Card variant="outlined" sx={{ borderRadius: 1, borderColor: theme.palette.divider }}>
                         <CardContent sx={{ p: 1.25, "&:last-child": { pb: 1.25 } }}>
                           <Typography variant="caption" color="text.secondary">
                             Total monedas
@@ -899,7 +929,7 @@ export default function CorrespondentView() {
                       <Card
                         variant="outlined"
                         sx={{
-                          borderRadius: 1.5,
+                          borderRadius: 1,
                           borderColor: alpha(theme.palette.success.main, isDark ? 0.35 : 0.25),
                           bgcolor: isDark ? alpha(theme.palette.success.main, 0.12) : alpha(theme.palette.success.main, 0.04),
                         }}
@@ -923,7 +953,7 @@ export default function CorrespondentView() {
 
         <DialogActions sx={{ px: 2, py: 1.5, justifyContent: "flex-end" }}>
           <Stack direction="row" spacing={1}>
-            <Button size="small" color="error" variant="outlined" onClick={closeModal}>
+            <Button size="small" color="error" variant="outlined" onClick={closeModal} sx={{ borderRadius: 1 }}>
               Cancelar
             </Button>
             <Button
@@ -932,6 +962,7 @@ export default function CorrespondentView() {
               startIcon={<PaymentsOutlinedIcon />}
               onClick={() => void handleRegister()}
               disabled={saving}
+              sx={{ borderRadius: 1 }}
             >
               {saving ? "Guardando..." : transactionDrafts.length > 1 ? "Guardar transacciones" : "Guardar transaccion"}
             </Button>

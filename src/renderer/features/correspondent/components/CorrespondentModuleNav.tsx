@@ -48,7 +48,7 @@ export function CorrespondentModuleNav() {
   return (
     <Card
       sx={{
-        borderRadius: 2,
+        borderRadius: 1.25,
         border: `1px solid ${theme.palette.divider}`,
         boxShadow: "none",
         bgcolor: isDark ? alpha(theme.palette.common.white, 0.02) : theme.palette.background.paper,
@@ -72,7 +72,7 @@ export function CorrespondentModuleNav() {
                     variant={selected ? "contained" : "outlined"}
                     onClick={() => navigate(item.path)}
                     sx={{
-                      borderRadius: 1.5,
+                      borderRadius: 1,
                     }}
                   >
                     {item.label}
