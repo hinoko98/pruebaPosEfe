@@ -7,6 +7,7 @@ import DashboardIcon from "@mui/icons-material/Dashboard";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
 import PeopleAltIcon from "@mui/icons-material/PeopleAlt";
 import PointOfSaleIcon from "@mui/icons-material/PointOfSale";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import SettingsIcon from "@mui/icons-material/Settings";
 
 export const adminMenu: MenuItem[] = [
@@ -17,16 +18,24 @@ export const adminMenu: MenuItem[] = [
     icon: <PointOfSaleIcon />,
     children: [
       { label: "Facturar", path: "/admin/pos", permissionKey: APP_PERMISSION_KEYS.posAccess },
-      { label: "Ventas", path: "/admin/sales", permissionKey: APP_PERMISSION_KEYS.salesHistory },
+      { label: "Historial ventas", path: "/admin/sales", permissionKey: APP_PERMISSION_KEYS.salesHistory },
       { label: "Clientes", path: "/admin/customers", permissionKey: APP_PERMISSION_KEYS.customersView },
+      { label: "Compras", path: "/admin/purchases", permissionKey: APP_PERMISSION_KEYS.purchasesView },
+      { label: "Proveedores", path: "/admin/suppliers", permissionKey: APP_PERMISSION_KEYS.suppliersView },
     ],
   },
   {
+    type: "item",
+    label: "Caja general",
+    path: "/admin/cash",
+    icon: <AccountBalanceWalletIcon />,
+    permissionKey: APP_PERMISSION_KEYS.cashView,
+  },
+  {
     type: "group",
-    label: "Tesoreria",
+    label: "Corresponsal",
     icon: <AccountBalanceIcon />,
     children: [
-      { label: "Caja general", path: "/admin/cash", permissionKey: APP_PERMISSION_KEYS.cashView },
       { label: "Transacciones", path: "/admin/correspondent", permissionKey: APP_PERMISSION_KEYS.correspondentView },
       { label: "Historial", path: "/admin/correspondent/history", permissionKey: APP_PERMISSION_KEYS.correspondentView },
       { label: "Resumen diario", path: "/admin/correspondent/closures" },
@@ -45,12 +54,10 @@ export const adminMenu: MenuItem[] = [
   {
     type: "group",
     label: "Control financiero",
-    icon: <AccountBalanceWalletIcon />,
+    icon: <ReceiptLongIcon />,
     children: [
       { label: "Centro contable", path: "/admin/accounting", permissionKey: APP_PERMISSION_KEYS.reportsView },
       { label: "Reportes", path: "/admin/reports", permissionKey: APP_PERMISSION_KEYS.reportsView },
-      { label: "Compras", path: "/admin/purchases", permissionKey: APP_PERMISSION_KEYS.purchasesView },
-      { label: "Proveedores", path: "/admin/suppliers", permissionKey: APP_PERMISSION_KEYS.suppliersView },
     ],
   },
   {
@@ -79,16 +86,24 @@ export const employeeMenu: MenuItem[] = [
     icon: <PointOfSaleIcon />,
     children: [
       { label: "Facturar", path: "/app/pos", permissionKey: APP_PERMISSION_KEYS.posAccess },
-      { label: "Ventas", path: "/app/sales", permissionKey: APP_PERMISSION_KEYS.salesHistory },
+      { label: "Historial ventas", path: "/app/sales", permissionKey: APP_PERMISSION_KEYS.salesHistory },
       { label: "Clientes", path: "/app/customers", permissionKey: APP_PERMISSION_KEYS.customersView },
+      { label: "Compras", path: "/app/purchases", permissionKey: APP_PERMISSION_KEYS.purchasesView },
+      { label: "Proveedores", path: "/app/suppliers", permissionKey: APP_PERMISSION_KEYS.suppliersView },
     ],
   },
   {
+    type: "item",
+    label: "Caja general",
+    path: "/app/cash",
+    icon: <AccountBalanceWalletIcon />,
+    permissionKey: APP_PERMISSION_KEYS.cashView,
+  },
+  {
     type: "group",
-    label: "Tesoreria",
+    label: "Corresponsal",
     icon: <AccountBalanceIcon />,
     children: [
-      { label: "Caja general", path: "/app/cash", permissionKey: APP_PERMISSION_KEYS.cashView },
       { label: "Transacciones", path: "/app/correspondent", permissionKey: APP_PERMISSION_KEYS.correspondentView },
       { label: "Historial", path: "/app/correspondent/history", permissionKey: APP_PERMISSION_KEYS.correspondentView },
       { label: "Resumen diario", path: "/app/correspondent/closures" },
@@ -106,11 +121,9 @@ export const employeeMenu: MenuItem[] = [
   {
     type: "group",
     label: "Control financiero",
-    icon: <AccountBalanceWalletIcon />,
+    icon: <ReceiptLongIcon />,
     children: [
       { label: "Centro contable", path: "/app/accounting", permissionKey: APP_PERMISSION_KEYS.reportsView },
-      { label: "Compras", path: "/app/purchases", permissionKey: APP_PERMISSION_KEYS.purchasesView },
-      { label: "Proveedores", path: "/app/suppliers", permissionKey: APP_PERMISSION_KEYS.suppliersView },
     ],
   },
 ];
