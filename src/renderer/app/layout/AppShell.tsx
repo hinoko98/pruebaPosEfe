@@ -1,15 +1,15 @@
-import { useState } from "react";
-import { Outlet, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Outlet } from "react-router-dom";
 
 import Box from "@mui/material/Box";
 import CssBaseline from "@mui/material/CssBaseline";
 import Drawer from "@mui/material/Drawer";
 import Toolbar from "@mui/material/Toolbar";
 
-import { useAuth } from "@/features/auth/hooks/useAuth";
-
 import SideMenu, { MenuItem } from "./SideMenu";
 import AppHeader from "./AppHeader";
+import { hasPermission } from "@/features/auth/permissions";
+import { useAuth } from "@/features/auth/hooks/useAuth";
 
 const drawerWidth = 280;
 
@@ -28,23 +28,56 @@ export default function AppShell({
   lastSyncText,
   onSync,
 }: AppShellProps) {
+  const { user } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(true);
+  const [syncLabel, setSyncLabel] = useState(lastSyncText ?? "Cargando...");
 
-  const { logout } = useAuth();
-  const navigate = useNavigate();
+  const refreshSyncStatus = useCallback(async () => {
+    if (!window.api?.getAppStatus) {
+      setSyncLabel(lastSyncText ?? "Sin datos");
+      return;
+    }
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login", { replace: true });
-  };
+    const response = await window.api.getAppStatus();
+    if (!response.success) {
+      setSyncLabel(lastSyncText ?? "Sin datos");
+      return;
+    }
+
+    setSyncLabel(new Date(response.connectedAt).toLocaleString("es-CO"));
+  }, [lastSyncText]);
+
+  useEffect(() => {
+    void refreshSyncStatus();
+  }, [refreshSyncStatus]);
+
+  const visibleMenu = useMemo<MenuItem[]>(
+    () =>
+      menu
+        .map((item) => {
+          if (item.type === "item") {
+            return hasPermission(user, item.permissionKey) ? item : null;
+          }
+
+          if (item.type === "group") {
+            const children = item.children.filter((child) => hasPermission(user, child.permissionKey));
+            return children.length > 0 ? { ...item, children } : null;
+          }
+
+          return item;
+        })
+        .filter((item): item is MenuItem => item !== null),
+    [menu, user]
+  );
 
   const drawer = (
     <SideMenu
-      title={title}
-      menu={menu}
-      onLogout={handleLogout}
-      lastSyncText={lastSyncText}
-      onSync={onSync}
+      menu={visibleMenu}
+      lastSyncText={syncLabel}
+      onSync={() => {
+        void refreshSyncStatus();
+        onSync?.();
+      }}
     />
   );
 

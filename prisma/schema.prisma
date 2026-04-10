@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./app.db"
+  url      = env("DATABASE_URL")
 }
 
 enum Role {
@@ -12,17 +12,180 @@ enum Role {
   EMPLOYEE
 }
 
-model User {
-  id           String       @id @default(uuid())
-  username     String       @unique
-  name         String?
-  role         Role         @default(EMPLOYEE)
-  passwordHash String
-  isActive     Boolean      @default(true)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+}
 
+enum SaleStatus {
+  COMPLETED
+  CANCELLED
+  PARTIALLY_RETURNED
+  RETURNED
+  CREDIT
+}
+
+enum PurchaseStatus {
+  DRAFT
+  RECEIVED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+enum InventoryMovementType {
+  PURCHASE_IN
+  SALE_OUT
+  RETURN_IN
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  DAMAGE_OUT
+  LOSS_OUT
+  MANUAL_IN
+  MANUAL_OUT
+}
+
+enum CashSessionStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum CashMovementType {
+  OPENING
+  SALE_IN
+  EXPENSE_OUT
+  INCOME_IN
+  WITHDRAWAL_OUT
+  CLOSING
+  DIFFERENCE
+}
+
+enum CreditStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum CorrespondentDirection {
+  IN
+  OUT
+  NEUTRAL
+}
+
+enum CorrespondentTransactionStatus {
+  REGISTERED
+  VOIDED
+}
+
+enum CorrespondentTransactionSource {
+  MANUAL
+  IMAGE
+  FILE_IMPORT
+  API
+}
+
+enum CorrespondentOcrStatus {
+  NOT_REQUESTED
+  PENDING
+  PROCESSED
+  NEEDS_REVIEW
+  FAILED
+}
+
+enum CorrespondentReconciliationStatus {
+  PENDING
+  MATCHED
+  MISMATCH
+  MANUAL_REVIEW
+}
+
+enum CommissionMode {
+  NONE
+  FIXED
+  PERCENTAGE
+}
+
+enum CorrespondentClosureStatus {
+  CLOSED
+  WITH_DIFFERENCE
+}
+
+model User {
+  id           String   @id @default(uuid())
+  internalCode String?  @unique
+  username     String   @unique
+  firstName    String?
+  lastName     String?
+  name         String?
+  documentNumber String? @unique
+  email        String?
+  phone        String?
+  address      String?
+  birthDate    DateTime?
+  role         Role     @default(EMPLOYEE)
+  roleProfileId String?
+  passwordHash String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  roleProfile  RoleProfile? @relation(fields: [roleProfileId], references: [id], onDelete: SetNull)
   loginEvents  LoginEvent[]
+  sales        Sale[]
+  cashSessions CashSession[]
+  auditLogs    AuditLog[]
+  correspondentTransactionsRegistered CorrespondentTransaction[] @relation("CorrespondentRegisteredBy")
+  correspondentTransactionsReviewed   CorrespondentTransaction[] @relation("CorrespondentReviewedBy")
+  correspondentClosures               CorrespondentDailyClosure[]
+  correspondentAuditLogs              CorrespondentAuditLog[]
+  correspondentEvidences             CorrespondentEvidence[]
+  notificationReads                   NotificationRead[]
+
+  @@index([roleProfileId])
+}
+
+model NotificationRead {
+  id        String   @id @default(uuid())
+  userId    String
+  readKey   String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, readKey])
+  @@index([userId])
+}
+
+model RoleProfile {
+  id          String   @id @default(uuid())
+  key         String?  @unique
+  name        String   @unique
+  description String?
+  baseRole    Role     @default(EMPLOYEE)
+  isSystem    Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       User[]
+}
+
+model RolePermission {
+  id            String   @id @default(uuid())
+  roleProfileId String
+  permissionKey String
+  allowed       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  roleProfile RoleProfile @relation(fields: [roleProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([roleProfileId, permissionKey])
+  @@index([roleProfileId])
 }
 
 model LoginEvent {
@@ -43,4 +206,565 @@ model LoginEvent {
   @@index([occurredAt])
   @@index([username])
   @@index([userId])
+}
+
+model ProductCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products      Product[]
+  subcategories ProductSubcategory[]
+}
+
+model ProductSubcategory {
+  id         String   @id @default(uuid())
+  name       String
+  isActive   Boolean  @default(true)
+  categoryId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  category ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([categoryId, name])
+  @@index([categoryId])
+}
+
+model Product {
+  id            String   @id @default(uuid())
+  name          String
+  sku           String   @unique
+  barcode       String?  @unique
+  unitMeasure   String   @default("UNIDAD")
+  price         Int
+  cost          Int      @default(0)
+  marginPercent Float    @default(0)
+  hasTax        Boolean  @default(false)
+  taxRate       Float    @default(0)
+  stock         Int      @default(0)
+  minStock      Int      @default(0)
+  isActive      Boolean  @default(true)
+  categoryId    String?
+  subcategoryId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  category           ProductCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategory        ProductSubcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
+  saleItems          SaleItem[]
+  purchaseItems      PurchaseItem[]
+  inventoryMovements InventoryMovement[]
+
+  @@index([name])
+  @@index([sku])
+  @@index([barcode])
+  @@index([categoryId])
+  @@index([subcategoryId])
+}
+
+model Sale {
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique
+  customer      String        @default("Consumidor final")
+  customerId    String?
+  paymentMethod PaymentMethod @default(CASH)
+  subtotal      Int
+  tax           Int
+  total         Int
+  costTotal     Int           @default(0)
+  profit        Int           @default(0)
+  discountTotal Int           @default(0)
+  status        SaleStatus    @default(COMPLETED)
+  cashierId     String
+  cashSessionId String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  customerRef Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  cashier     User             @relation(fields: [cashierId], references: [id], onDelete: Restrict)
+  cashSession CashSession?     @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
+  items       SaleItem[]
+  payments    SalePayment[]
+  credits     CustomerCredit[]
+  returns     SaleReturn[]
+
+  @@index([cashierId])
+  @@index([createdAt])
+  @@index([customerId])
+  @@index([cashSessionId])
+}
+
+model SaleItem {
+  id           String   @id @default(uuid())
+  saleId       String
+  productId    String?
+  sku          String?
+  barcode      String?
+  name         String
+  price        Int
+  cost         Int      @default(0)
+  qty          Int
+  taxRate      Float    @default(0)
+  lineSubtotal Int
+  lineTax      Int
+  lineTotal    Int
+  lineProfit   Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+model SalePayment {
+  id        String        @id @default(uuid())
+  saleId    String
+  method    PaymentMethod
+  amount    Int
+  reference String?
+  createdAt DateTime      @default(now())
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+}
+
+model Customer {
+  id          String   @id @default(uuid())
+  internalCode String? @unique
+  name        String
+  document    String?  @unique
+  phone       String?
+  email       String?
+  address     String?
+  creditLimit Int      @default(0)
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sales    Sale[]
+  credits  CustomerCredit[]
+  payments CustomerPayment[]
+
+  @@index([name])
+}
+
+model CustomerCredit {
+  id         String       @id @default(uuid())
+  customerId String
+  saleId     String
+  total      Int
+  balance    Int
+  dueDate    DateTime?
+  status     CreditStatus @default(PENDING)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  customer Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  sale     Sale              @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  payments CustomerPayment[]
+
+  @@index([customerId])
+  @@index([saleId])
+  @@index([status])
+}
+
+model CustomerPayment {
+  id         String        @id @default(uuid())
+  customerId String
+  creditId   String?
+  method     PaymentMethod @default(CASH)
+  amount     Int
+  note       String?
+  createdAt  DateTime      @default(now())
+
+  customer Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  credit   CustomerCredit? @relation(fields: [creditId], references: [id], onDelete: SetNull)
+
+  @@index([customerId])
+  @@index([creditId])
+}
+
+model Supplier {
+  id          String   @id @default(uuid())
+  internalCode String? @unique
+  name        String
+  taxId       String?  @unique
+  phone       String?
+  email       String?
+  address     String?
+  contactName String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  purchases Purchase[]
+
+  @@index([name])
+}
+
+model Purchase {
+  id          String         @id @default(uuid())
+  supplierId  String
+  number      String         @unique
+  status      PurchaseStatus @default(DRAFT)
+  subtotal    Int
+  tax         Int
+  total       Int
+  balance     Int            @default(0)
+  note        String?
+  purchasedAt DateTime       @default(now())
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  supplier Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  items    PurchaseItem[]
+
+  @@index([supplierId])
+  @@index([status])
+  @@index([purchasedAt])
+}
+
+model PurchaseItem {
+  id         String   @id @default(uuid())
+  purchaseId String
+  productId  String
+  qty        Int
+  cost       Int
+  taxRate    Float    @default(0)
+  subtotal   Int
+  createdAt  DateTime @default(now())
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([purchaseId])
+  @@index([productId])
+}
+
+model InventoryMovement {
+  id            String                @id @default(uuid())
+  productId     String
+  type          InventoryMovementType
+  qty           Int
+  stockBefore   Int
+  stockAfter    Int
+  referenceType String?
+  referenceId   String?
+  note          String?
+  createdAt     DateTime              @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model CashRegister {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  branchName String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sessions CashSession[]
+  correspondentTransactions CorrespondentTransaction[]
+}
+
+model CashSession {
+  id               String            @id @default(uuid())
+  registerId       String
+  userId           String
+  status           CashSessionStatus @default(OPEN)
+  openingAmount    Int
+  expectedAmount   Int               @default(0)
+  countedAmount    Int?
+  differenceAmount Int               @default(0)
+  note             String?
+  openedAt         DateTime          @default(now())
+  closedAt         DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  register  CashRegister   @relation(fields: [registerId], references: [id], onDelete: Restrict)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  sales     Sale[]
+  movements CashMovement[]
+  correspondentTransactions CorrespondentTransaction[]
+  correspondentClosures     CorrespondentDailyClosure[]
+
+  @@index([registerId])
+  @@index([userId])
+  @@index([status])
+}
+
+model CashMovement {
+  id        String           @id @default(uuid())
+  sessionId String
+  type      CashMovementType
+  amount    Int
+  note      String?
+  createdAt DateTime         @default(now())
+
+  session CashSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([type])
+}
+
+model SaleReturn {
+  id        String   @id @default(uuid())
+  saleId    String
+  reason    String?
+  total     Int
+  createdAt DateTime @default(now())
+
+  sale  Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  items SaleReturnItem[]
+
+  @@index([saleId])
+}
+
+model SaleReturnItem {
+  id         String @id @default(uuid())
+  returnId   String
+  saleItemId String
+  qty        Int
+  total      Int
+
+  returnRef SaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([returnId])
+}
+
+model BusinessSettings {
+  id                 String   @id @default("default")
+  businessName       String?
+  taxId              String?
+  phone              String?
+  address            String?
+  currencyCode       String   @default("COP")
+  defaultTaxRate     Float    @default(0.19)
+  allowNegativeStock Boolean  @default(false)
+  lowStockThreshold  Int      @default(5)
+  invoicePrefix      String   @default("FV")
+  receiptFooter      String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model BackupLog {
+  id        String   @id @default(uuid())
+  fileName  String
+  filePath  String
+  createdAt DateTime @default(now())
+  createdBy String?
+  note      String?
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  module     String
+  action     String
+  entity     String
+  entityId   String?
+  beforeJson String?
+  afterJson  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([module])
+  @@index([createdAt])
+}
+
+model CorrespondentPlatform {
+  id                 String   @id @default(uuid())
+  code               String   @unique
+  name               String   @unique
+  isActive           Boolean  @default(true)
+  requiresEvidence   Boolean  @default(false)
+  supportsOcr        Boolean  @default(false)
+  supportsFileImport Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  transactionTypes CorrespondentTransactionType[]
+  commissionRules  CorrespondentCommissionRule[]
+  transactions     CorrespondentTransaction[]
+  dailyClosures    CorrespondentDailyClosure[]
+}
+
+model CorrespondentTransactionType {
+  id                        String                 @id @default(uuid())
+  platformId                String
+  code                      String
+  name                      String
+  direction                 CorrespondentDirection @default(NEUTRAL)
+  isActive                  Boolean                @default(true)
+  requiresCustomerDocument  Boolean                @default(false)
+  requiresExternalReference Boolean                @default(false)
+  allowsCommissionOverride  Boolean                @default(true)
+  sortOrder                 Int                    @default(0)
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+
+  platform        CorrespondentPlatform         @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  transactions    CorrespondentTransaction[]
+  commissionRules CorrespondentCommissionRule[]
+
+  @@unique([platformId, code])
+  @@index([platformId])
+  @@index([isActive])
+}
+
+model CorrespondentCommissionRule {
+  id         String         @id @default(uuid())
+  platformId String
+  typeId     String?
+  mode       CommissionMode @default(NONE)
+  value      Float          @default(0)
+  minAmount  Int?
+  maxAmount  Int?
+  isActive   Boolean        @default(true)
+  validFrom  DateTime?
+  validTo    DateTime?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  platform CorrespondentPlatform        @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  type     CorrespondentTransactionType? @relation(fields: [typeId], references: [id], onDelete: SetNull)
+
+  @@index([platformId])
+  @@index([typeId])
+  @@index([isActive])
+}
+
+model CorrespondentDailyClosure {
+  id                String                     @id @default(uuid())
+  platformId        String
+  cashSessionId     String?
+  businessDate      DateTime
+  totalIn           Int                        @default(0)
+  totalOut          Int                        @default(0)
+  totalCommission   Int                        @default(0)
+  transactionsCount Int                        @default(0)
+  expectedBalance   Int                        @default(0)
+  reportedBalance   Int
+  differenceAmount  Int                        @default(0)
+  status            CorrespondentClosureStatus @default(CLOSED)
+  note              String?
+  closedByUserId    String
+  closedAt          DateTime                   @default(now())
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+
+  platform      CorrespondentPlatform      @relation(fields: [platformId], references: [id], onDelete: Restrict)
+  cashSession   CashSession?               @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
+  closedBy      User                       @relation(fields: [closedByUserId], references: [id], onDelete: Restrict)
+  transactions  CorrespondentTransaction[]
+
+  @@index([platformId])
+  @@index([cashSessionId])
+  @@index([businessDate])
+  @@index([closedByUserId])
+  @@unique([platformId, businessDate])
+}
+
+model CorrespondentTransaction {
+  id                   String                            @id @default(uuid())
+  approvalCode         String?                           @unique
+  platformId           String
+  typeId               String
+  cashSessionId        String?
+  cashRegisterId       String?
+  registeredByUserId   String
+  reviewedByUserId     String?
+  dailyClosureId       String?
+  status               CorrespondentTransactionStatus   @default(REGISTERED)
+  source               CorrespondentTransactionSource   @default(MANUAL)
+  ocrStatus            CorrespondentOcrStatus           @default(NOT_REQUESTED)
+  reconciliationStatus CorrespondentReconciliationStatus @default(PENDING)
+  externalReference    String?
+  customerName         String?
+  customerDocument     String?
+  targetAccount        String?
+  targetPhone          String?
+  amount               Int
+  commissionAmount     Int                               @default(0)
+  netAmount            Int                               @default(0)
+  performedAt          DateTime
+  note                 String?
+  rawExtractedText     String?
+  createdAt            DateTime                          @default(now())
+  updatedAt            DateTime                          @updatedAt
+
+  platform     CorrespondentPlatform        @relation(fields: [platformId], references: [id], onDelete: Restrict)
+  type         CorrespondentTransactionType @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  cashSession  CashSession?                 @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
+  cashRegister CashRegister?               @relation(fields: [cashRegisterId], references: [id], onDelete: SetNull)
+  registeredBy User                        @relation("CorrespondentRegisteredBy", fields: [registeredByUserId], references: [id], onDelete: Restrict)
+  reviewedBy   User?                       @relation("CorrespondentReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  dailyClosure CorrespondentDailyClosure?  @relation(fields: [dailyClosureId], references: [id], onDelete: SetNull)
+  evidences    CorrespondentEvidence[]
+  auditLogs    CorrespondentAuditLog[]
+
+  @@index([platformId])
+  @@index([typeId])
+  @@index([cashSessionId])
+  @@index([cashRegisterId])
+  @@index([registeredByUserId])
+  @@index([reviewedByUserId])
+  @@index([dailyClosureId])
+  @@index([performedAt])
+  @@index([status])
+  @@index([reconciliationStatus])
+}
+
+model CorrespondentEvidence {
+  id              String   @id @default(uuid())
+  transactionId   String
+  fileName        String
+  filePath        String
+  mimeType        String?
+  fileSize        Int?
+  fileHash        String?
+  ocrRawText      String?
+  capturedByUserId String?
+  createdAt       DateTime @default(now())
+
+  transaction CorrespondentTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  capturedBy  User?                    @relation(fields: [capturedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([transactionId])
+  @@index([capturedByUserId])
+}
+
+model CorrespondentAuditLog {
+  id            String   @id @default(uuid())
+  transactionId String?
+  userId        String?
+  action        String
+  context       String?
+  beforeJson    String?
+  afterJson     String?
+  createdAt     DateTime @default(now())
+
+  transaction CorrespondentTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  user        User?                     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([transactionId])
+  @@index([userId])
+  @@index([createdAt])
 }
