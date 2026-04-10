@@ -20,7 +20,7 @@ import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { alpha } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 
 import FloatingAlert from "@/components/feedback/FloatingAlert";
 import HelpHint from "@/components/ui/HelpHint";
@@ -61,19 +61,22 @@ function SectionCard({
   tooltip: string;
   children: React.ReactNode;
 }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
   return (
     <Card
       variant="outlined"
       sx={{
-        borderRadius: 2.5,
-        borderColor: "rgba(15, 23, 42, 0.08)",
-        bgcolor: "#fbfcfd",
+        borderRadius: 2,
+        borderColor: theme.palette.divider,
+        bgcolor: isDark ? alpha(theme.palette.common.white, 0.03) : theme.palette.background.paper,
+        boxShadow: "none",
       }}
     >
       <CardContent sx={{ p: 1.5 }}>
         <Stack spacing={1.25}>
           <Box display="flex" alignItems="center" gap={0.5}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: "#0f172a" }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
               {title}
             </Typography>
             <HelpHint title={tooltip} />
@@ -86,19 +89,22 @@ function SectionCard({
 }
 
 function MetricCard({ title, value, helper }: { title: string; value: string; helper: string }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
   return (
     <Card
       sx={{
-        borderRadius: 4,
-        border: "1px solid rgba(15, 23, 42, 0.08)",
-        boxShadow: "0 18px 40px rgba(15, 23, 42, 0.06)",
+        borderRadius: 2,
+        border: `1px solid ${theme.palette.divider}`,
+        boxShadow: "none",
+        bgcolor: isDark ? alpha(theme.palette.common.white, 0.03) : theme.palette.background.paper,
       }}
     >
       <CardContent>
         <Typography variant="body2" color="text.secondary">
           {title}
         </Typography>
-        <Typography variant="h5" sx={{ mt: 1, fontWeight: 700, color: "#0f172a" }}>
+        <Typography variant="h5" sx={{ mt: 1, fontWeight: 700, color: theme.palette.text.primary }}>
           {value}
         </Typography>
         <Typography variant="caption" color="text.secondary">
@@ -110,6 +116,8 @@ function MetricCard({ title, value, helper }: { title: string; value: string; he
 }
 
 export default function CorrespondentView() {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
   const [catalog, setCatalog] = useState<CorrespondentPlatform[]>([]);
   const [dashboard, setDashboard] = useState<CorrespondentDashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -122,6 +130,7 @@ export default function CorrespondentView() {
   const [denominations, setDenominations] = useState<Record<string, string>>(createEmptyDenominationState());
   const [coinsTotal, setCoinsTotal] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
+  const [generalPlatformId, setGeneralPlatformId] = useState("");
 
   const activePlatform = useMemo(
     () => catalog.find((platform) => platform.id === activePlatformId) ?? null,
@@ -181,6 +190,11 @@ export default function CorrespondentView() {
   }, [activePlatform]);
 
   useEffect(() => {
+    if (!catalog.length) return;
+    setGeneralPlatformId((current) => current || catalog[0]?.id || "");
+  }, [catalog]);
+
+  useEffect(() => {
     if (!denominationOpen) return;
     setValueReceived(totalReceivedFromCounter > 0 ? String(totalReceivedFromCounter) : "");
   }, [coinsTotal, denominationOpen, denominations, totalReceivedFromCounter, transferAmount]);
@@ -229,6 +243,16 @@ export default function CorrespondentView() {
 
   function resetTransactionDrafts() {
     setTransactionRows([createTransactionDraftRow(activePlatform)]);
+  }
+
+  function openGeneralRegister() {
+    if (!generalPlatformId && catalog[0]?.id) {
+      setActivePlatformId(catalog[0].id);
+      return;
+    }
+    if (generalPlatformId) {
+      setActivePlatformId(generalPlatformId);
+    }
   }
 
   function handleAddTransactionRow() {
@@ -360,9 +384,10 @@ export default function CorrespondentView() {
 
       <Card
         sx={{
-          borderRadius: 5,
-          border: "1px solid rgba(15, 23, 42, 0.08)",
-          boxShadow: "0 22px 60px rgba(15, 23, 42, 0.08)",
+          borderRadius: 2,
+          border: `1px solid ${theme.palette.divider}`,
+          boxShadow: "none",
+          bgcolor: isDark ? alpha(theme.palette.common.white, 0.02) : theme.palette.background.paper,
         }}
       >
         <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
@@ -374,9 +399,28 @@ export default function CorrespondentView() {
                 </Typography>
                 <HelpHint title="Abre el modal del corresponsal, registra la aprobacion interna y usa la calculadora visual para contar efectivo sin salir del flujo." />
               </Box>
-              <Button variant="outlined" onClick={() => void loadData()}>
-                Actualizar
-              </Button>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} alignItems={{ xs: "stretch", sm: "center" }}>
+                <TextField
+                  select
+                  size="small"
+                  label="Registro general"
+                  value={generalPlatformId}
+                  onChange={(event) => setGeneralPlatformId(event.target.value)}
+                  sx={{ minWidth: 220 }}
+                >
+                  {catalog.map((platform) => (
+                    <MenuItem key={platform.id} value={platform.id}>
+                      {platform.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <Button variant="contained" onClick={openGeneralRegister} disabled={!catalog.length}>
+                  Registrar
+                </Button>
+                <Button variant="outlined" onClick={() => void loadData()}>
+                  Actualizar
+                </Button>
+              </Stack>
             </Box>
 
             <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)", xl: "repeat(5, 1fr)" }} gap={2}>
@@ -399,15 +443,17 @@ export default function CorrespondentView() {
                       display: "block",
                       textAlign: "left",
                       p: 0,
-                      borderRadius: 4,
+                      borderRadius: 2,
                       overflow: "hidden",
-                      borderColor: alpha(theme.palette.primary.main, 0.12),
-                      background: "linear-gradient(145deg, rgba(15,23,42,0.02) 0%, rgba(8,145,178,0.10) 100%)",
-                      boxShadow: "0 14px 32px rgba(15, 23, 42, 0.08)",
+                      borderColor: alpha(theme.palette.primary.main, isDark ? 0.22 : 0.12),
+                      background: isDark
+                        ? `linear-gradient(145deg, ${alpha(theme.palette.common.white, 0.03)} 0%, ${alpha(theme.palette.primary.main, 0.12)} 100%)`
+                        : "linear-gradient(145deg, rgba(15,23,42,0.02) 0%, rgba(8,145,178,0.10) 100%)",
+                      boxShadow: "none",
                       transition: "transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease",
                       "&:hover": {
                         borderColor: alpha(theme.palette.primary.main, 0.35),
-                        boxShadow: "0 18px 40px rgba(15, 23, 42, 0.14)",
+                        boxShadow: "none",
                         transform: "translateY(-3px)",
                       },
                     })}
@@ -418,7 +464,9 @@ export default function CorrespondentView() {
                           px: 2,
                           py: 1.5,
                           color: "common.white",
-                          background: "linear-gradient(135deg, #0f4c5c 0%, #0f172a 100%)",
+                          background: isDark
+                            ? `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.35)} 0%, ${alpha(theme.palette.common.black, 0.5)} 100%)`
+                            : "linear-gradient(135deg, #0f4c5c 0%, #0f172a 100%)",
                         }}
                       >
                         <Box display="flex" justifyContent="space-between" alignItems="center" gap={1}>
@@ -433,7 +481,7 @@ export default function CorrespondentView() {
                               borderRadius: "999px",
                               display: "grid",
                               placeItems: "center",
-                              bgcolor: "rgba(255,255,255,0.18)",
+                              bgcolor: alpha(theme.palette.common.white, 0.18),
                               fontWeight: 800,
                               letterSpacing: "0.08em",
                             }}
@@ -449,18 +497,18 @@ export default function CorrespondentView() {
                           </Typography>
                           <Divider />
                           <Box display="flex" justifyContent="space-between" gap={1}>
-                            <Typography variant="body2" color="text.secondary">
-                              Entradas
-                            </Typography>
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: "success.dark" }}>
+                          <Typography variant="body2" color="text.secondary">
+                            Entradas
+                          </Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.success.main }}>
                               {formatCurrency(platformSummary?.totalIn ?? 0)}
                             </Typography>
                           </Box>
                           <Box display="flex" justifyContent="space-between" gap={1}>
-                            <Typography variant="body2" color="text.secondary">
-                              Salidas
-                            </Typography>
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: "warning.dark" }}>
+                          <Typography variant="body2" color="text.secondary">
+                            Salidas
+                          </Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: theme.palette.warning.main }}>
                               {formatCurrency(platformSummary?.totalOut ?? 0)}
                             </Typography>
                           </Box>
@@ -483,7 +531,7 @@ export default function CorrespondentView() {
         </CardContent>
       </Card>
 
-      <Card sx={{ borderRadius: 5, border: "1px solid rgba(15, 23, 42, 0.08)" }}>
+      <Card sx={{ borderRadius: 2, border: `1px solid ${theme.palette.divider}`, boxShadow: "none" }}>
         <CardContent>
           <Stack spacing={2}>
             <Typography variant="h6" sx={{ fontWeight: 700 }}>
@@ -496,7 +544,15 @@ export default function CorrespondentView() {
             ) : (
               <Box display="grid" gridTemplateColumns={{ xs: "1fr", lg: "repeat(2, 1fr)" }} gap={2}>
                 {dashboard?.recentTransactions.map((transaction) => (
-                  <Card key={transaction.id} variant="outlined" sx={{ borderRadius: 3 }}>
+                  <Card
+                    key={transaction.id}
+                    variant="outlined"
+                    sx={{
+                      borderRadius: 2,
+                      borderColor: theme.palette.divider,
+                      bgcolor: isDark ? alpha(theme.palette.common.white, 0.03) : theme.palette.background.paper,
+                    }}
+                  >
                     <CardContent>
                       <Stack spacing={1.2}>
                         <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={1}>
@@ -510,7 +566,7 @@ export default function CorrespondentView() {
                           </Box>
                         </Box>
                         <Box display="flex" justifyContent="space-between" alignItems="center" gap={2}>
-                          <Typography variant="h6" sx={{ fontWeight: 700, color: "#0f172a" }}>
+                          <Typography variant="h6" sx={{ fontWeight: 700, color: theme.palette.text.primary }}>
                             {formatCurrency(transaction.amount)}
                           </Typography>
                           <Chip
@@ -542,8 +598,11 @@ export default function CorrespondentView() {
         maxWidth="xs"
         PaperProps={{
           sx: {
-            borderRadius: 3,
-            backgroundImage: "linear-gradient(180deg, rgba(248,250,252,1) 0%, rgba(255,255,255,1) 100%)",
+            borderRadius: 2,
+            backgroundImage: isDark
+              ? `linear-gradient(180deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.background.default, 0.98)} 100%)`
+              : "linear-gradient(180deg, rgba(248,250,252,1) 0%, rgba(255,255,255,1) 100%)",
+            border: `1px solid ${theme.palette.divider}`,
             maxHeight: "92vh",
           },
         }}
@@ -582,8 +641,27 @@ export default function CorrespondentView() {
           </Stack>
         </DialogTitle>
 
-        <DialogContent dividers sx={{ borderColor: "rgba(15, 23, 42, 0.08)", px: 2, py: 1.5 }}>
+        <DialogContent dividers sx={{ borderColor: theme.palette.divider, px: 2, py: 1.5 }}>
           <Stack spacing={1.5}>
+            <SectionCard
+              title="Corresponsal"
+              tooltip="Puedes cambiar aqui la plataforma antes de registrar el movimiento, sin cerrar el modal."
+            >
+              <TextField
+                select
+                fullWidth
+                size="small"
+                label="Corresponsal"
+                value={activePlatformId ?? ""}
+                onChange={(event) => setActivePlatformId(event.target.value)}
+              >
+                {catalog.map((platform) => (
+                  <MenuItem key={platform.id} value={platform.id}>
+                    {platform.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </SectionCard>
             <SectionCard
               title="Datos"
               tooltip="Estos campos si quedan guardados en la base de datos y ayudan a trazabilidad y control interno."
@@ -613,13 +691,13 @@ export default function CorrespondentView() {
                       gridTemplateColumns={{ xs: "1fr 108px auto", sm: "1.25fr 0.8fr auto auto" }}
                       gap={1}
                       alignItems="center"
-                      sx={{
-                        p: 1,
-                        borderRadius: 2,
-                        border: "1px solid rgba(15, 23, 42, 0.08)",
-                        bgcolor: "common.white",
-                      }}
-                    >
+                        sx={{
+                          p: 1,
+                          borderRadius: 1.5,
+                          border: `1px solid ${theme.palette.divider}`,
+                          bgcolor: isDark ? alpha(theme.palette.common.white, 0.04) : theme.palette.background.paper,
+                        }}
+                      >
                       <TextField
                         select
                         label={transactionDrafts.length > 1 ? `Tipo ${index + 1}` : "Tipo de transaccion"}
@@ -719,7 +797,7 @@ export default function CorrespondentView() {
                 <Box display="flex" gap={1} flexWrap="wrap">
                   <Button
                     size="small"
-                    variant={denominationOpen ? "contained" : "outlined"}
+                        variant={denominationOpen ? "contained" : "outlined"}
                     startIcon={<CalculateOutlinedIcon />}
                     onClick={() => setDenominationOpen((current) => !current)}
                   >
@@ -738,7 +816,15 @@ export default function CorrespondentView() {
                       gap={1}
                     >
                       {rowTotals.map((row) => (
-                        <Card key={row.denomination} variant="outlined" sx={{ borderRadius: 2, borderColor: "rgba(15, 23, 42, 0.08)" }}>
+                        <Card
+                          key={row.denomination}
+                          variant="outlined"
+                          sx={{
+                            borderRadius: 1.5,
+                            borderColor: theme.palette.divider,
+                            bgcolor: isDark ? alpha(theme.palette.common.white, 0.03) : theme.palette.background.paper,
+                          }}
+                        >
                           <CardContent sx={{ p: 1.25, "&:last-child": { pb: 1.25 } }}>
                             <Box
                               display="grid"
@@ -790,7 +876,7 @@ export default function CorrespondentView() {
                     </Box>
 
                     <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={1}>
-                      <Card variant="outlined" sx={{ borderRadius: 2 }}>
+                      <Card variant="outlined" sx={{ borderRadius: 1.5, borderColor: theme.palette.divider }}>
                         <CardContent sx={{ p: 1.25, "&:last-child": { pb: 1.25 } }}>
                           <Typography variant="caption" color="text.secondary">
                             Total billetes
@@ -800,7 +886,7 @@ export default function CorrespondentView() {
                           </Typography>
                         </CardContent>
                       </Card>
-                      <Card variant="outlined" sx={{ borderRadius: 2 }}>
+                      <Card variant="outlined" sx={{ borderRadius: 1.5, borderColor: theme.palette.divider }}>
                         <CardContent sx={{ p: 1.25, "&:last-child": { pb: 1.25 } }}>
                           <Typography variant="caption" color="text.secondary">
                             Total monedas
@@ -813,16 +899,16 @@ export default function CorrespondentView() {
                       <Card
                         variant="outlined"
                         sx={{
-                          borderRadius: 2,
-                          borderColor: "rgba(15, 118, 110, 0.25)",
-                          bgcolor: "rgba(15, 118, 110, 0.04)",
+                          borderRadius: 1.5,
+                          borderColor: alpha(theme.palette.success.main, isDark ? 0.35 : 0.25),
+                          bgcolor: isDark ? alpha(theme.palette.success.main, 0.12) : alpha(theme.palette.success.main, 0.04),
                         }}
                       >
                         <CardContent sx={{ p: 1.25, "&:last-child": { pb: 1.25 } }}>
                           <Typography variant="caption" color="text.secondary">
                             Total general recibido
                           </Typography>
-                          <Typography variant="subtitle1" sx={{ mt: 0.5, fontWeight: 700, color: "#0f766e" }}>
+                          <Typography variant="subtitle1" sx={{ mt: 0.5, fontWeight: 700, color: theme.palette.success.main }}>
                             {formatCurrency(totalReceivedFromCounter)}
                           </Typography>
                         </CardContent>
