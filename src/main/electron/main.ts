@@ -34,7 +34,7 @@ import {
   getPermissionCatalogItem,
   type AppRoleKey,
 } from "../../renderer/features/user/roles.catalog";
-import { APP_PERMISSION_KEYS } from "../../renderer/features/user/app-permissions";
+import { APP_PERMISSION_KEYS, hasPermissionKey } from "../../renderer/features/user/app-permissions";
 import { resolveManagedCode } from "../../shared/internalCodes";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -284,7 +284,7 @@ function roleProfileSystemKey(roleKey: AppRoleKey) {
 
 function hasCurrentSessionPermission(permissionKey?: string) {
   if (!permissionKey) return true;
-  return Boolean(currentSessionUser?.permissions?.includes(permissionKey));
+  return hasPermissionKey(currentSessionUser?.permissions, permissionKey);
 }
 
 async function loadPermissionKeysForRoleProfile(prismaClient: PrismaClient, roleProfileId?: string | null) {

@@ -23,7 +23,7 @@ import {
   createAccountingPaymentSchema,
 } from "../ipc/schemas/accounting.schema";
 import { createProductSchema, updateProductSchema } from "../ipc/schemas/product.schema";
-import { APP_PERMISSION_KEYS } from "../../../renderer/features/user/app-permissions";
+import { APP_PERMISSION_KEYS, hasPermissionKey } from "../../../renderer/features/user/app-permissions";
 import { resolveManagedCode } from "../../../shared/internalCodes";
 
 type CurrentSessionUser = {
@@ -299,7 +299,7 @@ async function ensureAdminSession(getCurrentSessionUser: () => CurrentSessionUse
 
 function hasSessionPermission(currentSessionUser: CurrentSessionUser, permissionKey?: string) {
   if (!permissionKey) return true;
-  return Boolean(currentSessionUser?.permissions?.includes(permissionKey));
+  return hasPermissionKey(currentSessionUser?.permissions, permissionKey);
 }
 
 function actorLabel(currentSessionUser: CurrentSessionUser) {

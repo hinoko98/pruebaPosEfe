@@ -17,7 +17,56 @@ export type RoleDefinition = {
   sections: PermissionSection[];
 };
 
+const interfaceAccessSection: PermissionSection = {
+  title: "Acceso a interfaces",
+  groups: [
+    {
+      title: "Operacion comercial",
+      permissions: [
+        "Acceder a Facturar",
+        "Acceder a Historial ventas",
+        "Acceder a Clientes",
+        "Acceder a Compras",
+        "Acceder a Proveedores",
+      ],
+    },
+    {
+      title: "Caja y corresponsal",
+      permissions: [
+        "Acceder a Caja general",
+        "Acceder a Corresponsal transacciones",
+        "Acceder a Corresponsal historial",
+        "Acceder a Corresponsal resumen diario",
+        "Acceder a Corresponsal configuracion",
+      ],
+    },
+    {
+      title: "Inventario",
+      permissions: [
+        "Acceder a Productos",
+        "Acceder a Movimientos de inventario",
+      ],
+    },
+    {
+      title: "Control financiero",
+      permissions: [
+        "Acceder a Centro contable",
+        "Acceder a Reportes",
+      ],
+    },
+    {
+      title: "Gestion y sistema",
+      permissions: [
+        "Acceder a Usuarios",
+        "Acceder a Roles y permisos",
+        "Acceder a Configuracion",
+      ],
+    },
+  ],
+};
+
 const adminSections: PermissionSection[] = [
+  interfaceAccessSection,
   {
     title: "Contabilidad",
     groups: [
@@ -423,6 +472,7 @@ const adminSections: PermissionSection[] = [
 ];
 
 const employeeSections: PermissionSection[] = [
+  interfaceAccessSection,
   {
     title: "POS",
     groups: [
