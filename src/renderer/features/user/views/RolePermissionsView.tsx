@@ -25,6 +25,7 @@ import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { alpha, useTheme } from "@mui/material/styles";
 
 import FloatingAlert from "@/components/feedback/FloatingAlert";
 import HelpHint from "@/components/ui/HelpHint";
@@ -57,6 +58,8 @@ const emptyDraft: RoleDraft = {
 };
 
 export function RolePermissionsView() {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
   const { user } = useAuth();
   const [roles, setRoles] = useState<RoleProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -145,6 +148,13 @@ export function RolePermissionsView() {
 
   const activeSectionData = filteredSections[activeSection] ?? filteredSections[0] ?? null;
   const canManageRoles = hasPermission(user, APP_PERMISSION_KEYS.rolesManage);
+  const colors = {
+    checkedBg: isDark ? alpha(theme.palette.success.main, 0.18) : "#eefbf3",
+    checkedBorder: isDark ? alpha(theme.palette.success.main, 0.4) : "#b7ebc6",
+    idleBg: isDark ? alpha(theme.palette.common.white, 0.04) : "#f8fafc",
+    idleBorder: theme.palette.divider,
+    sectionBg: isDark ? alpha(theme.palette.common.white, 0.03) : theme.palette.background.paper,
+  };
 
   const startEditing = () => {
     if (!selectedRole) return;
@@ -410,6 +420,17 @@ export function RolePermissionsView() {
                 onChange={(_, value) => setActiveSection(value)}
                 variant="scrollable"
                 scrollButtons="auto"
+                sx={{
+                  "& .MuiTab-root": {
+                    color: theme.palette.text.secondary,
+                  },
+                  "& .Mui-selected": {
+                    color: `${theme.palette.primary.main} !important`,
+                  },
+                  "& .MuiTabs-indicator": {
+                    backgroundColor: theme.palette.primary.main,
+                  },
+                }}
               >
                 {filteredSections.map((section) => (
                   <Tab key={section.title} label={section.title} />
@@ -421,7 +442,19 @@ export function RolePermissionsView() {
           {activeSectionData ? (
             <Stack spacing={2}>
               {activeSectionData.groups.map((group) => (
-                <Accordion key={group.title} defaultExpanded>
+                <Accordion
+                  key={group.title}
+                  defaultExpanded
+                  sx={{
+                    backgroundColor: colors.sectionBg,
+                    color: theme.palette.text.primary,
+                    border: `1px solid ${theme.palette.divider}`,
+                    boxShadow: "none",
+                    "&::before": {
+                      display: "none",
+                    },
+                  }}
+                >
                   <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                     <Box display="flex" justifyContent="space-between" alignItems="center" width="100%" gap={2}>
                       <Typography fontWeight={800}>{group.title}</Typography>
@@ -453,8 +486,10 @@ export function RolePermissionsView() {
                             px: 1.25,
                             py: 0.75,
                             borderRadius: 2,
-                            bgcolor: permission.checked ? "#eefbf3" : "#f8fafc",
-                            border: permission.checked ? "1px solid #b7ebc6" : "1px solid #e2e8f0",
+                            bgcolor: permission.checked ? colors.checkedBg : colors.idleBg,
+                            border: permission.checked
+                              ? `1px solid ${colors.checkedBorder}`
+                              : `1px solid ${colors.idleBorder}`,
                           }}
                         >
                           <Checkbox
@@ -531,7 +566,19 @@ export function RolePermissionsView() {
             </Box>
 
             {createSections.map((section) => (
-              <Accordion key={section.title} defaultExpanded>
+              <Accordion
+                key={section.title}
+                defaultExpanded
+                sx={{
+                  backgroundColor: colors.sectionBg,
+                  color: theme.palette.text.primary,
+                  border: `1px solid ${theme.palette.divider}`,
+                  boxShadow: "none",
+                  "&::before": {
+                    display: "none",
+                  },
+                }}
+              >
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                   <Box display="flex" justifyContent="space-between" alignItems="center" width="100%" gap={2}>
                     <Typography fontWeight={800}>{section.title}</Typography>
@@ -571,8 +618,12 @@ export function RolePermissionsView() {
                                 px: 1.25,
                                 py: 0.75,
                                 borderRadius: 2,
-                                bgcolor: "#f8fafc",
-                                border: "1px solid #e2e8f0",
+                                bgcolor: createDraft.permissionKeys.includes(permission.key)
+                                  ? colors.checkedBg
+                                  : colors.idleBg,
+                                border: createDraft.permissionKeys.includes(permission.key)
+                                  ? `1px solid ${colors.checkedBorder}`
+                                  : `1px solid ${colors.idleBorder}`,
                               }}
                             >
                               <Checkbox
