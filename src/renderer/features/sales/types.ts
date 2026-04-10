@@ -17,6 +17,7 @@ export type CartItem = {
   lineId: string;
   productId: string;
   name: string;
+  sku?: string;
   price: Money;
   qty: number;
   taxRate?: number;

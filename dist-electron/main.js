@@ -4,7 +4,7 @@ import "dotenv/config";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CorrespondentDirection, CommissionMode, CorrespondentTransactionStatus, CorrespondentReconciliationStatus, CorrespondentOcrStatus, CorrespondentClosureStatus, SaleStatus, CashSessionStatus, PaymentMethod, CashMovementType, InventoryMovementType, PurchaseStatus, Role, PrismaClient } from "@prisma/client";
+import { CorrespondentDirection, CommissionMode, CorrespondentTransactionStatus, CorrespondentReconciliationStatus, CorrespondentOcrStatus, Role, CorrespondentClosureStatus, SaleStatus, CashSessionStatus, PaymentMethod, CashMovementType, InventoryMovementType, PurchaseStatus, CreditStatus, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -20,26 +20,93 @@ z.object({
     id: z.string(),
     username: z.string(),
     role: roleSchema,
-    name: z.string().optional()
+    name: z.string().optional(),
+    roleProfileId: z.string().nullable().optional(),
+    roleProfileName: z.string().nullable().optional(),
+    permissions: z.array(z.string()).optional()
   }).optional()
 });
-const createUserInputSchema = z.object({
-  name: z.string().trim().min(2).max(120).optional(),
-  newUsername: z.string().trim().min(3).max(50),
+const birthDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable();
+const phoneSchema = z.string().trim().regex(/^\d{10}$/).optional().nullable();
+const baseUserProfileSchema = z.object({
+  internalCode: z.string().trim().max(30).optional().nullable(),
+  firstName: z.string().trim().min(2).max(80),
+  lastName: z.string().trim().min(2).max(80),
+  documentNumber: z.string().trim().regex(/^\d{6,20}$/),
+  email: z.string().trim().email().max(120).optional().nullable(),
+  phone: phoneSchema,
+  address: z.string().trim().max(180).optional().nullable(),
+  birthDate: birthDateSchema,
+  role: roleSchema.optional().default("EMPLOYEE"),
+  roleProfileId: z.string().uuid().optional().nullable(),
+  isActive: z.boolean().optional().default(true)
+});
+const createUserInputSchema = baseUserProfileSchema.extend({
+  newPassword: z.string().min(6).max(200)
+});
+const updateUserInputSchema = baseUserProfileSchema.extend({
+  id: z.string().uuid(),
+  newPassword: z.string().min(6).max(200).optional().or(z.literal(""))
+});
+const ownProfileSchema = z.object({
+  id: z.string(),
+  username: z.string(),
+  name: z.string().optional().nullable(),
+  firstName: z.string().optional().nullable(),
+  lastName: z.string().optional().nullable(),
+  email: z.string().trim().email().max(120).optional().nullable(),
+  phone: phoneSchema,
+  birthDate: birthDateSchema,
+  role: roleSchema
+});
+z.object({
+  success: z.boolean(),
+  message: z.string().optional(),
+  profile: ownProfileSchema.optional()
+});
+const updateOwnProfileInputSchema = z.object({
+  firstName: z.string().trim().min(2).max(80),
+  lastName: z.string().trim().min(2).max(80),
+  phone: phoneSchema,
+  birthDate: birthDateSchema
+});
+const changeOwnPasswordInputSchema = z.object({
+  currentPassword: z.string().min(1).max(200),
   newPassword: z.string().min(6).max(200),
-  role: roleSchema.optional().default("EMPLOYEE")
+  confirmPassword: z.string().min(6).max(200)
+});
+const createRoleProfileInputSchema = z.object({
+  name: z.string().trim().min(3, "Minimo 3 caracteres").max(80, "Maximo 80 caracteres"),
+  description: z.string().trim().max(240).optional().nullable(),
+  baseRole: roleSchema.default("EMPLOYEE"),
+  permissionKeys: z.array(z.string().trim().min(1)).min(1, "Debes seleccionar al menos un permiso"),
+  isActive: z.boolean().optional().default(true)
+});
+const updateRoleProfileInputSchema = z.object({
+  id: z.string().uuid("ID de rol invalido"),
+  name: z.string().trim().min(3, "Minimo 3 caracteres").max(80, "Maximo 80 caracteres"),
+  description: z.string().trim().max(240).optional().nullable(),
+  permissionKeys: z.array(z.string().trim().min(1)).min(1, "Debes seleccionar al menos un permiso"),
+  isActive: z.boolean().optional().default(true)
 });
 const paymentMethodSchema = z.enum(["CASH", "CARD", "TRANSFER"]);
+const salePaymentInputSchema = z.object({
+  method: paymentMethodSchema,
+  amount: z.number().min(0, "El monto del pago no puede ser negativo")
+});
 const saleItemInputSchema = z.object({
   productId: z.string().uuid("productId invalido"),
   qty: z.number().int("La cantidad debe ser entera").positive("La cantidad debe ser mayor a 0")
 });
 const createSaleSchema = z.object({
   customer: z.string().trim().max(120).optional().default("Consumidor final"),
+  customerId: z.string().uuid("customerId invalido").optional().nullable(),
   paymentMethod: paymentMethodSchema.optional().default("CASH"),
   amountPaid: z.number().min(0).optional(),
+  payments: z.array(salePaymentInputSchema).min(1, "Debes registrar al menos un pago").optional(),
   items: z.array(saleItemInputSchema).min(1, "La venta debe tener al menos un item"),
-  clientTotal: z.number().min(0).optional()
+  clientTotal: z.number().min(0).optional(),
+  allowDebt: z.boolean().optional().default(false)
 });
 z.discriminatedUnion("success", [
   z.object({
@@ -57,6 +124,7 @@ z.discriminatedUnion("success", [
 ]);
 const correspondentTransactionStatusSchema = z.enum(["REGISTERED", "VOIDED"]);
 const correspondentTransactionSourceSchema = z.enum(["MANUAL", "IMAGE", "FILE_IMPORT", "API"]);
+const correspondentCatalogDirectionSchema = z.enum(["IN", "OUT"]);
 const correspondentEvidenceInputSchema = z.object({
   fileName: z.string().trim().min(1).max(180),
   mimeType: z.string().trim().max(120).optional(),
@@ -66,6 +134,7 @@ const correspondentEvidenceInputSchema = z.object({
 const createCorrespondentTransactionSchema = z.object({
   platformId: z.string().uuid("platformId invalido"),
   typeId: z.string().uuid("typeId invalido"),
+  approvalCode: z.string().trim().min(4, "Ingresa el numero de aprobacion o ID interno").max(40).optional().nullable(),
   amount: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
   commissionAmount: z.number().int("La comision debe ser entera").min(0).optional(),
   externalReference: z.string().trim().max(120).optional().nullable(),
@@ -78,6 +147,16 @@ const createCorrespondentTransactionSchema = z.object({
   rawExtractedText: z.string().trim().max(1e4).optional().nullable(),
   source: correspondentTransactionSourceSchema.optional().default("MANUAL"),
   evidence: correspondentEvidenceInputSchema.optional()
+});
+const updateCorrespondentTransactionSchema = z.object({
+  transactionId: z.string().uuid("transactionId invalido"),
+  typeId: z.string().uuid("typeId invalido"),
+  approvalCode: z.string().trim().min(4, "Ingresa el numero de aprobacion o ID interno").max(40).optional().nullable(),
+  amount: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  performedAt: z.string().datetime("Fecha de operacion invalida")
+});
+const getCorrespondentTransactionDetailSchema = z.object({
+  transactionId: z.string().uuid("transactionId invalido")
 });
 const listCorrespondentTransactionsSchema = z.object({
   dateFrom: z.string().datetime().optional(),
@@ -93,9 +172,102 @@ const listCorrespondentClosuresSchema = z.object({
 const createCorrespondentClosureSchema = z.object({
   platformId: z.string().uuid("platformId invalido"),
   businessDate: z.string().datetime("Fecha de cierre invalida"),
-  reportedBalance: z.number().int("El valor reportado debe ser entero").min(0),
+  openingBalance: z.number().int("El saldo base debe ser entero").optional().default(0),
+  reportedBalance: z.number().int("El valor reportado debe ser entero"),
   note: z.string().trim().max(300).optional().nullable()
 });
+const createCorrespondentPlatformSchema = z.object({
+  name: z.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
+  requiresEvidence: z.boolean().optional().default(false),
+  supportsOcr: z.boolean().optional().default(false),
+  supportsFileImport: z.boolean().optional().default(false)
+});
+const createCorrespondentTransactionTypeSchema = z.object({
+  platformId: z.string().uuid("platformId invalido"),
+  name: z.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
+  direction: correspondentCatalogDirectionSchema.default("IN")
+});
+const updateCorrespondentPlatformSchema = z.object({
+  platformId: z.string().uuid("platformId invalido"),
+  name: z.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
+  requiresEvidence: z.boolean().optional().default(false),
+  supportsOcr: z.boolean().optional().default(false),
+  supportsFileImport: z.boolean().optional().default(false)
+});
+const updateCorrespondentTransactionTypeSchema = z.object({
+  typeId: z.string().uuid("typeId invalido"),
+  name: z.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
+  direction: correspondentCatalogDirectionSchema.default("IN")
+});
+const deleteCorrespondentPlatformSchema = z.object({
+  platformId: z.string().uuid("platformId invalido")
+});
+const deleteCorrespondentTransactionTypeSchema = z.object({
+  typeId: z.string().uuid("typeId invalido")
+});
+const CODE_REGEX = /^[A-Z0-9]+(?:-[A-Z0-9]+)*$/;
+function stripDiacritics(value) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+function normalizeCodeInput(value) {
+  return stripDiacritics(value).toUpperCase().replace(/[_\s]+/g, "-").replace(/[^A-Z0-9-]/g, "").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
+}
+function normalizePrefixedCode(value, prefix) {
+  const normalizedPrefix = normalizeCodeInput(prefix);
+  const normalizedValue = normalizeCodeInput(value);
+  if (!normalizedValue)
+    return `${normalizedPrefix}-`;
+  if (normalizedValue === normalizedPrefix)
+    return `${normalizedPrefix}-`;
+  if (normalizedValue.startsWith(`${normalizedPrefix}-`))
+    return normalizedValue;
+  const trimmedValue = normalizedValue.startsWith(normalizedPrefix) ? normalizedValue.slice(normalizedPrefix.length).replace(/^-+/, "") : normalizedValue;
+  return `${normalizedPrefix}-${trimmedValue}`;
+}
+function isValidCode(value, minLength = 4, maxLength = 40) {
+  return value.length >= minLength && value.length <= maxLength && CODE_REGEX.test(value);
+}
+function suggestNextCode(existingCodes, prefix, digits = 4) {
+  const normalizedPrefix = normalizeCodeInput(prefix);
+  const matcher = new RegExp(`^${normalizedPrefix}-(\\d+)$`);
+  let currentMax = 0;
+  for (const code of existingCodes) {
+    const normalizedCode = normalizeCodeInput(code || "");
+    const match = normalizedCode.match(matcher);
+    if (!match)
+      continue;
+    currentMax = Math.max(currentMax, Number(match[1] || 0));
+  }
+  return `${normalizedPrefix}-${String(currentMax + 1).padStart(digits, "0")}`;
+}
+function resolveManagedCode(params) {
+  var _a;
+  const candidate = ((_a = params.desiredCode) == null ? void 0 : _a.trim()) ? normalizePrefixedCode(params.desiredCode, params.prefix) : suggestNextCode(params.existingCodes, params.prefix, params.digits);
+  if (!isValidCode(candidate, params.minLength, params.maxLength)) {
+    throw new Error(`El codigo debe usar solo letras, numeros y guiones.`);
+  }
+  const normalizedExisting = new Set(
+    params.existingCodes.map((code) => normalizeCodeInput(code || "")).filter(Boolean)
+  );
+  if (normalizedExisting.has(candidate)) {
+    throw new Error(`El codigo ${candidate} ya existe.`);
+  }
+  return candidate;
+}
+function resolveLooseCode(params) {
+  var _a;
+  const candidate = ((_a = params.desiredCode) == null ? void 0 : _a.trim()) ? normalizeCodeInput(params.desiredCode) : suggestNextCode(params.existingCodes, params.generatedPrefix, params.digits);
+  if (!isValidCode(candidate, params.minLength, params.maxLength)) {
+    throw new Error(`El codigo debe usar solo letras, numeros y guiones.`);
+  }
+  const normalizedExisting = new Set(
+    params.existingCodes.map((code) => normalizeCodeInput(code || "")).filter(Boolean)
+  );
+  if (normalizedExisting.has(candidate)) {
+    throw new Error(`El codigo ${candidate} ya existe.`);
+  }
+  return candidate;
+}
 const sharedCorrespondentTypes = [
   { code: "RETIRO", name: "Retiro", direction: CorrespondentDirection.OUT, requiresCustomerDocument: true, requiresExternalReference: true, sortOrder: 10 },
   { code: "DEPOSITO", name: "Deposito", direction: CorrespondentDirection.IN, requiresCustomerDocument: true, requiresExternalReference: true, sortOrder: 20 },
@@ -171,6 +343,86 @@ function sanitizeFileName(value) {
 }
 function serializeJson(value) {
   return JSON.stringify(value ?? null);
+}
+function normalizeCode(value) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
+}
+async function buildUniquePlatformCode(prisma2, name) {
+  const baseCode = normalizeCode(name) || "CORRESPONSAL";
+  let code = baseCode;
+  let counter = 2;
+  while (await prisma2.correspondentPlatform.findUnique({ where: { code }, select: { id: true } })) {
+    code = `${baseCode}_${counter}`;
+    counter += 1;
+  }
+  return code;
+}
+async function buildUniqueTypeCode(prisma2, platformId, name) {
+  const baseCode = normalizeCode(name) || "TIPO";
+  let code = baseCode;
+  let counter = 2;
+  while (await prisma2.correspondentTransactionType.findUnique({
+    where: { platformId_code: { platformId, code } },
+    select: { id: true }
+  })) {
+    code = `${baseCode}_${counter}`;
+    counter += 1;
+  }
+  return code;
+}
+function parseContextId(context, key) {
+  if (!context)
+    return null;
+  const match = context.match(new RegExp(`${key}:([^;]+)`));
+  return (match == null ? void 0 : match[1]) ?? null;
+}
+async function buildCorrespondentCatalogAuditMaps(prisma2) {
+  const logs = await prisma2.correspondentAuditLog.findMany({
+    where: {
+      action: {
+        in: ["create_platform", "update_platform", "create_transaction_type", "update_transaction_type"]
+      }
+    },
+    include: {
+      user: {
+        select: {
+          username: true,
+          name: true
+        }
+      }
+    },
+    orderBy: { createdAt: "asc" }
+  });
+  const platformCreatedBy = /* @__PURE__ */ new Map();
+  const platformUpdatedBy = /* @__PURE__ */ new Map();
+  const typeCreatedBy = /* @__PURE__ */ new Map();
+  const typeUpdatedBy = /* @__PURE__ */ new Map();
+  for (const log of logs) {
+    const actor = {
+      user: log.user ? log.user.name ?? log.user.username : null,
+      at: log.createdAt.toISOString()
+    };
+    const platformId = parseContextId(log.context, "platform");
+    const typeId = parseContextId(log.context, "type");
+    if (log.action === "create_platform" && platformId && !platformCreatedBy.has(platformId)) {
+      platformCreatedBy.set(platformId, actor);
+    }
+    if (log.action === "update_platform" && platformId) {
+      platformUpdatedBy.set(platformId, actor);
+    }
+    if (log.action === "create_transaction_type" && typeId && !typeCreatedBy.has(typeId)) {
+      typeCreatedBy.set(typeId, actor);
+    }
+    if (log.action === "update_transaction_type" && typeId) {
+      typeUpdatedBy.set(typeId, actor);
+    }
+  }
+  return {
+    platformCreatedBy,
+    platformUpdatedBy,
+    typeCreatedBy,
+    typeUpdatedBy
+  };
 }
 async function ensureCorrespondentSchemaIfNeeded(prismaClient) {
   const statements = [
@@ -254,6 +506,7 @@ async function ensureCorrespondentSchemaIfNeeded(prismaClient) {
     `CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_closedByUserId_idx" ON "CorrespondentDailyClosure"("closedByUserId");`,
     `CREATE TABLE IF NOT EXISTS "CorrespondentTransaction" (
       "id" TEXT NOT NULL PRIMARY KEY,
+      "approvalCode" TEXT,
       "platformId" TEXT NOT NULL,
       "typeId" TEXT NOT NULL,
       "cashSessionId" TEXT,
@@ -331,6 +584,43 @@ async function ensureCorrespondentSchemaIfNeeded(prismaClient) {
   for (const statement of statements) {
     await prismaClient.$executeRawUnsafe(statement);
   }
+  const transactionColumns = await prismaClient.$queryRawUnsafe(
+    `PRAGMA table_info("CorrespondentTransaction");`
+  );
+  const transactionColumnSet = new Set(transactionColumns.map((column) => column.name));
+  if (!transactionColumnSet.has("approvalCode")) {
+    await prismaClient.$executeRawUnsafe(`ALTER TABLE "CorrespondentTransaction" ADD COLUMN "approvalCode" TEXT;`);
+  }
+  const transactions = await prismaClient.correspondentTransaction.findMany({
+    select: {
+      id: true,
+      approvalCode: true
+    },
+    orderBy: [{ createdAt: "asc" }, { performedAt: "asc" }]
+  });
+  const assignedApprovalCodes = [];
+  const assignedSet = /* @__PURE__ */ new Set();
+  for (const transaction of transactions) {
+    const normalizedCurrentCode = normalizeCodeInput(transaction.approvalCode || "");
+    const canKeepCurrentCode = Boolean(normalizedCurrentCode) && isValidCode(normalizedCurrentCode, 4, 40) && !assignedSet.has(normalizedCurrentCode);
+    const approvalCode = canKeepCurrentCode ? normalizedCurrentCode : resolveLooseCode({
+      existingCodes: assignedApprovalCodes,
+      generatedPrefix: "APR",
+      digits: 6,
+      maxLength: 40
+    });
+    if (approvalCode !== transaction.approvalCode) {
+      await prismaClient.correspondentTransaction.update({
+        where: { id: transaction.id },
+        data: { approvalCode }
+      });
+    }
+    assignedApprovalCodes.push(approvalCode);
+    assignedSet.add(approvalCode);
+  }
+  await prismaClient.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentTransaction_approvalCode_key" ON "CorrespondentTransaction"("approvalCode");`
+  );
 }
 async function seedCorrespondentCatalogIfNeeded(prismaClient) {
   for (const platformSeed of correspondentSeedCatalog) {
@@ -533,6 +823,30 @@ async function getCorrespondentTransactionsForDay(prisma2, businessDate, platfor
     orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }]
   });
 }
+async function getCorrespondentTransactionDetail(prisma2, transactionId) {
+  return prisma2.correspondentTransaction.findUnique({
+    where: { id: transactionId },
+    include: {
+      platform: true,
+      type: true,
+      registeredBy: { select: { id: true, username: true, name: true } },
+      auditLogs: {
+        include: {
+          user: {
+            select: { id: true, username: true, name: true }
+          }
+        },
+        orderBy: { createdAt: "desc" }
+      },
+      dailyClosure: {
+        select: {
+          id: true,
+          businessDate: true
+        }
+      }
+    }
+  });
+}
 function registerCorrespondentIpcHandlers({
   app: app2,
   ipcMain: ipcMain2,
@@ -544,46 +858,63 @@ function registerCorrespondentIpcHandlers({
     if (!currentSessionUser2) {
       return { success: false, message: "Debes iniciar sesion", platforms: [] };
     }
-    const platforms = await prisma2.correspondentPlatform.findMany({
-      where: { isActive: true },
-      include: {
-        transactionTypes: {
-          where: { isActive: true },
-          orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+    const [platforms, auditMaps] = await Promise.all([
+      prisma2.correspondentPlatform.findMany({
+        where: { isActive: true },
+        include: {
+          transactionTypes: {
+            where: { isActive: true },
+            orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+          },
+          commissionRules: {
+            where: { isActive: true },
+            orderBy: [{ validFrom: "desc" }]
+          }
         },
-        commissionRules: {
-          where: { isActive: true },
-          orderBy: [{ validFrom: "desc" }]
-        }
-      },
-      orderBy: { name: "asc" }
-    });
+        orderBy: [{ createdAt: "asc" }, { name: "asc" }]
+      }),
+      buildCorrespondentCatalogAuditMaps(prisma2)
+    ]);
     return {
       success: true,
-      platforms: platforms.map((platform) => ({
-        id: platform.id,
-        code: platform.code,
-        name: platform.name,
-        requiresEvidence: platform.requiresEvidence,
-        supportsOcr: platform.supportsOcr,
-        supportsFileImport: platform.supportsFileImport,
-        types: platform.transactionTypes.map((type) => ({
-          id: type.id,
-          code: type.code,
-          name: type.name,
-          direction: type.direction,
-          requiresCustomerDocument: type.requiresCustomerDocument,
-          requiresExternalReference: type.requiresExternalReference
-        })),
-        commissionRules: platform.commissionRules.map((rule) => ({
-          id: rule.id,
-          typeId: rule.typeId,
-          mode: rule.mode,
-          value: rule.value,
-          minAmount: rule.minAmount,
-          maxAmount: rule.maxAmount
-        }))
-      }))
+      platforms: platforms.map((platform) => {
+        var _a, _b, _c;
+        return {
+          id: platform.id,
+          code: platform.code,
+          name: platform.name,
+          requiresEvidence: platform.requiresEvidence,
+          supportsOcr: platform.supportsOcr,
+          supportsFileImport: platform.supportsFileImport,
+          createdAt: platform.createdAt.toISOString(),
+          updatedAt: platform.updatedAt.toISOString(),
+          createdBy: ((_a = auditMaps.platformCreatedBy.get(platform.id)) == null ? void 0 : _a.user) ?? null,
+          updatedBy: ((_b = auditMaps.platformUpdatedBy.get(platform.id)) == null ? void 0 : _b.user) ?? ((_c = auditMaps.platformCreatedBy.get(platform.id)) == null ? void 0 : _c.user) ?? null,
+          types: platform.transactionTypes.map((type) => {
+            var _a2, _b2, _c2;
+            return {
+              id: type.id,
+              code: type.code,
+              name: type.name,
+              direction: type.direction,
+              requiresCustomerDocument: type.requiresCustomerDocument,
+              requiresExternalReference: type.requiresExternalReference,
+              createdAt: type.createdAt.toISOString(),
+              updatedAt: type.updatedAt.toISOString(),
+              createdBy: ((_a2 = auditMaps.typeCreatedBy.get(type.id)) == null ? void 0 : _a2.user) ?? null,
+              updatedBy: ((_b2 = auditMaps.typeUpdatedBy.get(type.id)) == null ? void 0 : _b2.user) ?? ((_c2 = auditMaps.typeCreatedBy.get(type.id)) == null ? void 0 : _c2.user) ?? null
+            };
+          }),
+          commissionRules: platform.commissionRules.map((rule) => ({
+            id: rule.id,
+            typeId: rule.typeId,
+            mode: rule.mode,
+            value: rule.value,
+            minAmount: rule.minAmount,
+            maxAmount: rule.maxAmount
+          }))
+        };
+      })
     };
   });
   ipcMain2.handle("correspondent:dashboard", async () => {
@@ -631,6 +962,7 @@ function registerCorrespondentIpcHandlers({
       perPlatform: Object.values(perPlatformMap).sort((a, b) => a.platform.localeCompare(b.platform, "es")),
       recentTransactions: transactions.slice(0, 10).map((transaction) => ({
         id: transaction.id,
+        approvalCode: transaction.approvalCode,
         platform: transaction.platform.name,
         type: transaction.type.name,
         amount: transaction.amount,
@@ -666,12 +998,25 @@ function registerCorrespondentIpcHandlers({
           ...filters.dateTo ? { lt: endOfDay(new Date(filters.dateTo)) } : {}
         } : void 0,
         OR: search ? [
+          { approvalCode: { contains: search } },
           { externalReference: { contains: search } },
           { customerName: { contains: search } },
           { customerDocument: { contains: search } },
           { targetAccount: { contains: search } },
           { targetPhone: { contains: search } },
-          { note: { contains: search } }
+          { note: { contains: search } },
+          { platform: { is: { name: { contains: search } } } },
+          { type: { is: { name: { contains: search } } } },
+          {
+            registeredBy: {
+              is: {
+                OR: [
+                  { username: { contains: search } },
+                  { name: { contains: search } }
+                ]
+              }
+            }
+          }
         ] : void 0
       },
       include: {
@@ -690,6 +1035,7 @@ function registerCorrespondentIpcHandlers({
         var _a2, _b;
         return {
           id: transaction.id,
+          approvalCode: transaction.approvalCode,
           platformId: transaction.platformId,
           platform: transaction.platform.name,
           typeId: transaction.typeId,
@@ -716,8 +1062,51 @@ function registerCorrespondentIpcHandlers({
       })
     };
   });
+  ipcMain2.handle("correspondent:transaction:detail", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2) {
+      return { success: false, message: "Debes iniciar sesion" };
+    }
+    const parsed = getCorrespondentTransactionDetailSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Transaccion invalida" };
+    }
+    const transaction = await getCorrespondentTransactionDetail(prisma2, parsed.data.transactionId);
+    if (!transaction) {
+      return { success: false, message: "La transaccion ya no existe" };
+    }
+    return {
+      success: true,
+      transaction: {
+        id: transaction.id,
+        approvalCode: transaction.approvalCode,
+        platformId: transaction.platformId,
+        platform: transaction.platform.name,
+        typeId: transaction.typeId,
+        type: transaction.type.name,
+        amount: transaction.amount,
+        commissionAmount: transaction.commissionAmount,
+        netAmount: transaction.netAmount,
+        performedAt: transaction.performedAt.toISOString(),
+        createdAt: transaction.createdAt.toISOString(),
+        updatedAt: transaction.updatedAt.toISOString(),
+        registeredBy: transaction.registeredBy.name ?? transaction.registeredBy.username,
+        note: transaction.note,
+        status: transaction.status,
+        auditTrail: transaction.auditLogs.map((entry) => ({
+          id: entry.id,
+          action: entry.action,
+          createdAt: entry.createdAt.toISOString(),
+          user: entry.user ? entry.user.name ?? entry.user.username : null,
+          beforeJson: entry.beforeJson,
+          afterJson: entry.afterJson,
+          context: entry.context
+        }))
+      }
+    };
+  });
   ipcMain2.handle("correspondent:transaction:create", async (_event, payload) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2) {
       return { success: false, message: "Debes iniciar sesion para registrar movimientos" };
@@ -739,21 +1128,12 @@ function registerCorrespondentIpcHandlers({
     if (!type || !type.isActive || type.platformId !== platform.id) {
       return { success: false, message: "El tipo de transaccion no corresponde a la plataforma" };
     }
-    if (platform.requiresEvidence && !data.evidence) {
-      return { success: false, message: "Esta plataforma requiere evidencia del comprobante" };
-    }
-    if (type.requiresExternalReference && !((_a = data.externalReference) == null ? void 0 : _a.trim())) {
-      return { success: false, message: "La referencia externa es obligatoria para este tipo" };
-    }
-    if (type.requiresCustomerDocument && !((_b = data.customerDocument) == null ? void 0 : _b.trim())) {
-      return { success: false, message: "El documento del cliente es obligatorio para este tipo" };
-    }
     const duplicate = await prisma2.correspondentTransaction.findFirst({
       where: {
         platformId: platform.id,
         typeId: type.id,
         amount: data.amount,
-        externalReference: ((_c = data.externalReference) == null ? void 0 : _c.trim()) || null,
+        externalReference: ((_a = data.externalReference) == null ? void 0 : _a.trim()) || null,
         performedAt: {
           gte: new Date(performedAt.getTime() - 10 * 60 * 1e3),
           lte: new Date(performedAt.getTime() + 10 * 60 * 1e3)
@@ -768,8 +1148,19 @@ function registerCorrespondentIpcHandlers({
     const netAmount = type.direction === CorrespondentDirection.OUT ? data.amount - computedCommission : data.amount + computedCommission;
     const evidencePayload = data.evidence ? await saveCorrespondentEvidence({ app: app2, platformCode: platform.code, evidence: data.evidence }) : null;
     try {
+      const existingApprovalCodes = (await prisma2.correspondentTransaction.findMany({
+        select: { approvalCode: true }
+      })).map((transaction2) => transaction2.approvalCode);
+      const approvalCode = resolveLooseCode({
+        desiredCode: data.approvalCode,
+        existingCodes: existingApprovalCodes,
+        generatedPrefix: "APR",
+        digits: 6,
+        maxLength: 40
+      });
       const transaction = await prisma2.correspondentTransaction.create({
         data: {
+          approvalCode,
           platformId: platform.id,
           typeId: type.id,
           cashSessionId: (activeCashSession == null ? void 0 : activeCashSession.id) ?? null,
@@ -777,19 +1168,19 @@ function registerCorrespondentIpcHandlers({
           registeredByUserId: currentSessionUser2.id,
           status: CorrespondentTransactionStatus.REGISTERED,
           source: data.source,
-          ocrStatus: ((_d = data.evidence) == null ? void 0 : _d.ocrRawText) ? CorrespondentOcrStatus.PROCESSED : platform.supportsOcr ? CorrespondentOcrStatus.NEEDS_REVIEW : CorrespondentOcrStatus.NOT_REQUESTED,
+          ocrStatus: ((_b = data.evidence) == null ? void 0 : _b.ocrRawText) ? CorrespondentOcrStatus.PROCESSED : platform.supportsOcr ? CorrespondentOcrStatus.NEEDS_REVIEW : CorrespondentOcrStatus.NOT_REQUESTED,
           reconciliationStatus: CorrespondentReconciliationStatus.PENDING,
-          externalReference: ((_e = data.externalReference) == null ? void 0 : _e.trim()) || null,
-          customerName: ((_f = data.customerName) == null ? void 0 : _f.trim()) || null,
-          customerDocument: ((_g = data.customerDocument) == null ? void 0 : _g.trim()) || null,
-          targetAccount: ((_h = data.targetAccount) == null ? void 0 : _h.trim()) || null,
-          targetPhone: ((_i = data.targetPhone) == null ? void 0 : _i.trim()) || null,
+          externalReference: ((_c = data.externalReference) == null ? void 0 : _c.trim()) || null,
+          customerName: ((_d = data.customerName) == null ? void 0 : _d.trim()) || null,
+          customerDocument: ((_e = data.customerDocument) == null ? void 0 : _e.trim()) || null,
+          targetAccount: ((_f = data.targetAccount) == null ? void 0 : _f.trim()) || null,
+          targetPhone: ((_g = data.targetPhone) == null ? void 0 : _g.trim()) || null,
           amount: data.amount,
           commissionAmount: computedCommission,
           netAmount,
           performedAt,
-          note: ((_j = data.note) == null ? void 0 : _j.trim()) || null,
-          rawExtractedText: ((_k = data.rawExtractedText) == null ? void 0 : _k.trim()) || ((_l = data.evidence) == null ? void 0 : _l.ocrRawText) || null,
+          note: ((_h = data.note) == null ? void 0 : _h.trim()) || null,
+          rawExtractedText: ((_i = data.rawExtractedText) == null ? void 0 : _i.trim()) || ((_j = data.evidence) == null ? void 0 : _j.ocrRawText) || null,
           evidences: evidencePayload ? {
             create: {
               ...evidencePayload,
@@ -809,6 +1200,7 @@ function registerCorrespondentIpcHandlers({
         transactionId: transaction.id,
         action: "create_transaction",
         afterJson: {
+          approvalCode: transaction.approvalCode,
           platform: transaction.platform.name,
           type: transaction.type.name,
           amount: transaction.amount,
@@ -820,6 +1212,7 @@ function registerCorrespondentIpcHandlers({
         success: true,
         transaction: {
           id: transaction.id,
+          approvalCode: transaction.approvalCode,
           platform: transaction.platform.name,
           type: transaction.type.name,
           amount: transaction.amount,
@@ -830,6 +1223,424 @@ function registerCorrespondentIpcHandlers({
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo registrar la transaccion";
+      return { success: false, message };
+    }
+  });
+  ipcMain2.handle("correspondent:transaction:update", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2) {
+      return { success: false, message: "Debes iniciar sesion para editar movimientos" };
+    }
+    const parsed = updateCorrespondentTransactionSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Datos invalidos para actualizar la transaccion" };
+    }
+    const existingTransaction = await prisma2.correspondentTransaction.findUnique({
+      where: { id: parsed.data.transactionId },
+      include: {
+        platform: true,
+        type: true
+      }
+    });
+    if (!existingTransaction) {
+      return { success: false, message: "La transaccion ya no existe" };
+    }
+    if (existingTransaction.dailyClosureId) {
+      return { success: false, message: "No puedes editar una transaccion que ya hace parte de un cuadre" };
+    }
+    if (existingTransaction.status === CorrespondentTransactionStatus.VOIDED) {
+      return { success: false, message: "No puedes editar una transaccion anulada" };
+    }
+    const nextType = await prisma2.correspondentTransactionType.findUnique({
+      where: { id: parsed.data.typeId }
+    });
+    if (!nextType || !nextType.isActive || nextType.platformId !== existingTransaction.platformId) {
+      return { success: false, message: "El nuevo tipo no pertenece al mismo corresponsal" };
+    }
+    const nextPerformedAt = new Date(parsed.data.performedAt);
+    const nextCommissionAmount = await resolveCommissionAmount(
+      prisma2,
+      existingTransaction.platformId,
+      nextType.id,
+      parsed.data.amount,
+      nextPerformedAt
+    );
+    const nextNetAmount = nextType.direction === CorrespondentDirection.OUT ? parsed.data.amount - nextCommissionAmount : parsed.data.amount + nextCommissionAmount;
+    try {
+      const existingApprovalCodes = (await prisma2.correspondentTransaction.findMany({
+        where: { NOT: { id: existingTransaction.id } },
+        select: { approvalCode: true }
+      })).map((transaction) => transaction.approvalCode);
+      const approvalCode = resolveLooseCode({
+        desiredCode: parsed.data.approvalCode ?? existingTransaction.approvalCode,
+        existingCodes: existingApprovalCodes,
+        generatedPrefix: "APR",
+        digits: 6,
+        maxLength: 40
+      });
+      const updatedTransaction = await prisma2.correspondentTransaction.update({
+        where: { id: existingTransaction.id },
+        data: {
+          approvalCode,
+          typeId: nextType.id,
+          amount: parsed.data.amount,
+          commissionAmount: nextCommissionAmount,
+          netAmount: nextNetAmount,
+          performedAt: nextPerformedAt,
+          reviewedByUserId: currentSessionUser2.id
+        },
+        include: {
+          platform: true,
+          type: true,
+          evidences: { select: { id: true } }
+        }
+      });
+      await logCorrespondentAction({
+        prisma: prisma2,
+        currentSessionUser: currentSessionUser2,
+        transactionId: updatedTransaction.id,
+        action: "update_transaction",
+        beforeJson: {
+          approvalCode: existingTransaction.approvalCode,
+          type: existingTransaction.type.name,
+          amount: existingTransaction.amount,
+          performedAt: existingTransaction.performedAt.toISOString(),
+          commissionAmount: existingTransaction.commissionAmount
+        },
+        afterJson: {
+          approvalCode: updatedTransaction.approvalCode,
+          type: updatedTransaction.type.name,
+          amount: updatedTransaction.amount,
+          performedAt: updatedTransaction.performedAt.toISOString(),
+          commissionAmount: updatedTransaction.commissionAmount
+        }
+      });
+      return {
+        success: true,
+        transaction: {
+          id: updatedTransaction.id,
+          approvalCode: updatedTransaction.approvalCode,
+          platform: updatedTransaction.platform.name,
+          type: updatedTransaction.type.name,
+          amount: updatedTransaction.amount,
+          commissionAmount: updatedTransaction.commissionAmount,
+          netAmount: updatedTransaction.netAmount,
+          hasEvidence: updatedTransaction.evidences.length > 0
+        }
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo actualizar la transaccion";
+      return { success: false, message };
+    }
+  });
+  ipcMain2.handle("correspondent:platform:create", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
+      return { success: false, message: "Solo el administrador puede crear corresponsales" };
+    }
+    const parsed = createCorrespondentPlatformSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Datos invalidos para el corresponsal" };
+    }
+    const platformName = parsed.data.name.trim();
+    const duplicate = await prisma2.correspondentPlatform.findFirst({
+      where: { name: { equals: platformName } },
+      select: { id: true }
+    });
+    if (duplicate) {
+      return { success: false, message: "Ya existe un corresponsal con ese nombre" };
+    }
+    try {
+      const created = await prisma2.correspondentPlatform.create({
+        data: {
+          code: await buildUniquePlatformCode(prisma2, platformName),
+          name: platformName,
+          isActive: true,
+          requiresEvidence: parsed.data.requiresEvidence,
+          supportsOcr: parsed.data.supportsOcr,
+          supportsFileImport: parsed.data.supportsFileImport
+        }
+      });
+      await prisma2.correspondentCommissionRule.create({
+        data: {
+          platformId: created.id,
+          mode: CommissionMode.NONE,
+          value: 0,
+          isActive: true
+        }
+      });
+      await logCorrespondentAction({
+        prisma: prisma2,
+        currentSessionUser: currentSessionUser2,
+        action: "create_platform",
+        context: `platform:${created.id}`,
+        afterJson: {
+          platform: created.name,
+          code: created.code
+        }
+      });
+      return { success: true, platformId: created.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo crear el corresponsal";
+      return { success: false, message };
+    }
+  });
+  ipcMain2.handle("correspondent:platform:update", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
+      return { success: false, message: "Solo el administrador puede editar corresponsales" };
+    }
+    const parsed = updateCorrespondentPlatformSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Datos invalidos para actualizar el corresponsal" };
+    }
+    const existingPlatform = await prisma2.correspondentPlatform.findUnique({
+      where: { id: parsed.data.platformId }
+    });
+    if (!existingPlatform) {
+      return { success: false, message: "El corresponsal ya no existe" };
+    }
+    const duplicate = await prisma2.correspondentPlatform.findFirst({
+      where: {
+        name: { equals: parsed.data.name.trim() },
+        NOT: { id: existingPlatform.id }
+      },
+      select: { id: true }
+    });
+    if (duplicate) {
+      return { success: false, message: "Ya existe otro corresponsal con ese nombre" };
+    }
+    try {
+      const updated = await prisma2.correspondentPlatform.update({
+        where: { id: existingPlatform.id },
+        data: {
+          name: parsed.data.name.trim(),
+          requiresEvidence: parsed.data.requiresEvidence,
+          supportsOcr: parsed.data.supportsOcr,
+          supportsFileImport: parsed.data.supportsFileImport
+        }
+      });
+      await logCorrespondentAction({
+        prisma: prisma2,
+        currentSessionUser: currentSessionUser2,
+        action: "update_platform",
+        context: `platform:${updated.id}`,
+        beforeJson: {
+          name: existingPlatform.name,
+          requiresEvidence: existingPlatform.requiresEvidence,
+          supportsOcr: existingPlatform.supportsOcr,
+          supportsFileImport: existingPlatform.supportsFileImport
+        },
+        afterJson: {
+          name: updated.name,
+          requiresEvidence: updated.requiresEvidence,
+          supportsOcr: updated.supportsOcr,
+          supportsFileImport: updated.supportsFileImport
+        }
+      });
+      return { success: true, platformId: updated.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo actualizar el corresponsal";
+      return { success: false, message };
+    }
+  });
+  ipcMain2.handle("correspondent:platform:delete", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
+      return { success: false, message: "Solo el administrador puede eliminar corresponsales" };
+    }
+    const parsed = deleteCorrespondentPlatformSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Corresponsal invalido" };
+    }
+    const existingPlatform = await prisma2.correspondentPlatform.findUnique({
+      where: { id: parsed.data.platformId },
+      include: {
+        transactionTypes: {
+          select: { id: true }
+        }
+      }
+    });
+    if (!existingPlatform) {
+      return { success: false, message: "El corresponsal ya no existe" };
+    }
+    try {
+      await prisma2.$transaction(async (tx) => {
+        await tx.correspondentPlatform.update({
+          where: { id: existingPlatform.id },
+          data: { isActive: false }
+        });
+        if (existingPlatform.transactionTypes.length > 0) {
+          await tx.correspondentTransactionType.updateMany({
+            where: { platformId: existingPlatform.id },
+            data: { isActive: false }
+          });
+        }
+      });
+      await logCorrespondentAction({
+        prisma: prisma2,
+        currentSessionUser: currentSessionUser2,
+        action: "delete_platform",
+        context: `platform:${existingPlatform.id}`,
+        beforeJson: {
+          name: existingPlatform.name
+        }
+      });
+      return { success: true, platformId: existingPlatform.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo eliminar el corresponsal";
+      return { success: false, message };
+    }
+  });
+  ipcMain2.handle("correspondent:type:create", async (_event, payload) => {
+    var _a;
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
+      return { success: false, message: "Solo el administrador puede crear tipos" };
+    }
+    const parsed = createCorrespondentTransactionTypeSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Datos invalidos para el tipo" };
+    }
+    const platform = await prisma2.correspondentPlatform.findUnique({
+      where: { id: parsed.data.platformId },
+      include: {
+        transactionTypes: {
+          select: { sortOrder: true },
+          orderBy: { sortOrder: "desc" },
+          take: 1
+        }
+      }
+    });
+    if (!platform || !platform.isActive) {
+      return { success: false, message: "El corresponsal ya no existe" };
+    }
+    const typeName = parsed.data.name.trim();
+    const duplicate = await prisma2.correspondentTransactionType.findFirst({
+      where: {
+        platformId: platform.id,
+        name: { equals: typeName }
+      },
+      select: { id: true }
+    });
+    if (duplicate) {
+      return { success: false, message: "Ese corresponsal ya tiene un tipo con ese nombre" };
+    }
+    try {
+      const created = await prisma2.correspondentTransactionType.create({
+        data: {
+          platformId: platform.id,
+          code: await buildUniqueTypeCode(prisma2, platform.id, typeName),
+          name: typeName,
+          direction: parsed.data.direction,
+          isActive: true,
+          sortOrder: (((_a = platform.transactionTypes[0]) == null ? void 0 : _a.sortOrder) ?? 0) + 10
+        }
+      });
+      await logCorrespondentAction({
+        prisma: prisma2,
+        currentSessionUser: currentSessionUser2,
+        action: "create_transaction_type",
+        context: `platform:${platform.id};type:${created.id}`,
+        afterJson: {
+          platform: platform.name,
+          type: created.name,
+          direction: created.direction
+        }
+      });
+      return { success: true, typeId: created.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo crear el tipo";
+      return { success: false, message };
+    }
+  });
+  ipcMain2.handle("correspondent:type:update", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
+      return { success: false, message: "Solo el administrador puede editar tipos" };
+    }
+    const parsed = updateCorrespondentTransactionTypeSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Datos invalidos para actualizar el tipo" };
+    }
+    const existingType = await prisma2.correspondentTransactionType.findUnique({
+      where: { id: parsed.data.typeId }
+    });
+    if (!existingType) {
+      return { success: false, message: "El tipo ya no existe" };
+    }
+    const duplicate = await prisma2.correspondentTransactionType.findFirst({
+      where: {
+        platformId: existingType.platformId,
+        name: { equals: parsed.data.name.trim() },
+        NOT: { id: existingType.id }
+      },
+      select: { id: true }
+    });
+    if (duplicate) {
+      return { success: false, message: "Ya existe otro tipo con ese nombre en el corresponsal" };
+    }
+    try {
+      const updated = await prisma2.correspondentTransactionType.update({
+        where: { id: existingType.id },
+        data: {
+          name: parsed.data.name.trim(),
+          direction: parsed.data.direction
+        }
+      });
+      await logCorrespondentAction({
+        prisma: prisma2,
+        currentSessionUser: currentSessionUser2,
+        action: "update_transaction_type",
+        context: `platform:${existingType.platformId};type:${updated.id}`,
+        beforeJson: {
+          name: existingType.name,
+          direction: existingType.direction
+        },
+        afterJson: {
+          name: updated.name,
+          direction: updated.direction
+        }
+      });
+      return { success: true, typeId: updated.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo actualizar el tipo";
+      return { success: false, message };
+    }
+  });
+  ipcMain2.handle("correspondent:type:delete", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
+      return { success: false, message: "Solo el administrador puede eliminar tipos" };
+    }
+    const parsed = deleteCorrespondentTransactionTypeSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, message: "Tipo invalido" };
+    }
+    const existingType = await prisma2.correspondentTransactionType.findUnique({
+      where: { id: parsed.data.typeId }
+    });
+    if (!existingType) {
+      return { success: false, message: "El tipo ya no existe" };
+    }
+    try {
+      await prisma2.correspondentTransactionType.update({
+        where: { id: existingType.id },
+        data: { isActive: false }
+      });
+      await logCorrespondentAction({
+        prisma: prisma2,
+        currentSessionUser: currentSessionUser2,
+        action: "delete_transaction_type",
+        context: `platform:${existingType.platformId};type:${existingType.id}`,
+        beforeJson: {
+          name: existingType.name,
+          direction: existingType.direction
+        }
+      });
+      return { success: true, typeId: existingType.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo eliminar el tipo";
       return { success: false, message };
     }
   });
@@ -846,7 +1657,7 @@ function registerCorrespondentIpcHandlers({
     const [platforms, closures, transactions] = await Promise.all([
       prisma2.correspondentPlatform.findMany({
         where: { isActive: true },
-        orderBy: { name: "asc" }
+        orderBy: [{ createdAt: "asc" }, { name: "asc" }]
       }),
       prisma2.correspondentDailyClosure.findMany({
         where: { businessDate },
@@ -863,13 +1674,36 @@ function registerCorrespondentIpcHandlers({
       acc[transaction.platformId] = [...acc[transaction.platformId] ?? [], transaction];
       return acc;
     }, {});
+    const totals = summarizeCorrespondentTransactions(transactions);
     return {
       success: true,
       businessDate: businessDate.toISOString(),
+      totals: {
+        totalIn: totals.totalIn,
+        totalOut: totals.totalOut,
+        netTotal: totals.totalIn - totals.totalOut,
+        transactionsCount: totals.transactionsCount
+      },
       closures: platforms.map((platform) => {
         const platformTransactions = transactionsByPlatform[platform.id] ?? [];
         const summary = summarizeCorrespondentTransactions(platformTransactions);
         const closure = closureByPlatform.get(platform.id) ?? null;
+        const breakdownMap = platformTransactions.reduce((acc, transaction) => {
+          if (transaction.status === CorrespondentTransactionStatus.VOIDED) {
+            return acc;
+          }
+          const current = acc[transaction.typeId] ?? {
+            typeId: transaction.typeId,
+            type: transaction.type.name,
+            direction: transaction.type.direction,
+            total: 0,
+            count: 0
+          };
+          current.total += transaction.amount;
+          current.count += 1;
+          acc[transaction.typeId] = current;
+          return acc;
+        }, {});
         return {
           platformId: platform.id,
           platform: platform.name,
@@ -879,8 +1713,10 @@ function registerCorrespondentIpcHandlers({
           expectedBalance: summary.totalIn - summary.totalOut + summary.totalCommission,
           transactionsCount: summary.transactionsCount,
           pendingTransactions: summary.pendingClosureCount,
+          breakdown: Object.values(breakdownMap).sort((a, b) => a.type.localeCompare(b.type, "es")),
           closure: closure ? {
             id: closure.id,
+            expectedBalance: closure.expectedBalance,
             reportedBalance: closure.reportedBalance,
             differenceAmount: closure.differenceAmount,
             status: closure.status,
@@ -924,7 +1760,7 @@ function registerCorrespondentIpcHandlers({
       (transaction) => transaction.status === CorrespondentTransactionStatus.REGISTERED && !transaction.dailyClosureId
     );
     const summary = summarizeCorrespondentTransactions(openTransactions);
-    const expectedBalance = summary.totalIn - summary.totalOut + summary.totalCommission;
+    const expectedBalance = data.openingBalance + summary.totalIn - summary.totalOut + summary.totalCommission;
     const differenceAmount = data.reportedBalance - expectedBalance;
     try {
       const closure = await prisma2.$transaction(async (tx) => {
@@ -987,25 +1823,86 @@ function registerCorrespondentIpcHandlers({
     }
   });
 }
+const treasurySourceMediumSchema = z.enum(["CASH", "TRANSFER", "CORRESPONDENT"]);
+const accountingRangeSchema = z.object({
+  dateFrom: z.string().datetime().optional(),
+  dateTo: z.string().datetime().optional()
+}).optional().default({});
+const createAccountingCreditSchema = z.object({
+  saleId: z.string().uuid("saleId invalido"),
+  customerId: z.string().uuid("customerId invalido"),
+  total: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0").optional(),
+  dueDate: z.string().datetime("Fecha de vencimiento invalida").optional().nullable()
+});
+const createAccountingPaymentSchema = z.object({
+  creditId: z.string().uuid("creditId invalido"),
+  amount: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  method: paymentMethodSchema.optional().default("CASH"),
+  note: z.string().trim().max(250).optional().nullable()
+});
+const createAccountingCreditNoteSchema = z.object({
+  saleId: z.string().uuid("saleId invalido"),
+  amount: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  reason: z.string().trim().max(250).optional().nullable()
+});
+const createAccountingExpenseSchema = z.object({
+  amount: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  note: z.string().trim().min(2, "La descripcion es obligatoria").max(250),
+  type: z.enum(["EXPENSE_OUT", "WITHDRAWAL_OUT"]).optional().default("EXPENSE_OUT"),
+  sourceMedium: treasurySourceMediumSchema.optional().default("CASH"),
+  sourcePlatformId: z.string().uuid("Plataforma invalida").optional().nullable()
+});
+const productUnitMeasureSchema = z.enum([
+  "UNIDAD",
+  "PAR",
+  "METRO",
+  "CENTIMETRO",
+  "CAJA",
+  "PAQUETE",
+  "DOCENA",
+  "ROLLO",
+  "BOLSA",
+  "BOTELLA",
+  "FRASCO",
+  "LIBRA",
+  "KILO",
+  "LITRO"
+]);
+const allowedTaxRates = [0, 0.05, 0.19];
+function validateAllowedTaxRate(taxRate, ctx) {
+  if (taxRate === void 0)
+    return;
+  if (!allowedTaxRates.includes(taxRate)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "El IVA permitido es: no aplica, 0%, 5% o 19%",
+      path: ["taxRate"]
+    });
+  }
+}
 const createProductSchema = z.object({
-  name: z.string({ message: "El nombre es obligatorio" }).trim().min(2, "Mínimo 2 caracteres").max(120, "Máximo 120 caracteres"),
+  name: z.string({ message: "El nombre es obligatorio" }).trim().min(2, "Minimo 2 caracteres").max(120, "Maximo 120 caracteres"),
   barcode: z.string().trim().min(1).max(50).optional().nullable(),
   sku: z.string().trim().min(1).max(50).optional().nullable(),
+  unitMeasure: productUnitMeasureSchema.optional().default("UNIDAD"),
   price: z.number({ message: "El precio es obligatorio" }).positive("El precio debe ser mayor a 0"),
   cost: z.number().min(0, "El costo no puede ser negativo").optional().default(0),
   marginPercent: z.number().min(0, "La ganancia no puede ser negativa").optional().default(0),
   hasTax: z.boolean().optional().default(false),
-  taxRate: z.number().min(0).max(1, "taxRate debe ser entre 0 y 1 (ej: 0.19)").optional().default(0),
-  stock: z.number().int("El stock debe ser un número entero").min(0, "El stock no puede ser negativo").optional().default(0),
+  taxRate: z.number().min(0).max(1).optional().default(0),
+  stock: z.number().int("El stock debe ser un numero entero").min(0, "El stock no puede ser negativo").optional().default(0),
   categoryId: z.string().uuid().optional().nullable(),
   subcategoryId: z.string().uuid().optional().nullable(),
   isActive: z.boolean().optional().default(true)
+}).superRefine((data, ctx) => {
+  validateAllowedTaxRate(data.taxRate, ctx);
 });
 const updateProductSchema = z.object({
-  id: z.string().uuid("ID de producto inválido"),
-  name: z.string().trim().min(2, "Mínimo 2 caracteres").max(120).optional(),
+  id: z.string().uuid("ID de producto invalido"),
+  name: z.string().trim().min(2, "Minimo 2 caracteres").max(120).optional(),
   barcode: z.string().trim().min(1).max(50).optional().nullable(),
   sku: z.string().trim().min(1).max(50).optional().nullable(),
+  unitMeasure: productUnitMeasureSchema.optional(),
   price: z.number().positive("El precio debe ser mayor a 0").optional(),
   cost: z.number().min(0).optional(),
   marginPercent: z.number().min(0).optional(),
@@ -1015,15 +1912,535 @@ const updateProductSchema = z.object({
   categoryId: z.string().uuid().optional().nullable(),
   subcategoryId: z.string().uuid().optional().nullable(),
   isActive: z.boolean().optional()
+}).superRefine((data, ctx) => {
+  validateAllowedTaxRate(data.taxRate, ctx);
 });
 z.object({
-  productId: z.string().uuid("ID de producto inválido"),
-  delta: z.number().int("El ajuste debe ser un número entero").refine((n) => n !== 0, "El ajuste no puede ser 0"),
+  productId: z.string().uuid("ID de producto invalido"),
+  delta: z.number().int("El ajuste debe ser un numero entero").refine((n) => n !== 0, "El ajuste no puede ser 0"),
   reason: z.string().trim().max(200).optional()
 });
 z.object({
-  barcode: z.string().trim().min(1, "Barcode no puede estar vacío")
+  barcode: z.string().trim().min(1, "Barcode no puede estar vacio")
 });
+const adminSections = [
+  {
+    title: "Contabilidad",
+    groups: [
+      {
+        title: "Inicio y documentos",
+        permissions: [
+          "Ver detalle de operaciones",
+          "Ver graficas y tablas de la pagina de inicio",
+          "Eliminar archivos adjuntos en documentos"
+        ]
+      },
+      {
+        title: "Facturas de venta",
+        permissions: [
+          "Ver listado",
+          "Ver detalles",
+          "Crear nuevas facturas",
+          "Editar facturas por cobrar",
+          "Editar facturas borrador",
+          "Editar descuentos en facturas",
+          "Editar precios de los items de venta en facturas",
+          "Eliminar",
+          "Anular",
+          "Exportar facturas en Excel",
+          "Convertir facturas en recurrentes"
+        ]
+      },
+      {
+        title: "Facturas recurrentes",
+        permissions: [
+          "Ver listado",
+          "Ver detalles",
+          "Crear nuevas facturas recurrentes",
+          "Editar facturas recurrentes",
+          "Eliminar"
+        ]
+      },
+      {
+        title: "Notas de credito",
+        permissions: [
+          "Ver listado",
+          "Ver detalles",
+          "Crear nuevas notas de credito",
+          "Editar notas de credito",
+          "Eliminar",
+          "Exportar notas de credito en Excel"
+        ]
+      },
+      {
+        title: "Cotizaciones",
+        permissions: [
+          "Ver listado",
+          "Ver detalles",
+          "Crear nuevas cotizaciones",
+          "Editar cotizaciones",
+          "Editar descuentos en cotizaciones",
+          "Editar precios de productos de venta en cotizaciones",
+          "Eliminar",
+          "Exportar cotizaciones en Excel"
+        ]
+      },
+      {
+        title: "Remisiones",
+        permissions: [
+          "Ver listado",
+          "Ver detalles",
+          "Crear nuevas remisiones",
+          "Editar",
+          "Editar descuento",
+          "Editar precios de items de venta en remisiones",
+          "Eliminar",
+          "Anular",
+          "Exportar remisiones en Excel",
+          "Editar plantillas de impresion"
+        ]
+      },
+      {
+        title: "Terminos, numeraciones y vendedores",
+        permissions: [
+          "Crear nuevos terminos de pago",
+          "Editar terminos de pago",
+          "Eliminar terminos de pago",
+          "Crear nuevas numeraciones",
+          "Editar numeraciones",
+          "Eliminar numeraciones",
+          "Activar o desactivar numeraciones",
+          "Crear nuevos vendedores",
+          "Editar vendedores",
+          "Eliminar vendedores",
+          "Activar o desactivar vendedores"
+        ]
+      },
+      {
+        title: "Compras y proveedores",
+        permissions: [
+          "Ver listado de facturas de proveedores",
+          "Ver detalles de facturas de proveedores",
+          "Crear nuevas facturas de proveedores",
+          "Editar facturas de proveedores",
+          "Exportar facturas de proveedores en Excel",
+          "Eliminar facturas de proveedores",
+          "Crear nuevos pagos recurrentes",
+          "Editar pagos recurrentes",
+          "Eliminar pagos recurrentes",
+          "Crear nuevas ordenes de compra",
+          "Editar ordenes de compra",
+          "Eliminar ordenes de compra",
+          "Anular ordenes de compra",
+          "Exportar ordenes de compra en Excel"
+        ]
+      },
+      {
+        title: "Notas debito, pagos y gastos",
+        permissions: [
+          "Crear nuevas notas debito",
+          "Editar notas debito",
+          "Eliminar notas debito",
+          "Anular notas debito",
+          "Exportar notas debito",
+          "Crear pago menor",
+          "Ver detalle de pago menor",
+          "Editar pago menor",
+          "Eliminar pago menor",
+          "Anular pago menor",
+          "Ver listado de recibos de caja",
+          "Ver detalles de recibos de caja",
+          "Crear nuevos recibos de caja",
+          "Editar recibos de caja",
+          "Ver listado de gastos",
+          "Ver detalles de gastos",
+          "Crear nuevos comprobantes de egreso",
+          "Editar comprobantes de egreso",
+          "Eliminar comprobantes de egreso",
+          "Anular comprobantes de egreso",
+          "Exportar transacciones en Excel"
+        ]
+      },
+      {
+        title: "Bancos e integraciones",
+        permissions: [
+          "Ver listado de bancos",
+          "Ver detalles de bancos",
+          "Agregar nuevos bancos",
+          "Editar bancos",
+          "Eliminar bancos",
+          "Ver saldos",
+          "Conciliar bancos",
+          "Activar o desactivar bancos",
+          "Activar integraciones bancarias",
+          "Crear conexion con banco",
+          "Borrar conexion con banco",
+          "Ver listado de conexiones con bancos",
+          "Actualizar conexion con banco"
+        ]
+      },
+      {
+        title: "Reportes comerciales y financieros",
+        permissions: [
+          "Ver reporte de ventas generales",
+          "Exportar reporte de ventas generales",
+          "Ver reporte de ventas por item",
+          "Exportar reporte de ventas por item",
+          "Ver reporte de ventas por cliente",
+          "Exportar reporte de ventas por cliente",
+          "Ver rentabilidad por item",
+          "Exportar rentabilidad por item",
+          "Ver ventas por vendedor",
+          "Exportar ventas por vendedor",
+          "Ver estado de cuenta de clientes",
+          "Exportar estado de cuenta de clientes",
+          "Exportar reporte de ventas diarias",
+          "Exportar ventas con exencion de IVA",
+          "Ver reporte de cuentas por cobrar",
+          "Exportar reporte de cuentas por cobrar",
+          "Ver reporte de cuentas por pagar",
+          "Exportar reporte de cuentas por pagar",
+          "Ver reporte de ingresos y gastos",
+          "Exportar reporte de ingresos y gastos",
+          "Ver reporte de flujo de efectivo",
+          "Exportar reporte de flujo de efectivo",
+          "Ver reporte de inventario valorizado",
+          "Exportar reporte de inventario valorizado",
+          "Ver reporte de transacciones",
+          "Exportar reporte de transacciones",
+          "Ver reporte de compras",
+          "Exportar reporte de compras",
+          "Ver reporte anual",
+          "Ver estado de resultados",
+          "Exportar estado de resultados",
+          "Ver estado de situacion financiera",
+          "Exportar estado de situacion financiera",
+          "Ver reporte de movimientos por cuenta contable",
+          "Exportar reporte de movimientos por cuenta contable",
+          "Ver libro diario",
+          "Exportar libro diario",
+          "Ver reporte de auxiliar por tercero",
+          "Exportar reporte de auxiliar por tercero",
+          "Ver balance de prueba",
+          "Exportar balance de prueba",
+          "Exportar balance de prueba por tercero",
+          "Ver diferencia en cambio de bancos",
+          "Ver flujo de caja",
+          "Compartir reportes"
+        ]
+      },
+      {
+        title: "Impuestos, DIAN y configuracion tributaria",
+        permissions: [
+          "Ver configuracion",
+          "Editar configuracion",
+          "Sincronizar datos desde la DIAN",
+          "Ver reporte detallado de impuesto",
+          "Exportar reporte detallado de impuestos",
+          "Ver reporte DIOT",
+          "Exportar reporte DIOT",
+          "Exportar comprobante de informe diario",
+          "Ver Formulario 350",
+          "Exportar Formulario 350",
+          "Ver certificados de retencion",
+          "Exportar certificados de retencion",
+          "Configurar informacion exogena",
+          "Exportar reportes exogena",
+          "Exportar informe contador"
+        ]
+      },
+      {
+        title: "Items, inventario y contactos",
+        permissions: [
+          "Ver listado de items",
+          "Ver costos del negocio",
+          "Ver detalles de items",
+          "Crear nuevos items de venta",
+          "Editar items",
+          "Eliminar items",
+          "Exportar listado de items en Excel",
+          "Importar listado de items desde Excel",
+          "Actualizar masivamente los items de venta",
+          "Ver listado de ajustes de inventario",
+          "Ver detalles de ajustes de inventario",
+          "Agregar nuevos ajustes de inventario",
+          "Editar ajustes de inventario",
+          "Eliminar ajustes de inventario",
+          "Exportar ajustes de inventario en Excel",
+          "Importar ajustes de inventario con AI",
+          "Crear nuevas variantes",
+          "Editar variantes",
+          "Eliminar variantes",
+          "Activar o desactivar variantes",
+          "Crear nuevos campos adicionales",
+          "Editar campos adicionales",
+          "Eliminar campos adicionales",
+          "Activar o desactivar campos adicionales",
+          "Crear nuevos almacenes",
+          "Editar almacenes",
+          "Eliminar almacenes",
+          "Activar o desactivar almacenes",
+          "Crear nuevas transferencias",
+          "Editar transferencias",
+          "Eliminar transferencias",
+          "Crear nuevas listas de precios",
+          "Editar listas de precios",
+          "Eliminar listas de precios",
+          "Ver todos los contactos",
+          "Ver listado de clientes",
+          "Ver listado de proveedores",
+          "Ver detalles de todos los contactos",
+          "Ver detalles de clientes",
+          "Ver detalles de proveedores",
+          "Agregar nuevos contactos",
+          "Editar contactos",
+          "Eliminar contactos",
+          "Exportar listado de contactos en Excel",
+          "Importar contactos desde Excel",
+          "Usar los contactos registrados",
+          "Editar limites de credito"
+        ]
+      },
+      {
+        title: "Contabilidad general",
+        permissions: [
+          "Ver listado de cuentas contables",
+          "Ver detalles de cuentas contables",
+          "Agregar nuevas cuentas contables",
+          "Editar cuentas contables",
+          "Eliminar cuentas contables",
+          "Importar cuentas contables",
+          "Exportar cuentas contables",
+          "Ver listado de asientos contables",
+          "Ver detalles de asientos contables",
+          "Agregar nuevos asientos contables",
+          "Editar asientos contables",
+          "Eliminar asientos contables",
+          "Exportar asientos contables",
+          "Importar asientos contables",
+          "Agregar nuevos tipos de comprobante contable",
+          "Editar tipos de comprobante contable",
+          "Eliminar tipos de comprobante contable",
+          "Abrir o cerrar periodos contables",
+          "Crear numeracion contable",
+          "Editar numeracion contable",
+          "Eliminar numeracion contable",
+          "Ver detalles de numeracion contable",
+          "Listar numeraciones contables",
+          "Actualizar estado de numeracion contable",
+          "Ver conciliador fiscal",
+          "Editar conciliador fiscal",
+          "Editar informacion general",
+          "Agregar nuevas monedas",
+          "Editar monedas",
+          "Eliminar monedas",
+          "Agregar nuevos centros de costos",
+          "Editar centros de costos",
+          "Eliminar centros de costos",
+          "Activar o desactivar centros de costos",
+          "Agregar nuevas retenciones",
+          "Editar retenciones",
+          "Eliminar retenciones",
+          "Activar o desactivar retenciones",
+          "Agregar nuevos impuestos",
+          "Editar impuestos",
+          "Eliminar impuestos",
+          "Activar o desactivar impuestos",
+          "Detalle de operaciones: ver listado",
+          "Detalle de operaciones: ver detalles",
+          "Detalle de operaciones: agregar",
+          "Detalle de operaciones: editar",
+          "Detalle de operaciones: eliminar",
+          "Registrar depreciacion"
+        ]
+      }
+    ]
+  },
+  {
+    title: "POS",
+    groups: [
+      {
+        title: "Operacion POS",
+        permissions: [
+          "Acceder al modulo Facturar",
+          "Crear ventas desde POS",
+          "Cambiar cliente en la factura",
+          "Gestionar pagos en efectivo, transferencia y combinado",
+          "Ver historial de ventas",
+          "Anular ventas",
+          "Imprimir factura"
+        ]
+      },
+      {
+        title: "Caja y control diario",
+        permissions: [
+          "Abrir caja",
+          "Cerrar caja",
+          "Registrar movimientos manuales",
+          "Ver arqueos y diferencias",
+          "Consultar resumen de caja"
+        ]
+      },
+      {
+        title: "Operacion de tienda",
+        permissions: [
+          "Ver productos y stock",
+          "Crear productos",
+          "Editar productos",
+          "Archivar productos",
+          "Ver clientes",
+          "Crear clientes",
+          "Editar clientes",
+          "Ver compras y proveedores",
+          "Gestionar corresponsal"
+        ]
+      }
+    ]
+  },
+  {
+    title: "Configuraciones generales",
+    groups: [
+      {
+        title: "Usuarios y seguridad",
+        permissions: [
+          "Ver usuarios",
+          "Crear usuarios",
+          "Editar usuarios",
+          "Activar o desactivar usuarios",
+          "Ver roles y permisos",
+          "Administrar el rol Administrador",
+          "Puede agregar o eliminar usuarios"
+        ]
+      },
+      {
+        title: "Negocio y sistema",
+        permissions: [
+          "Editar configuracion general del negocio",
+          "Editar informacion fiscal",
+          "Configurar numeraciones",
+          "Configurar impuestos",
+          "Configurar listas de precios",
+          "Configurar almacenes",
+          "Sincronizar informacion"
+        ]
+      }
+    ]
+  }
+];
+const employeeSections = [
+  {
+    title: "POS",
+    groups: [
+      {
+        title: "Operacion POS",
+        permissions: [
+          "Acceder al modulo Facturar",
+          "Crear ventas desde POS",
+          "Gestionar pago en efectivo",
+          "Gestionar pago por transferencia",
+          "Ver historial de ventas",
+          "Imprimir factura"
+        ]
+      },
+      {
+        title: "Caja y tienda",
+        permissions: [
+          "Abrir caja",
+          "Cerrar caja",
+          "Ver resumen de caja",
+          "Ver productos y stock",
+          "Ver clientes",
+          "Crear clientes"
+        ]
+      }
+    ]
+  },
+  {
+    title: "Configuraciones generales",
+    groups: [
+      {
+        title: "Restricciones",
+        permissions: [
+          "Sin acceso a crear usuarios",
+          "Sin acceso a editar roles",
+          "Sin acceso a configuraciones fiscales",
+          "Sin acceso a reportes financieros avanzados"
+        ]
+      }
+    ]
+  }
+];
+const ROLE_DEFINITIONS = [
+  {
+    key: "ADMIN",
+    name: "Administrador",
+    description: "Acceso completo a todas las secciones del sistema, puede agregar o eliminar usuarios y administrar la configuracion general.",
+    sections: adminSections
+  },
+  {
+    key: "EMPLOYEE",
+    name: "Empleado",
+    description: "Acceso operativo para ventas y caja, con permisos limitados sobre configuracion, usuarios y reportes sensibles.",
+    sections: employeeSections
+  }
+];
+function getRoleDefinition(role) {
+  return ROLE_DEFINITIONS.find((entry) => entry.key === role) ?? ROLE_DEFINITIONS[0];
+}
+function slugify(value) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+function buildPermissionKey(sectionTitle, groupTitle, label) {
+  return [slugify(sectionTitle), slugify(groupTitle), slugify(label)].filter(Boolean).join(".");
+}
+function flattenRolePermissionCatalog(role) {
+  return role.sections.flatMap(
+    (section) => section.groups.flatMap(
+      (group) => group.permissions.map((permission) => ({
+        key: buildPermissionKey(section.title, group.title, permission),
+        label: permission,
+        sectionTitle: section.title,
+        groupTitle: group.title
+      }))
+    )
+  );
+}
+function getPermissionCatalogItem(roleKey, permissionKey) {
+  return flattenRolePermissionCatalog(getRoleDefinition(roleKey)).find((item) => item.key === permissionKey) ?? null;
+}
+const APP_PERMISSION_KEYS = {
+  posAccess: buildPermissionKey("POS", "Operacion POS", "Acceder al modulo Facturar"),
+  salesCreate: buildPermissionKey("POS", "Operacion POS", "Crear ventas desde POS"),
+  salesChangeCustomer: buildPermissionKey("POS", "Operacion POS", "Cambiar cliente en la factura"),
+  salesManagePayments: buildPermissionKey("POS", "Operacion POS", "Gestionar pagos en efectivo, transferencia y combinado"),
+  salesHistory: buildPermissionKey("POS", "Operacion POS", "Ver historial de ventas"),
+  salesPrint: buildPermissionKey("POS", "Operacion POS", "Imprimir factura"),
+  cashOpen: buildPermissionKey("POS", "Caja y control diario", "Abrir caja"),
+  cashClose: buildPermissionKey("POS", "Caja y control diario", "Cerrar caja"),
+  cashView: buildPermissionKey("POS", "Caja y control diario", "Consultar resumen de caja"),
+  productsView: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Ver listado de items"),
+  productsCreate: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Crear nuevos items de venta"),
+  productsEdit: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Editar items"),
+  productsDelete: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Eliminar items"),
+  stockMovesView: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Ver listado de ajustes de inventario"),
+  purchasesView: buildPermissionKey("Contabilidad", "Compras y proveedores", "Ver listado de facturas de proveedores"),
+  purchasesDetails: buildPermissionKey("Contabilidad", "Compras y proveedores", "Ver detalles de facturas de proveedores"),
+  purchasesCreate: buildPermissionKey("Contabilidad", "Compras y proveedores", "Crear nuevas facturas de proveedores"),
+  suppliersView: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Ver listado de proveedores"),
+  suppliersCreate: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Agregar nuevos contactos"),
+  suppliersEdit: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Editar contactos"),
+  usersView: buildPermissionKey("Configuraciones generales", "Usuarios y seguridad", "Ver usuarios"),
+  usersCreate: buildPermissionKey("Configuraciones generales", "Usuarios y seguridad", "Crear usuarios"),
+  usersEdit: buildPermissionKey("Configuraciones generales", "Usuarios y seguridad", "Editar usuarios"),
+  rolesView: buildPermissionKey("Configuraciones generales", "Usuarios y seguridad", "Ver roles y permisos"),
+  rolesManage: buildPermissionKey("Configuraciones generales", "Usuarios y seguridad", "Administrar el rol Administrador"),
+  customersView: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Ver listado de clientes"),
+  customersCreate: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Agregar nuevos contactos"),
+  customersEdit: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Editar contactos"),
+  correspondentView: buildPermissionKey("POS", "Operacion de tienda", "Gestionar corresponsal"),
+  reportsView: buildPermissionKey("Contabilidad", "Reportes comerciales y financieros", "Ver reporte de ventas generales"),
+  settingsView: buildPermissionKey("Configuraciones generales", "Negocio y sistema", "Editar configuracion general del negocio")
+};
 const createCategorySchema = z.object({
   name: z.string().trim().min(2).max(80)
 });
@@ -1042,6 +2459,7 @@ const documentTypeSchema = z.enum([
   "Tarjeta de identidad"
 ]);
 const createCustomerSchema = z.object({
+  internalCode: z.string().trim().max(30).optional().nullable(),
   firstName: z.string().trim().min(2).max(80),
   lastName: z.string().trim().max(80).optional().default(""),
   documentType: documentTypeSchema.optional().default("Cédula"),
@@ -1055,6 +2473,7 @@ const updateCustomerSchema = createCustomerSchema.extend({
   id: z.string().uuid()
 });
 const createSupplierSchema = z.object({
+  internalCode: z.string().trim().max(30).optional().nullable(),
   name: z.string().trim().min(2).max(120),
   contactName: z.string().trim().max(120).optional().nullable(),
   documentType: documentTypeSchema.optional().default("NIT"),
@@ -1072,6 +2491,8 @@ const createPurchaseSchema = z.object({
   purchasedAt: z.string().datetime().optional(),
   note: z.string().trim().max(300).optional().nullable(),
   markAsPaid: z.boolean().optional().default(false),
+  paymentMedium: z.enum(["CASH", "TRANSFER", "CORRESPONDENT"]).optional().default("CASH"),
+  paymentPlatformId: z.string().uuid().optional().nullable(),
   items: z.array(
     z.object({
       productId: z.string().uuid(),
@@ -1087,6 +2508,7 @@ const cashPlatformAmountSchema = z.object({
 });
 const openCashSessionSchema = z.object({
   openingCashAmount: z.number().min(0),
+  openingTransferAmount: z.number().min(0).optional().default(0),
   note: z.string().trim().max(300).optional().nullable(),
   cashBreakdown: z.record(z.string(), z.number()).optional().default({}),
   correspondentBalances: z.array(cashPlatformAmountSchema).optional().default([])
@@ -1094,6 +2516,7 @@ const openCashSessionSchema = z.object({
 const closeCashSessionSchema = z.object({
   sessionId: z.string().uuid(),
   countedCashAmount: z.number().min(0),
+  countedTransferAmount: z.number().min(0).optional().default(0),
   note: z.string().trim().max(300).optional().nullable(),
   cashBreakdown: z.record(z.string(), z.number()).optional().default({}),
   correspondentBalances: z.array(cashPlatformAmountSchema).optional().default([])
@@ -1146,10 +2569,15 @@ function calculateSalePrice(cost, marginPercent = 0, hasTax = false, taxRate = 0
 }
 function paymentMethodLabel(value) {
   if (value === PaymentMethod.CARD)
-    return "Tarjeta";
+    return "Transferencia";
   if (value === PaymentMethod.TRANSFER)
     return "Transferencia";
   return "Efectivo";
+}
+function paymentSummaryLabel(payments, fallback) {
+  if (!payments || payments.length <= 1)
+    return paymentMethodLabel(fallback);
+  return payments.map((payment) => `${paymentMethodLabel(payment.method)} $${payment.amount.toLocaleString("es-CO")}`).join(" + ");
 }
 function buildInvoiceHtml(sale) {
   const rows = sale.items.map(
@@ -1192,7 +2620,7 @@ function buildInvoiceHtml(sale) {
             <div>Fecha: ${sale.createdAt.toLocaleString("es-CO")}</div>
             <div>Cliente: ${sale.customer}</div>
             <div>Cajero: ${sale.cashier.name ?? sale.cashier.username}</div>
-            <div>Pago: ${paymentMethodLabel(sale.paymentMethod)}</div>
+            <div>Pago: ${sale.paymentSummary}</div>
           </div>
         </div>
 
@@ -1224,6 +2652,12 @@ async function ensureAdminSession(getCurrentSessionUser) {
     throw new Error("Solo admins pueden ejecutar esta accion");
   }
   return currentSessionUser2;
+}
+function hasSessionPermission(currentSessionUser2, permissionKey) {
+  var _a;
+  if (!permissionKey)
+    return true;
+  return Boolean((_a = currentSessionUser2 == null ? void 0 : currentSessionUser2.permissions) == null ? void 0 : _a.includes(permissionKey));
 }
 function actorLabel(currentSessionUser2) {
   var _a;
@@ -1278,6 +2712,281 @@ function parseSessionMeta(note) {
 }
 function stringifySessionMeta(meta) {
   return JSON.stringify(meta);
+}
+function toAmountMap(items) {
+  return new Map((items ?? []).map((item) => [item.platformId, Number(item.amount || 0)]));
+}
+function normalizeTreasuryMedium(value) {
+  if (value === "TRANSFER" || value === "CORRESPONDENT")
+    return value;
+  return "CASH";
+}
+function parseTreasuryMovementMeta(note) {
+  if (!note)
+    return null;
+  try {
+    const parsed = JSON.parse(note);
+    if (!parsed || typeof parsed !== "object")
+      return null;
+    if (!parsed.medium && !parsed.label && !parsed.sourceType)
+      return null;
+    return {
+      ...parsed,
+      medium: normalizeTreasuryMedium(parsed.medium)
+    };
+  } catch {
+    return null;
+  }
+}
+function buildTreasuryMovementNote(meta) {
+  return JSON.stringify(meta);
+}
+function resolveMovementLabel(note, fallback = "Movimiento de caja") {
+  const meta = parseTreasuryMovementMeta(note);
+  return (meta == null ? void 0 : meta.label) || (meta == null ? void 0 : meta.userNote) || note || fallback;
+}
+function resolveMovementMedium(note) {
+  var _a;
+  return ((_a = parseTreasuryMovementMeta(note)) == null ? void 0 : _a.medium) ?? "CASH";
+}
+function resolveMovementPlatformId(note) {
+  var _a;
+  return ((_a = parseTreasuryMovementMeta(note)) == null ? void 0 : _a.platformId) ?? null;
+}
+function resolveMovementPlatformName(note) {
+  var _a;
+  return ((_a = parseTreasuryMovementMeta(note)) == null ? void 0 : _a.platformName) ?? null;
+}
+function buildDateRangeFilter(dateFrom, dateTo) {
+  return dateFrom || dateTo ? {
+    ...dateFrom ? { gte: new Date(dateFrom) } : {},
+    ...dateTo ? { lte: new Date(dateTo) } : {}
+  } : void 0;
+}
+function getSessionSection(meta, key) {
+  const raw = meta[key];
+  return raw && typeof raw === "object" ? raw : {};
+}
+function getSectionTransferAmount(section) {
+  return Number(section.transferAmount ?? 0);
+}
+function buildSalePaymentTotals(sales) {
+  return sales.reduce(
+    (acc, sale) => {
+      if (sale.payments && sale.payments.length > 0) {
+        for (const payment of sale.payments) {
+          if (payment.method === PaymentMethod.CASH)
+            acc.cash += payment.amount;
+          if (payment.method === PaymentMethod.TRANSFER || payment.method === PaymentMethod.CARD) {
+            acc.transfer += payment.amount;
+          }
+        }
+        return acc;
+      }
+      if (sale.paymentMethod === PaymentMethod.CASH) {
+        acc.cash += sale.total;
+      } else {
+        acc.transfer += sale.total;
+      }
+      return acc;
+    },
+    { cash: 0, transfer: 0 }
+  );
+}
+function buildCorrespondentMovementMap(movements) {
+  const map = /* @__PURE__ */ new Map();
+  for (const move of movements) {
+    const medium = resolveMovementMedium(move.note);
+    if (medium !== "CORRESPONDENT")
+      continue;
+    const platformId = resolveMovementPlatformId(move.note);
+    if (!platformId)
+      continue;
+    const current = map.get(platformId) ?? { manualIncome: 0, manualExpense: 0, platformName: resolveMovementPlatformName(move.note) };
+    if (move.type === CashMovementType.INCOME_IN)
+      current.manualIncome += move.amount;
+    if (move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT) {
+      current.manualExpense += move.amount;
+    }
+    if (!current.platformName)
+      current.platformName = resolveMovementPlatformName(move.note);
+    map.set(platformId, current);
+  }
+  return map;
+}
+function buildSessionTreasurySnapshot(params) {
+  const sessionMeta = parseSessionMeta(params.session.note);
+  const opening = getSessionSection(sessionMeta, "opening");
+  const closing = getSessionSection(sessionMeta, "closing");
+  const openingCorrespondent = toAmountMap(
+    opening.correspondentBalances ?? []
+  );
+  const closingCorrespondent = toAmountMap(
+    closing.correspondentBalances ?? []
+  );
+  const openingTransferAmount = getSectionTransferAmount(opening);
+  const countedTransferAmount = closing.transferAmount === void 0 ? null : getSectionTransferAmount(closing);
+  const saleTotals = buildSalePaymentTotals(params.session.sales);
+  const cashManualIncome = params.session.movements.filter((move) => move.type === CashMovementType.INCOME_IN && resolveMovementMedium(move.note) === "CASH").reduce((sum, move) => sum + move.amount, 0);
+  const transferManualIncome = params.session.movements.filter((move) => move.type === CashMovementType.INCOME_IN && resolveMovementMedium(move.note) === "TRANSFER").reduce((sum, move) => sum + move.amount, 0);
+  const cashManualExpense = params.session.movements.filter(
+    (move) => (move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT) && resolveMovementMedium(move.note) === "CASH"
+  ).reduce((sum, move) => sum + move.amount, 0);
+  const transferManualExpense = params.session.movements.filter(
+    (move) => (move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT) && resolveMovementMedium(move.note) === "TRANSFER"
+  ).reduce((sum, move) => sum + move.amount, 0);
+  const correspondentManualMap = buildCorrespondentMovementMap(params.session.movements);
+  const expectedCash = params.session.openingAmount + saleTotals.cash + cashManualIncome - cashManualExpense;
+  const expectedTransferAmount = openingTransferAmount + saleTotals.transfer + transferManualIncome - transferManualExpense;
+  const correspondentByPlatform = params.platforms.map((platform) => {
+    const platformTransactions = params.session.correspondentTransactions.filter(
+      (transaction) => transaction.platform.id === platform.id
+    );
+    const totalIn = platformTransactions.filter((transaction) => transaction.type.direction === CorrespondentDirection.IN).reduce((sum, transaction) => sum + transaction.amount, 0);
+    const totalOut = platformTransactions.filter((transaction) => transaction.type.direction === CorrespondentDirection.OUT).reduce((sum, transaction) => sum + transaction.amount, 0);
+    const totalCommission = platformTransactions.reduce((sum, transaction) => sum + transaction.commissionAmount, 0);
+    const manualAdjustments = correspondentManualMap.get(platform.id) ?? {
+      manualIncome: 0,
+      manualExpense: 0,
+      platformName: platform.name
+    };
+    const openingAmount = openingCorrespondent.get(platform.id) ?? 0;
+    const expectedAmount = openingAmount + totalIn - totalOut + totalCommission + manualAdjustments.manualIncome - manualAdjustments.manualExpense;
+    const countedAmount = closingCorrespondent.has(platform.id) ? closingCorrespondent.get(platform.id) ?? 0 : null;
+    return {
+      platformId: platform.id,
+      platform: platform.name,
+      openingAmount,
+      totalIn,
+      totalOut,
+      totalCommission,
+      manualIncome: manualAdjustments.manualIncome,
+      manualExpense: manualAdjustments.manualExpense,
+      expectedAmount,
+      countedAmount,
+      differenceAmount: countedAmount === null ? null : countedAmount - expectedAmount
+    };
+  });
+  const openingCorrespondentTotal = correspondentByPlatform.reduce((sum, item) => sum + item.openingAmount, 0);
+  const correspondentExpectedTotal = correspondentByPlatform.reduce((sum, item) => sum + item.expectedAmount, 0);
+  const countedCorrespondentTotal = correspondentByPlatform.reduce(
+    (sum, item) => sum + (item.countedAmount ?? item.expectedAmount),
+    0
+  );
+  const countedCashAmount = closing.cashBreakdown && typeof closing.cashBreakdown === "object" ? null : params.session.countedAmount ?? null;
+  const expectedAvailableTotal = expectedCash + expectedTransferAmount + correspondentExpectedTotal;
+  const countedAvailableTotal = (params.session.countedAmount ?? expectedCash) + (countedTransferAmount ?? expectedTransferAmount) + countedCorrespondentTotal;
+  return {
+    sessionMeta,
+    opening,
+    closing,
+    openingTransferAmount,
+    countedTransferAmount,
+    salesCash: saleTotals.cash,
+    salesTransfer: saleTotals.transfer,
+    cashManualIncome,
+    transferManualIncome,
+    cashManualExpense,
+    transferManualExpense,
+    expectedCash,
+    expectedTransferAmount,
+    openingCorrespondentTotal,
+    correspondentExpectedTotal,
+    countedCorrespondentTotal,
+    correspondentByPlatform,
+    expectedAvailableTotal,
+    countedAvailableTotal,
+    countedCashAmount
+  };
+}
+function startOfToday() {
+  const today = /* @__PURE__ */ new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+function deriveCreditStatus(balance, total, dueDate) {
+  if (total <= 0)
+    return CreditStatus.CANCELLED;
+  if (balance <= 0)
+    return CreditStatus.PAID;
+  if (dueDate && dueDate.getTime() < startOfToday().getTime())
+    return CreditStatus.OVERDUE;
+  if (balance < total)
+    return CreditStatus.PARTIAL;
+  return CreditStatus.PENDING;
+}
+function mapSaleStatusFromReturns(total, returnedTotal) {
+  if (returnedTotal >= total)
+    return SaleStatus.RETURNED;
+  if (returnedTotal > 0)
+    return SaleStatus.PARTIALLY_RETURNED;
+  return SaleStatus.COMPLETED;
+}
+async function ensureBackofficeSchemaIfNeeded(prismaClient) {
+  const customerColumns = await prismaClient.$queryRawUnsafe(`PRAGMA table_info("Customer");`);
+  const supplierColumns = await prismaClient.$queryRawUnsafe(`PRAGMA table_info("Supplier");`);
+  const customerColumnSet = new Set(customerColumns.map((column) => column.name));
+  const supplierColumnSet = new Set(supplierColumns.map((column) => column.name));
+  if (!customerColumnSet.has("internalCode")) {
+    await prismaClient.$executeRawUnsafe(`ALTER TABLE "Customer" ADD COLUMN "internalCode" TEXT;`);
+  }
+  if (!supplierColumnSet.has("internalCode")) {
+    await prismaClient.$executeRawUnsafe(`ALTER TABLE "Supplier" ADD COLUMN "internalCode" TEXT;`);
+  }
+  const customers = await prismaClient.customer.findMany({
+    select: {
+      id: true,
+      internalCode: true
+    },
+    orderBy: [{ createdAt: "asc" }, { name: "asc" }]
+  });
+  const assignedCustomerCodes = [];
+  for (const customer of customers) {
+    const internalCode = resolveManagedCode({
+      desiredCode: customer.internalCode,
+      existingCodes: assignedCustomerCodes,
+      prefix: "CLI",
+      digits: 4,
+      maxLength: 30
+    });
+    if (internalCode !== customer.internalCode) {
+      await prismaClient.customer.update({
+        where: { id: customer.id },
+        data: { internalCode }
+      });
+    }
+    assignedCustomerCodes.push(internalCode);
+  }
+  const suppliers = await prismaClient.supplier.findMany({
+    select: {
+      id: true,
+      internalCode: true
+    },
+    orderBy: [{ createdAt: "asc" }, { name: "asc" }]
+  });
+  const assignedSupplierCodes = [];
+  for (const supplier of suppliers) {
+    const internalCode = resolveManagedCode({
+      desiredCode: supplier.internalCode,
+      existingCodes: assignedSupplierCodes,
+      prefix: "PRV",
+      digits: 4,
+      maxLength: 30
+    });
+    if (internalCode !== supplier.internalCode) {
+      await prismaClient.supplier.update({
+        where: { id: supplier.id },
+        data: { internalCode }
+      });
+    }
+    assignedSupplierCodes.push(internalCode);
+  }
+  await prismaClient.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "Customer_internalCode_key" ON "Customer"("internalCode");`
+  );
+  await prismaClient.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "Supplier_internalCode_key" ON "Supplier"("internalCode");`
+  );
 }
 function getSkuPrefix(name, categoryName) {
   const source = (categoryName || name || "PRD").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
@@ -1342,6 +3051,9 @@ function registerBackofficeIpcHandlers({
   });
   ipcMain2.handle("settings:update", async (_event, payload) => {
     const currentSessionUser2 = await ensureAdminSession(getCurrentSessionUser);
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.settingsView)) {
+      return { success: false, message: "Tu rol no puede editar la configuracion general" };
+    }
     const parsed = businessSettingsSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Configuracion invalida" };
@@ -1375,7 +3087,7 @@ function registerBackofficeIpcHandlers({
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
-    const [activeSession, recentSessions, platforms] = await Promise.all([
+    const [activeSession, previousClosedSession, recentSessions, platforms] = await Promise.all([
       prisma2.cashSession.findFirst({
         where: { status: CashSessionStatus.OPEN },
         include: {
@@ -1388,7 +3100,13 @@ function registerBackofficeIpcHandlers({
               customer: true,
               total: true,
               paymentMethod: true,
-              createdAt: true
+              createdAt: true,
+              payments: {
+                select: {
+                  method: true,
+                  amount: true
+                }
+              }
             },
             orderBy: { createdAt: "desc" }
           },
@@ -1406,6 +3124,14 @@ function registerBackofficeIpcHandlers({
         },
         orderBy: { openedAt: "desc" }
       }),
+      prisma2.cashSession.findFirst({
+        where: { status: CashSessionStatus.CLOSED },
+        include: {
+          register: true,
+          user: { select: { username: true, name: true } }
+        },
+        orderBy: { closedAt: "desc" }
+      }),
       prisma2.cashSession.findMany({
         include: {
           register: true,
@@ -1415,14 +3141,39 @@ function registerBackofficeIpcHandlers({
         take: 20
       }),
       prisma2.correspondentPlatform.findMany({
-        where: { isActive: true },
         orderBy: { name: "asc" }
       })
     ]);
+    const previousReference = previousClosedSession ? (() => {
+      var _a;
+      const previousMeta = parseSessionMeta(previousClosedSession.note);
+      const previousClosing = getSessionSection(previousMeta, "closing");
+      const previousCorrespondentMap = toAmountMap(
+        previousClosing.correspondentBalances ?? []
+      );
+      const closingRows = platforms.map((platform) => ({
+        platformId: platform.id,
+        platform: platform.name,
+        countedAmount: previousCorrespondentMap.get(platform.id) ?? 0
+      })).filter((item) => item.countedAmount > 0);
+      const countedTransferAmount2 = getSectionTransferAmount(previousClosing);
+      return {
+        sessionId: previousClosedSession.id,
+        registerName: previousClosedSession.register.name,
+        user: previousClosedSession.user.name ?? previousClosedSession.user.username,
+        closedAt: ((_a = previousClosedSession.closedAt) == null ? void 0 : _a.toISOString()) ?? null,
+        countedCashAmount: previousClosedSession.countedAmount ?? 0,
+        countedTransferAmount: countedTransferAmount2,
+        countedAvailableAmount: (previousClosedSession.countedAmount ?? 0) + countedTransferAmount2 + closingRows.reduce((sum, item) => sum + item.countedAmount, 0),
+        closingBreakdown: previousClosing.cashBreakdown && typeof previousClosing.cashBreakdown === "object" ? previousClosing.cashBreakdown : {},
+        correspondent: closingRows
+      };
+    })() : null;
     if (!activeSession) {
       return {
         success: true,
         activeSession: null,
+        previousReference,
         recentSessions: recentSessions.map((session) => {
           var _a;
           return {
@@ -1433,50 +3184,31 @@ function registerBackofficeIpcHandlers({
             openedAt: session.openedAt.toISOString(),
             closedAt: ((_a = session.closedAt) == null ? void 0 : _a.toISOString()) ?? null,
             openingAmount: session.openingAmount,
+            openingAvailableAmount: session.openingAmount + getSectionTransferAmount(getSessionSection(parseSessionMeta(session.note), "opening")) + (getSessionSection(parseSessionMeta(session.note), "opening").correspondentBalances ?? []).reduce((sum, item) => sum + Number(item.amount || 0), 0),
             countedAmount: session.countedAmount,
+            countedAvailableAmount: (session.countedAmount ?? 0) + getSectionTransferAmount(getSessionSection(parseSessionMeta(session.note), "closing")) + (getSessionSection(parseSessionMeta(session.note), "closing").correspondentBalances ?? []).reduce((sum, item) => sum + Number(item.amount || 0), 0),
             differenceAmount: session.differenceAmount
           };
         })
       };
     }
-    const sessionMeta = parseSessionMeta(activeSession.note);
-    const opening = sessionMeta.opening ?? {};
-    const closing = sessionMeta.closing ?? {};
-    const openingCorrespondent = opening.correspondentBalances || [];
-    const closingCorrespondent = closing.correspondentBalances || [];
-    const openingMap = new Map(openingCorrespondent.map((item) => [item.platformId, item.amount]));
-    const closingMap = new Map(closingCorrespondent.map((item) => [item.platformId, item.amount]));
-    const salesCash = activeSession.sales.filter((sale) => sale.paymentMethod === PaymentMethod.CASH).reduce((sum, sale) => sum + sale.total, 0);
-    const salesCard = activeSession.sales.filter((sale) => sale.paymentMethod === PaymentMethod.CARD).reduce((sum, sale) => sum + sale.total, 0);
-    const salesTransfer = activeSession.sales.filter((sale) => sale.paymentMethod === PaymentMethod.TRANSFER).reduce((sum, sale) => sum + sale.total, 0);
-    const manualIncome = activeSession.movements.filter((move) => move.type === CashMovementType.INCOME_IN).reduce((sum, move) => sum + move.amount, 0);
-    const manualExpense = activeSession.movements.filter((move) => move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT).reduce((sum, move) => sum + move.amount, 0);
-    const expectedCash = activeSession.openingAmount + salesCash + manualIncome - manualExpense;
-    const correspondentByPlatform = platforms.map((platform) => {
-      const platformTransactions = activeSession.correspondentTransactions.filter(
-        (transaction) => transaction.platform.id === platform.id
-      );
-      const totalIn = platformTransactions.filter((transaction) => transaction.type.direction === CorrespondentDirection.IN).reduce((sum, transaction) => sum + transaction.amount, 0);
-      const totalOut = platformTransactions.filter((transaction) => transaction.type.direction === CorrespondentDirection.OUT).reduce((sum, transaction) => sum + transaction.amount, 0);
-      const totalCommission = platformTransactions.reduce(
-        (sum, transaction) => sum + transaction.commissionAmount,
-        0
-      );
-      const openingAmount = openingMap.get(platform.id) ?? 0;
-      const expectedAmount = openingAmount + totalIn - totalOut + totalCommission;
-      const countedAmount = closingMap.get(platform.id) ?? null;
-      return {
-        platformId: platform.id,
-        platform: platform.name,
-        openingAmount,
-        totalIn,
-        totalOut,
-        totalCommission,
-        expectedAmount,
-        countedAmount,
-        differenceAmount: countedAmount === null ? null : countedAmount - expectedAmount
-      };
+    const treasury = buildSessionTreasurySnapshot({
+      session: activeSession,
+      platforms
     });
+    const openingAvailableAmount = activeSession.openingAmount + treasury.openingTransferAmount + treasury.openingCorrespondentTotal;
+    const countedCashAmount = activeSession.countedAmount ?? treasury.expectedCash;
+    const countedTransferAmount = treasury.countedTransferAmount ?? treasury.expectedTransferAmount;
+    const openingComparison = previousReference ? {
+      cashDifferenceAmount: activeSession.openingAmount - previousReference.countedCashAmount,
+      transferDifferenceAmount: treasury.openingTransferAmount - previousReference.countedTransferAmount,
+      correspondentDifferenceTotal: treasury.correspondentByPlatform.reduce((sum, item) => {
+        var _a;
+        const previousAmount = ((_a = previousReference.correspondent.find((previous) => previous.platformId === item.platformId)) == null ? void 0 : _a.countedAmount) ?? 0;
+        return sum + (item.openingAmount - previousAmount);
+      }, 0),
+      differenceAmount: openingAvailableAmount - previousReference.countedAvailableAmount
+    } : null;
     return {
       success: true,
       activeSession: {
@@ -1485,41 +3217,72 @@ function registerBackofficeIpcHandlers({
         user: activeSession.user.name ?? activeSession.user.username,
         openedAt: activeSession.openedAt.toISOString(),
         openingAmount: activeSession.openingAmount,
-        expectedCash,
-        countedCashAmount: activeSession.countedAmount,
-        cashDifferenceAmount: activeSession.countedAmount === null ? null : activeSession.countedAmount - expectedCash,
-        salesCash,
-        salesCard,
-        salesTransfer,
-        manualIncome,
-        manualExpense,
-        openingBreakdown: opening.cashBreakdown ?? {},
-        closingBreakdown: closing.cashBreakdown ?? {},
-        correspondent: correspondentByPlatform,
+        openingTransferAmount: treasury.openingTransferAmount,
+        openingAvailableAmount,
+        expectedCash: treasury.expectedCash,
+        expectedTransferAmount: treasury.expectedTransferAmount,
+        expectedAvailableAmount: treasury.expectedAvailableTotal,
+        countedCashAmount,
+        countedTransferAmount,
+        countedAvailableAmount: countedCashAmount + countedTransferAmount + treasury.correspondentByPlatform.reduce(
+          (sum, item) => sum + (item.countedAmount ?? item.expectedAmount),
+          0
+        ),
+        cashDifferenceAmount: countedCashAmount - treasury.expectedCash,
+        transferDifferenceAmount: countedTransferAmount - treasury.expectedTransferAmount,
+        availableDifferenceAmount: countedCashAmount + countedTransferAmount + treasury.correspondentByPlatform.reduce(
+          (sum, item) => sum + (item.countedAmount ?? item.expectedAmount),
+          0
+        ) - treasury.expectedAvailableTotal,
+        salesCash: treasury.salesCash,
+        salesCard: 0,
+        salesTransfer: treasury.salesTransfer,
+        manualIncome: treasury.cashManualIncome,
+        manualExpense: treasury.cashManualExpense,
+        manualTransferIncome: treasury.transferManualIncome,
+        manualTransferExpense: treasury.transferManualExpense,
+        openingBreakdown: treasury.opening.cashBreakdown && typeof treasury.opening.cashBreakdown === "object" ? treasury.opening.cashBreakdown : {},
+        closingBreakdown: treasury.closing.cashBreakdown && typeof treasury.closing.cashBreakdown === "object" ? treasury.closing.cashBreakdown : {},
+        correspondent: treasury.correspondentByPlatform,
+        openingComparison,
         recentActivity: [
-          ...activeSession.sales.map((sale) => ({
-            id: sale.id,
-            createdAt: sale.createdAt.toISOString(),
-            type: "Venta",
-            detail: `${sale.invoiceNumber} - ${sale.customer}`,
-            amount: sale.total
-          })),
+          ...activeSession.sales.flatMap(
+            (sale) => (sale.payments && sale.payments.length > 0 ? sale.payments : [
+              {
+                method: sale.paymentMethod,
+                amount: sale.total
+              }
+            ]).map((payment, index) => ({
+              id: `${sale.id}-${payment.method}-${index}`,
+              createdAt: sale.createdAt.toISOString(),
+              type: "Venta",
+              medium: payment.method === PaymentMethod.CASH ? "Efectivo" : payment.method === PaymentMethod.CARD ? "Transferencia" : "Transferencia",
+              detail: `${sale.invoiceNumber} - ${sale.customer}`,
+              amount: payment.amount,
+              signedAmount: payment.amount
+            }))
+          ),
           ...activeSession.correspondentTransactions.map((transaction) => ({
             id: transaction.id,
             createdAt: transaction.performedAt.toISOString(),
             type: "Corresponsal",
-            detail: `${transaction.platform.name} - ${transaction.type.name}`,
-            amount: transaction.amount
+            medium: transaction.platform.name,
+            detail: `${transaction.type.name}${transaction.commissionAmount > 0 ? ` + comision ${transaction.commissionAmount.toLocaleString("es-CO")}` : ""}`,
+            amount: transaction.amount,
+            signedAmount: transaction.type.direction === CorrespondentDirection.OUT ? -transaction.amount : transaction.amount
           })),
           ...activeSession.movements.map((move) => ({
             id: move.id,
             createdAt: move.createdAt.toISOString(),
             type: move.type,
-            detail: move.note || "Movimiento de caja",
-            amount: move.amount
+            medium: resolveMovementMedium(move.note) === "TRANSFER" ? "Transferencias" : resolveMovementMedium(move.note) === "CORRESPONDENT" ? resolveMovementPlatformName(move.note) || "Corresponsal" : "Efectivo",
+            detail: resolveMovementLabel(move.note),
+            amount: move.amount,
+            signedAmount: move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT ? -move.amount : move.amount
           }))
         ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 30)
       },
+      previousReference,
       recentSessions: recentSessions.map((session) => {
         var _a;
         return {
@@ -1530,7 +3293,9 @@ function registerBackofficeIpcHandlers({
           openedAt: session.openedAt.toISOString(),
           closedAt: ((_a = session.closedAt) == null ? void 0 : _a.toISOString()) ?? null,
           openingAmount: session.openingAmount,
+          openingAvailableAmount: session.openingAmount + getSectionTransferAmount(getSessionSection(parseSessionMeta(session.note), "opening")) + (getSessionSection(parseSessionMeta(session.note), "opening").correspondentBalances ?? []).reduce((sum, item) => sum + Number(item.amount || 0), 0),
           countedAmount: session.countedAmount,
+          countedAvailableAmount: (session.countedAmount ?? 0) + getSectionTransferAmount(getSessionSection(parseSessionMeta(session.note), "closing")) + (getSessionSection(parseSessionMeta(session.note), "closing").correspondentBalances ?? []).reduce((sum, item) => sum + Number(item.amount || 0), 0),
           differenceAmount: session.differenceAmount
         };
       })
@@ -1540,6 +3305,9 @@ function registerBackofficeIpcHandlers({
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.cashOpen)) {
+      return { success: false, message: "Tu rol no puede abrir caja" };
+    }
     const parsed = openCashSessionSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Datos invalidos para apertura de caja" };
@@ -1554,9 +3322,11 @@ function registerBackofficeIpcHandlers({
     });
     if (!register)
       return { success: false, message: "No hay caja activa configurada" };
+    const openingAvailableAmount = parsed.data.openingCashAmount + parsed.data.openingTransferAmount + parsed.data.correspondentBalances.reduce((sum, item) => sum + Number(item.amount || 0), 0);
     const meta = stringifySessionMeta({
       opening: {
         cashBreakdown: parsed.data.cashBreakdown,
+        transferAmount: parsed.data.openingTransferAmount,
         correspondentBalances: parsed.data.correspondentBalances,
         note: parsed.data.note || null
       }
@@ -1567,7 +3337,7 @@ function registerBackofficeIpcHandlers({
         userId: currentSessionUser2.id,
         status: CashSessionStatus.OPEN,
         openingAmount: parsed.data.openingCashAmount,
-        expectedAmount: parsed.data.openingCashAmount,
+        expectedAmount: openingAvailableAmount,
         note: meta
       }
     });
@@ -1585,18 +3355,31 @@ function registerBackofficeIpcHandlers({
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.cashClose)) {
+      return { success: false, message: "Tu rol no puede cerrar caja" };
+    }
     const parsed = closeCashSessionSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Datos invalidos para cierre de caja" };
     const session = await prisma2.cashSession.findUnique({
       where: { id: parsed.data.sessionId },
       include: {
-        sales: true,
+        sales: {
+          include: {
+            payments: {
+              select: {
+                method: true,
+                amount: true
+              }
+            }
+          }
+        },
         movements: true,
         correspondentTransactions: {
           where: { status: "REGISTERED" },
           include: {
-            type: { select: { direction: true } }
+            platform: { select: { id: true, name: true } },
+            type: { select: { name: true, direction: true } }
           }
         }
       }
@@ -1604,16 +3387,29 @@ function registerBackofficeIpcHandlers({
     if (!session || session.status !== CashSessionStatus.OPEN) {
       return { success: false, message: "La caja seleccionada no está abierta" };
     }
-    const salesCash = session.sales.filter((sale) => sale.paymentMethod === PaymentMethod.CASH).reduce((sum, sale) => sum + sale.total, 0);
-    const manualIncome = session.movements.filter((move) => move.type === CashMovementType.INCOME_IN).reduce((sum, move) => sum + move.amount, 0);
-    const manualExpense = session.movements.filter((move) => move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT).reduce((sum, move) => sum + move.amount, 0);
-    const expectedCash = session.openingAmount + salesCash + manualIncome - manualExpense;
-    const differenceAmount = parsed.data.countedCashAmount - expectedCash;
+    const platforms = await prisma2.correspondentPlatform.findMany({
+      orderBy: { name: "asc" }
+    });
+    const treasury = buildSessionTreasurySnapshot({
+      session,
+      platforms
+    });
+    const expectedCash = treasury.expectedCash;
+    const cashDifferenceAmount = parsed.data.countedCashAmount - expectedCash;
+    const countedCorrespondentTotal = treasury.correspondentByPlatform.reduce((sum, item) => {
+      var _a;
+      const counted = (_a = parsed.data.correspondentBalances.find((entry) => entry.platformId === item.platformId)) == null ? void 0 : _a.amount;
+      return sum + Number(counted ?? item.expectedAmount);
+    }, 0);
+    const expectedAvailableAmount = expectedCash + treasury.expectedTransferAmount + treasury.correspondentExpectedTotal;
+    const countedAvailableAmount = parsed.data.countedCashAmount + parsed.data.countedTransferAmount + countedCorrespondentTotal;
+    const differenceAmount = countedAvailableAmount - expectedAvailableAmount;
     const previousMeta = parseSessionMeta(session.note);
     const updatedMeta = stringifySessionMeta({
       ...previousMeta,
       closing: {
         cashBreakdown: parsed.data.cashBreakdown,
+        transferAmount: parsed.data.countedTransferAmount,
         correspondentBalances: parsed.data.correspondentBalances,
         note: parsed.data.note || null
       }
@@ -1624,7 +3420,7 @@ function registerBackofficeIpcHandlers({
         data: {
           status: CashSessionStatus.CLOSED,
           countedAmount: parsed.data.countedCashAmount,
-          expectedAmount: expectedCash,
+          expectedAmount: expectedAvailableAmount,
           differenceAmount,
           note: updatedMeta,
           closedAt: /* @__PURE__ */ new Date()
@@ -1644,7 +3440,11 @@ function registerBackofficeIpcHandlers({
             sessionId: session.id,
             type: CashMovementType.DIFFERENCE,
             amount: differenceAmount,
-            note: "Diferencia de cierre"
+            note: buildTreasuryMovementNote({
+              label: `Diferencia general de cierre (${cashDifferenceAmount >= 0 ? "POS" : "negativa"} en efectivo: ${cashDifferenceAmount.toLocaleString("es-CO")})`,
+              medium: "CASH",
+              sourceType: "MANUAL"
+            })
           }
         });
       }
@@ -1658,6 +3458,12 @@ function registerBackofficeIpcHandlers({
     const users = await prisma2.user.findMany({
       orderBy: [{ role: "asc" }, { username: "asc" }],
       include: {
+        roleProfile: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
         _count: {
           select: {
             sales: true,
@@ -1668,16 +3474,29 @@ function registerBackofficeIpcHandlers({
     });
     return {
       success: true,
-      users: users.map((user) => ({
-        id: user.id,
-        name: user.name,
-        username: user.username,
-        role: user.role,
-        isActive: user.isActive,
-        createdAt: user.createdAt.toISOString(),
-        salesCount: user._count.sales,
-        sessionsCount: user._count.cashSessions
-      }))
+      users: users.map((user) => {
+        var _a, _b, _c;
+        return {
+          id: user.id,
+          internalCode: user.internalCode,
+          name: user.name,
+          firstName: user.firstName ?? user.name,
+          lastName: user.lastName,
+          username: user.username,
+          documentNumber: user.documentNumber,
+          email: user.email,
+          phone: user.phone,
+          address: user.address,
+          birthDate: ((_a = user.birthDate) == null ? void 0 : _a.toISOString().slice(0, 10)) ?? null,
+          role: user.role,
+          roleProfileId: ((_b = user.roleProfile) == null ? void 0 : _b.id) ?? null,
+          roleProfileName: ((_c = user.roleProfile) == null ? void 0 : _c.name) ?? null,
+          isActive: user.isActive,
+          createdAt: user.createdAt.toISOString(),
+          salesCount: user._count.sales,
+          sessionsCount: user._count.cashSessions
+        };
+      })
     };
   });
   ipcMain2.handle("products:categories:list", async () => {
@@ -1732,6 +3551,7 @@ function registerBackofficeIpcHandlers({
           name: product.name,
           sku: product.sku,
           barcode: product.barcode,
+          unitMeasure: product.unitMeasure,
           price: product.price,
           cost: product.cost,
           marginPercent: product.marginPercent,
@@ -1756,6 +3576,9 @@ function registerBackofficeIpcHandlers({
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsCreate)) {
+      return { success: false, message: "Tu rol no puede crear productos" };
+    }
     const parsed = createProductSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Datos invalidos para el producto" };
@@ -1769,6 +3592,7 @@ function registerBackofficeIpcHandlers({
             name: data.name,
             sku,
             barcode: data.barcode || null,
+            unitMeasure: data.unitMeasure ?? "UNIDAD",
             price: money$1(data.price),
             cost: money$1(data.cost ?? 0),
             marginPercent: data.marginPercent ?? 0,
@@ -1810,6 +3634,9 @@ function registerBackofficeIpcHandlers({
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsEdit)) {
+      return { success: false, message: "Tu rol no puede editar productos" };
+    }
     const parsed = updateProductSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Datos invalidos para actualizar el producto" };
@@ -1824,6 +3651,7 @@ function registerBackofficeIpcHandlers({
             name: parsed.data.name ?? current.name,
             sku: parsed.data.sku ?? current.sku,
             barcode: parsed.data.barcode === void 0 ? current.barcode : parsed.data.barcode,
+            unitMeasure: parsed.data.unitMeasure ?? current.unitMeasure,
             price: parsed.data.price === void 0 ? current.price : money$1(parsed.data.price),
             cost: parsed.data.cost === void 0 ? current.cost : money$1(parsed.data.cost),
             marginPercent: parsed.data.marginPercent ?? current.marginPercent,
@@ -1860,6 +3688,9 @@ function registerBackofficeIpcHandlers({
   });
   ipcMain2.handle("products:delete", async (_event, payload) => {
     const currentSessionUser2 = await ensureAdminSession(getCurrentSessionUser);
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsDelete)) {
+      return { success: false, message: "Tu rol no puede archivar productos" };
+    }
     const parsed = deleteByIdSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Producto invalido" };
@@ -1879,6 +3710,9 @@ function registerBackofficeIpcHandlers({
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsEdit)) {
+      return { success: false, message: "Tu rol no puede administrar categorias" };
+    }
     const parsed = createCategorySchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Categoria invalida" };
@@ -1895,6 +3729,9 @@ function registerBackofficeIpcHandlers({
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsEdit)) {
+      return { success: false, message: "Tu rol no puede administrar categorias" };
+    }
     const parsed = deleteByIdSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Categoria invalida" };
@@ -1907,6 +3744,9 @@ function registerBackofficeIpcHandlers({
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsEdit)) {
+      return { success: false, message: "Tu rol no puede administrar subcategorias" };
+    }
     const parsed = createSubcategorySchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Subcategoria invalida" };
@@ -1927,6 +3767,9 @@ function registerBackofficeIpcHandlers({
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsEdit)) {
+      return { success: false, message: "Tu rol no puede administrar subcategorias" };
+    }
     const parsed = deleteByIdSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Subcategoria invalida" };
@@ -1953,6 +3796,7 @@ function registerBackofficeIpcHandlers({
       success: true,
       customers: customers.map((customer) => ({
         id: customer.id,
+        internalCode: customer.internalCode,
         name: customer.name,
         document: customer.document,
         phone: customer.phone,
@@ -1970,12 +3814,26 @@ function registerBackofficeIpcHandlers({
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.customersCreate)) {
+      return { success: false, message: "Tu rol no puede crear clientes" };
+    }
     const parsed = createCustomerSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Datos invalidos para el cliente" };
     try {
+      const existingInternalCodes = (await prisma2.customer.findMany({
+        select: { internalCode: true }
+      })).map((customer2) => customer2.internalCode);
+      const internalCode = resolveManagedCode({
+        desiredCode: parsed.data.internalCode,
+        existingCodes: existingInternalCodes,
+        prefix: "CLI",
+        digits: 4,
+        maxLength: 30
+      });
       const customer = await prisma2.customer.create({
         data: {
+          internalCode,
           name: buildFullName(parsed.data.firstName, parsed.data.lastName),
           document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
           phone: parsed.data.phone || null,
@@ -1991,29 +3849,45 @@ function registerBackofficeIpcHandlers({
         document: customer.document
       });
       return { success: true, customerId: customer.id };
-    } catch {
-      return { success: false, message: "No se pudo crear el cliente. Verifica documento o correo duplicado." };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo crear el cliente. Verifica documento o correo duplicado.";
+      return { success: false, message };
     }
   });
   ipcMain2.handle("customers:update", async (_event, payload) => {
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.customersEdit)) {
+      return { success: false, message: "Tu rol no puede editar clientes" };
+    }
     const parsed = updateCustomerSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Datos invalidos para actualizar el cliente" };
     const current = await prisma2.customer.findUnique({ where: { id: parsed.data.id } });
     if (!current)
       return { success: false, message: "Cliente no encontrado" };
-    const nextData = {
-      name: buildFullName(parsed.data.firstName, parsed.data.lastName),
-      document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
-      phone: parsed.data.phone || null,
-      email: parsed.data.email || null,
-      address: parsed.data.address || null,
-      isActive: parsed.data.isActive ?? current.isActive
-    };
     try {
+      const existingInternalCodes = (await prisma2.customer.findMany({
+        where: { NOT: { id: current.id } },
+        select: { internalCode: true }
+      })).map((customer) => customer.internalCode);
+      const internalCode = resolveManagedCode({
+        desiredCode: parsed.data.internalCode,
+        existingCodes: existingInternalCodes,
+        prefix: "CLI",
+        digits: 4,
+        maxLength: 30
+      });
+      const nextData = {
+        internalCode,
+        name: buildFullName(parsed.data.firstName, parsed.data.lastName),
+        document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
+        phone: parsed.data.phone || null,
+        email: parsed.data.email || null,
+        address: parsed.data.address || null,
+        isActive: parsed.data.isActive ?? current.isActive
+      };
       await prisma2.customer.update({
         where: { id: current.id },
         data: {
@@ -2024,8 +3898,9 @@ function registerBackofficeIpcHandlers({
       });
       await logAudit(prisma2, currentSessionUser2, "customers", "update", "Customer", current.id, current, nextData);
       return { success: true };
-    } catch {
-      return { success: false, message: "No se pudo actualizar el cliente. Verifica documento o correo duplicado." };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo actualizar el cliente. Verifica documento o correo duplicado.";
+      return { success: false, message };
     }
   });
   ipcMain2.handle("suppliers:list", async () => {
@@ -2046,6 +3921,7 @@ function registerBackofficeIpcHandlers({
       success: true,
       suppliers: suppliers.map((supplier) => ({
         id: supplier.id,
+        internalCode: supplier.internalCode,
         name: supplier.name,
         document: supplier.taxId,
         phone: supplier.phone,
@@ -2063,12 +3939,26 @@ function registerBackofficeIpcHandlers({
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.suppliersCreate)) {
+      return { success: false, message: "Tu rol no puede crear proveedores" };
+    }
     const parsed = createSupplierSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Datos invalidos para el proveedor" };
     try {
+      const existingInternalCodes = (await prisma2.supplier.findMany({
+        select: { internalCode: true }
+      })).map((supplier2) => supplier2.internalCode);
+      const internalCode = resolveManagedCode({
+        desiredCode: parsed.data.internalCode,
+        existingCodes: existingInternalCodes,
+        prefix: "PRV",
+        digits: 4,
+        maxLength: 30
+      });
       const supplier = await prisma2.supplier.create({
         data: {
+          internalCode,
           name: parsed.data.name,
           taxId: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
           phone: parsed.data.phone || null,
@@ -2083,38 +3973,55 @@ function registerBackofficeIpcHandlers({
         taxId: supplier.taxId
       });
       return { success: true, supplierId: supplier.id };
-    } catch {
-      return { success: false, message: "No se pudo crear el proveedor. Verifica documento o correo duplicado." };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo crear el proveedor. Verifica documento o correo duplicado.";
+      return { success: false, message };
     }
   });
   ipcMain2.handle("suppliers:update", async (_event, payload) => {
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.suppliersEdit)) {
+      return { success: false, message: "Tu rol no puede editar proveedores" };
+    }
     const parsed = updateSupplierSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Datos invalidos para actualizar el proveedor" };
     const current = await prisma2.supplier.findUnique({ where: { id: parsed.data.id } });
     if (!current)
       return { success: false, message: "Proveedor no encontrado" };
-    const nextData = {
-      name: parsed.data.name,
-      taxId: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
-      phone: parsed.data.phone || null,
-      email: parsed.data.email || null,
-      address: parsed.data.address || null,
-      contactName: parsed.data.contactName || null,
-      isActive: parsed.data.isActive ?? current.isActive
-    };
     try {
+      const existingInternalCodes = (await prisma2.supplier.findMany({
+        where: { NOT: { id: current.id } },
+        select: { internalCode: true }
+      })).map((supplier) => supplier.internalCode);
+      const internalCode = resolveManagedCode({
+        desiredCode: parsed.data.internalCode,
+        existingCodes: existingInternalCodes,
+        prefix: "PRV",
+        digits: 4,
+        maxLength: 30
+      });
+      const nextData = {
+        internalCode,
+        name: parsed.data.name,
+        taxId: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
+        phone: parsed.data.phone || null,
+        email: parsed.data.email || null,
+        address: parsed.data.address || null,
+        contactName: parsed.data.contactName || null,
+        isActive: parsed.data.isActive ?? current.isActive
+      };
       await prisma2.supplier.update({
         where: { id: current.id },
         data: nextData
       });
       await logAudit(prisma2, currentSessionUser2, "suppliers", "update", "Supplier", current.id, current, nextData);
       return { success: true };
-    } catch {
-      return { success: false, message: "No se pudo actualizar el proveedor. Verifica documento o correo duplicado." };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo actualizar el proveedor. Verifica documento o correo duplicado.";
+      return { success: false, message };
     }
   });
   ipcMain2.handle("purchases:list", async () => {
@@ -2158,6 +4065,9 @@ function registerBackofficeIpcHandlers({
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.purchasesDetails)) {
+      return { success: false, message: "Tu rol no puede ver el detalle de compras" };
+    }
     const parsed = deleteByIdSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Compra invalida" };
@@ -2207,6 +4117,9 @@ function registerBackofficeIpcHandlers({
   });
   ipcMain2.handle("purchases:create", async (_event, payload) => {
     const currentSessionUser2 = await ensureAdminSession(getCurrentSessionUser);
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.purchasesCreate)) {
+      return { success: false, message: "Tu rol no puede registrar compras" };
+    }
     const parsed = createPurchaseSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Datos invalidos para la compra" };
@@ -2247,6 +4160,21 @@ function registerBackofficeIpcHandlers({
     const purchasedAt = parsed.data.purchasedAt ? new Date(parsed.data.purchasedAt) : /* @__PURE__ */ new Date();
     const status = parsed.data.markAsPaid ? PurchaseStatus.PAID : PurchaseStatus.RECEIVED;
     const balance = parsed.data.markAsPaid ? 0 : total;
+    const paymentMedium = normalizeTreasuryMedium(parsed.data.paymentMedium);
+    const paymentPlatform = paymentMedium === "CORRESPONDENT" && parsed.data.paymentPlatformId ? await prisma2.correspondentPlatform.findUnique({
+      where: { id: parsed.data.paymentPlatformId },
+      select: { id: true, name: true }
+    }) : null;
+    if (paymentMedium === "CORRESPONDENT" && !paymentPlatform) {
+      return { success: false, message: "Selecciona un corresponsal valido para pagar la compra" };
+    }
+    const activeSession = parsed.data.markAsPaid ? await prisma2.cashSession.findFirst({
+      where: { status: CashSessionStatus.OPEN },
+      orderBy: { openedAt: "desc" }
+    }) : null;
+    if (parsed.data.markAsPaid && !activeSession) {
+      return { success: false, message: "Abre el control diario antes de registrar compras pagadas" };
+    }
     try {
       const purchase = await prisma2.$transaction(async (tx) => {
         const number = await generatePurchaseNumber(tx);
@@ -2302,12 +4230,32 @@ function registerBackofficeIpcHandlers({
             }
           });
         }
+        if (parsed.data.markAsPaid && activeSession) {
+          await tx.cashMovement.create({
+            data: {
+              sessionId: activeSession.id,
+              type: CashMovementType.EXPENSE_OUT,
+              amount: total,
+              note: buildTreasuryMovementNote({
+                label: `Compra pagada ${createdPurchase.number} - ${supplier.name}`,
+                medium: paymentMedium,
+                platformId: (paymentPlatform == null ? void 0 : paymentPlatform.id) ?? null,
+                platformName: (paymentPlatform == null ? void 0 : paymentPlatform.name) ?? null,
+                sourceType: "PURCHASE",
+                userNote: parsed.data.note || null
+              })
+            }
+          });
+        }
         return createdPurchase;
       });
       await logAudit(prisma2, currentSessionUser2, "purchases", "create", "Purchase", purchase.id, void 0, {
         number: purchase.number,
         supplier: supplier.name,
-        total: purchase.total
+        total: purchase.total,
+        markAsPaid: parsed.data.markAsPaid,
+        paymentMedium,
+        paymentPlatform: (paymentPlatform == null ? void 0 : paymentPlatform.name) ?? null
       });
       return { success: true, purchaseId: purchase.id };
     } catch (error) {
@@ -2454,6 +4402,9 @@ function registerBackofficeIpcHandlers({
     const currentSessionUser2 = getCurrentSessionUser();
     if (!currentSessionUser2)
       return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.salesPrint)) {
+      return { success: false, message: "Tu rol no puede imprimir facturas" };
+    }
     const parsed = saleByIdSchema.safeParse(payload);
     if (!parsed.success)
       return { success: false, message: "Venta invalida" };
@@ -2462,7 +4413,8 @@ function registerBackofficeIpcHandlers({
         where: { id: parsed.data.saleId },
         include: {
           cashier: { select: { username: true, name: true } },
-          items: { orderBy: { createdAt: "asc" } }
+          items: { orderBy: { createdAt: "asc" } },
+          payments: true
         }
       }),
       prisma2.businessSettings.findUnique({
@@ -2480,7 +4432,7 @@ function registerBackofficeIpcHandlers({
       receiptFooter: settings == null ? void 0 : settings.receiptFooter,
       invoiceNumber: sale.invoiceNumber,
       customer: sale.customer,
-      paymentMethod: sale.paymentMethod,
+      paymentSummary: paymentSummaryLabel(sale.payments, sale.paymentMethod),
       total: sale.total,
       subtotal: sale.subtotal,
       tax: sale.tax,
@@ -2516,6 +4468,619 @@ function registerBackofficeIpcHandlers({
         }
       );
     });
+  });
+  ipcMain2.handle("accounting:summary", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.reportsView)) {
+      return { success: false, message: "Tu rol no puede consultar contabilidad" };
+    }
+    const parsed = accountingRangeSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Filtros invalidos" };
+    const createdAt = buildDateRangeFilter(parsed.data.dateFrom, parsed.data.dateTo);
+    const [customers, sales, credits, payments, creditNotes, expenses] = await Promise.all([
+      prisma2.customer.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          internalCode: true,
+          name: true,
+          document: true,
+          phone: true
+        }
+      }),
+      prisma2.sale.findMany({
+        where: {
+          ...createdAt ? { createdAt } : {},
+          status: { not: SaleStatus.CANCELLED }
+        },
+        include: {
+          customerRef: {
+            select: {
+              id: true,
+              name: true
+            }
+          },
+          credits: {
+            orderBy: { createdAt: "desc" }
+          },
+          returns: true,
+          payments: {
+            orderBy: { createdAt: "asc" },
+            select: {
+              method: true,
+              amount: true
+            }
+          }
+        },
+        orderBy: { createdAt: "desc" },
+        take: 150
+      }),
+      prisma2.customerCredit.findMany({
+        where: createdAt ? { createdAt } : void 0,
+        include: {
+          customer: {
+            select: {
+              id: true,
+              name: true
+            }
+          },
+          sale: {
+            select: {
+              id: true,
+              invoiceNumber: true
+            }
+          },
+          payments: {
+            select: {
+              amount: true
+            }
+          }
+        },
+        orderBy: { createdAt: "desc" },
+        take: 150
+      }),
+      prisma2.customerPayment.findMany({
+        where: createdAt ? { createdAt } : void 0,
+        include: {
+          customer: {
+            select: {
+              name: true
+            }
+          },
+          credit: {
+            select: {
+              id: true,
+              sale: {
+                select: {
+                  id: true,
+                  invoiceNumber: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: { createdAt: "desc" },
+        take: 150
+      }),
+      prisma2.saleReturn.findMany({
+        where: createdAt ? { createdAt } : void 0,
+        include: {
+          sale: {
+            select: {
+              id: true,
+              invoiceNumber: true,
+              customer: true
+            }
+          }
+        },
+        orderBy: { createdAt: "desc" },
+        take: 150
+      }),
+      prisma2.cashMovement.findMany({
+        where: {
+          ...createdAt ? { createdAt } : {},
+          type: { in: [CashMovementType.EXPENSE_OUT, CashMovementType.WITHDRAWAL_OUT] }
+        },
+        include: {
+          session: {
+            include: {
+              register: {
+                select: { name: true }
+              },
+              user: {
+                select: { username: true, name: true }
+              }
+            }
+          }
+        },
+        orderBy: { createdAt: "desc" },
+        take: 150
+      })
+    ]);
+    const mappedCredits = credits.map((credit) => {
+      var _a;
+      const status = deriveCreditStatus(credit.balance, credit.total, credit.dueDate);
+      return {
+        id: credit.id,
+        saleId: credit.saleId,
+        invoiceNumber: credit.sale.invoiceNumber,
+        customerId: credit.customerId,
+        customerName: credit.customer.name,
+        total: credit.total,
+        balance: credit.balance,
+        paidAmount: credit.payments.reduce((sum, payment) => sum + payment.amount, 0),
+        status,
+        dueDate: ((_a = credit.dueDate) == null ? void 0 : _a.toISOString()) ?? null,
+        createdAt: credit.createdAt.toISOString()
+      };
+    });
+    const mappedSales = sales.map((sale) => {
+      var _a, _b;
+      const returnedTotal = sale.returns.reduce((sum, entry) => sum + entry.total, 0);
+      const credit = sale.credits[0] ?? null;
+      const paidAtSale = sale.payments.reduce((sum, payment) => sum + payment.amount, 0);
+      const netSaleTotal = Math.max(sale.total - returnedTotal, 0);
+      const pendingAmount = credit ? credit.balance : Math.max(netSaleTotal - paidAtSale, 0);
+      const collectionStatus = returnedTotal >= sale.total ? "RETURNED" : pendingAmount <= 0 ? "PAID" : paidAtSale > 0 ? "PARTIAL" : "PENDING";
+      const paymentSummary = sale.payments.length ? sale.payments.map((payment) => `${paymentMethodLabel(payment.method)} $${payment.amount.toLocaleString("es-CO")}`).join(" + ") : credit ? "Pendiente por cartera" : paymentMethodLabel(sale.paymentMethod);
+      return {
+        id: sale.id,
+        invoiceNumber: sale.invoiceNumber,
+        customer: sale.customer,
+        customerId: ((_a = sale.customerRef) == null ? void 0 : _a.id) ?? null,
+        total: sale.total,
+        paidAtSale,
+        pendingAmount,
+        returnedTotal,
+        grossProfit: sale.profit,
+        paymentSummary,
+        collectionStatus,
+        status: sale.status,
+        createdAt: sale.createdAt.toISOString(),
+        availableCreditTotal: Math.max(sale.total - returnedTotal, 0),
+        availableCreditNoteTotal: Math.max(sale.total - returnedTotal, 0),
+        credit: credit ? {
+          id: credit.id,
+          total: credit.total,
+          balance: credit.balance,
+          status: deriveCreditStatus(credit.balance, credit.total, credit.dueDate),
+          dueDate: ((_b = credit.dueDate) == null ? void 0 : _b.toISOString()) ?? null
+        } : null
+      };
+    });
+    const paymentSummaryMap = /* @__PURE__ */ new Map();
+    for (const method of [PaymentMethod.CASH, PaymentMethod.CARD, PaymentMethod.TRANSFER]) {
+      paymentSummaryMap.set(method, { salesAmount: 0, collectionsAmount: 0 });
+    }
+    for (const sale of sales) {
+      if (sale.payments.length === 0) {
+        const current = paymentSummaryMap.get(sale.paymentMethod) ?? { salesAmount: 0, collectionsAmount: 0 };
+        current.salesAmount += sale.total;
+        paymentSummaryMap.set(sale.paymentMethod, current);
+        continue;
+      }
+      for (const payment of sale.payments) {
+        const current = paymentSummaryMap.get(payment.method) ?? { salesAmount: 0, collectionsAmount: 0 };
+        current.salesAmount += payment.amount;
+        paymentSummaryMap.set(payment.method, current);
+      }
+    }
+    for (const payment of payments) {
+      const current = paymentSummaryMap.get(payment.method) ?? { salesAmount: 0, collectionsAmount: 0 };
+      current.collectionsAmount += payment.amount;
+      paymentSummaryMap.set(payment.method, current);
+    }
+    const collectedSalesTotal = mappedSales.reduce((sum, sale) => sum + sale.paidAtSale, 0);
+    const collectionsTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
+    const pendingSalesBalance = mappedSales.reduce((sum, sale) => sum + sale.pendingAmount, 0);
+    const grossProfitTotal = mappedSales.reduce((sum, sale) => sum + sale.grossProfit, 0);
+    const movementHistory = [
+      ...mappedSales.map((sale) => ({
+        id: `sale-${sale.id}`,
+        createdAt: sale.createdAt,
+        category: "SALE",
+        title: `Venta ${sale.invoiceNumber}`,
+        detail: `${sale.customer} | cobrado al momento $${sale.paidAtSale.toLocaleString("es-CO")} | pendiente $${sale.pendingAmount.toLocaleString("es-CO")}`,
+        medium: sale.paymentSummary,
+        amount: sale.total,
+        direction: "IN",
+        reference: sale.invoiceNumber,
+        operationalImpact: sale.paidAtSale
+      })),
+      ...payments.map((payment) => {
+        var _a, _b;
+        return {
+          id: `collection-${payment.id}`,
+          createdAt: payment.createdAt.toISOString(),
+          category: "COLLECTION",
+          title: `Abono cartera ${((_a = payment.credit) == null ? void 0 : _a.sale.invoiceNumber) ?? ""}`.trim(),
+          detail: `${payment.customer.name} | ${payment.note || "Sin detalle"}`,
+          medium: paymentMethodLabel(payment.method),
+          amount: payment.amount,
+          direction: "IN",
+          reference: ((_b = payment.credit) == null ? void 0 : _b.sale.invoiceNumber) ?? null,
+          operationalImpact: payment.amount
+        };
+      }),
+      ...creditNotes.map((note) => ({
+        id: `credit-note-${note.id}`,
+        createdAt: note.createdAt.toISOString(),
+        category: "CREDIT_NOTE",
+        title: `Nota credito ${note.sale.invoiceNumber}`,
+        detail: `${note.sale.customer} | ${note.reason || "Ajuste sobre venta"}`,
+        medium: "Ajuste comercial",
+        amount: note.total,
+        direction: "OUT",
+        reference: note.sale.invoiceNumber,
+        operationalImpact: -note.total
+      })),
+      ...expenses.map((expense) => {
+        var _a, _b, _c;
+        return {
+          id: `expense-${expense.id}`,
+          createdAt: expense.createdAt.toISOString(),
+          category: "EXPENSE",
+          title: expense.type === CashMovementType.WITHDRAWAL_OUT ? "Retiro operativo" : "Gasto operativo",
+          detail: resolveMovementLabel(expense.note),
+          medium: ((_a = parseTreasuryMovementMeta(expense.note)) == null ? void 0 : _a.medium) === "CORRESPONDENT" ? ((_b = parseTreasuryMovementMeta(expense.note)) == null ? void 0 : _b.platformName) || "Corresponsal" : ((_c = parseTreasuryMovementMeta(expense.note)) == null ? void 0 : _c.medium) === "TRANSFER" ? "Transferencias" : "Efectivo",
+          amount: expense.amount,
+          direction: "OUT",
+          reference: null,
+          operationalImpact: -expense.amount
+        };
+      })
+    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 250);
+    return {
+      success: true,
+      summary: {
+        salesCount: mappedSales.length,
+        salesTotal: mappedSales.reduce((sum, sale) => sum + sale.total, 0),
+        collectedSalesTotal,
+        pendingSalesBalance,
+        pendingCreditsCount: mappedCredits.filter((credit) => credit.balance > 0).length,
+        pendingCreditsBalance: mappedCredits.reduce((sum, credit) => sum + credit.balance, 0),
+        paymentsTotal: collectionsTotal,
+        collectionsTotal,
+        operationalIncomeTotal: collectedSalesTotal + collectionsTotal,
+        creditNotesTotal: creditNotes.reduce((sum, note) => sum + note.total, 0),
+        expensesTotal: expenses.reduce((sum, expense) => sum + expense.amount, 0),
+        grossProfitTotal,
+        averageTicket: mappedSales.length > 0 ? money$1(mappedSales.reduce((sum, sale) => sum + sale.total, 0) / mappedSales.length) : 0,
+        netOperationalBalance: collectedSalesTotal + collectionsTotal - creditNotes.reduce((sum, note) => sum + note.total, 0) - expenses.reduce((sum, expense) => sum + expense.amount, 0)
+      },
+      customers: customers.map((customer) => ({
+        id: customer.id,
+        internalCode: customer.internalCode,
+        name: customer.name,
+        document: customer.document,
+        phone: customer.phone
+      })),
+      paymentSummary: [...paymentSummaryMap.entries()].map(([method, totals]) => ({
+        method,
+        label: paymentMethodLabel(method),
+        salesAmount: totals.salesAmount,
+        collectionsAmount: totals.collectionsAmount,
+        totalAmount: totals.salesAmount + totals.collectionsAmount
+      })),
+      movementHistory,
+      sales: mappedSales,
+      credits: mappedCredits,
+      payments: payments.map((payment) => {
+        var _a, _b;
+        return {
+          id: payment.id,
+          creditId: payment.creditId,
+          saleId: ((_a = payment.credit) == null ? void 0 : _a.sale.id) ?? null,
+          invoiceNumber: ((_b = payment.credit) == null ? void 0 : _b.sale.invoiceNumber) ?? null,
+          customerName: payment.customer.name,
+          method: payment.method,
+          amount: payment.amount,
+          note: payment.note,
+          createdAt: payment.createdAt.toISOString()
+        };
+      }),
+      creditNotes: creditNotes.map((note) => ({
+        id: note.id,
+        saleId: note.saleId,
+        invoiceNumber: note.sale.invoiceNumber,
+        customerName: note.sale.customer,
+        total: note.total,
+        reason: note.reason,
+        createdAt: note.createdAt.toISOString()
+      })),
+      expenses: expenses.map((expense) => {
+        const meta = parseTreasuryMovementMeta(expense.note);
+        return {
+          id: expense.id,
+          sessionId: expense.sessionId,
+          registerName: expense.session.register.name,
+          userName: expense.session.user.name ?? expense.session.user.username,
+          type: expense.type,
+          amount: expense.amount,
+          note: resolveMovementLabel(expense.note),
+          sourceMedium: (meta == null ? void 0 : meta.medium) ?? "CASH",
+          sourcePlatform: (meta == null ? void 0 : meta.platformName) ?? null,
+          createdAt: expense.createdAt.toISOString()
+        };
+      })
+    };
+  });
+  ipcMain2.handle("accounting:credit:create", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.reportsView)) {
+      return { success: false, message: "Tu rol no puede registrar cartera" };
+    }
+    const parsed = createAccountingCreditSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Datos invalidos para la cartera" };
+    const sale = await prisma2.sale.findUnique({
+      where: { id: parsed.data.saleId },
+      include: {
+        credits: true,
+        returns: true
+      }
+    });
+    if (!sale)
+      return { success: false, message: "La venta ya no existe" };
+    if (sale.credits.length > 0)
+      return { success: false, message: "La venta ya tiene una cuenta por cobrar asociada" };
+    const customer = await prisma2.customer.findUnique({
+      where: { id: parsed.data.customerId },
+      select: { id: true, name: true, isActive: true }
+    });
+    if (!customer || !customer.isActive) {
+      return { success: false, message: "Selecciona un cliente activo para crear la cuenta por cobrar" };
+    }
+    const returnedTotal = sale.returns.reduce((sum, entry) => sum + entry.total, 0);
+    const availableTotal = Math.max(sale.total - returnedTotal, 0);
+    const total = parsed.data.total ?? availableTotal;
+    if (availableTotal <= 0)
+      return { success: false, message: "La venta no tiene saldo disponible para cartera" };
+    if (total > availableTotal)
+      return { success: false, message: "El valor supera el saldo disponible de la venta" };
+    try {
+      const result = await prisma2.$transaction(async (tx) => {
+        const credit = await tx.customerCredit.create({
+          data: {
+            customerId: customer.id,
+            saleId: sale.id,
+            total,
+            balance: total,
+            dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
+            status: deriveCreditStatus(total, total, parsed.data.dueDate ? new Date(parsed.data.dueDate) : null)
+          }
+        });
+        await tx.sale.update({
+          where: { id: sale.id },
+          data: {
+            customerId: customer.id,
+            customer: customer.name,
+            status: SaleStatus.CREDIT
+          }
+        });
+        return credit;
+      });
+      await logAudit(prisma2, currentSessionUser2, "accounting", "create", "CustomerCredit", result.id, void 0, {
+        saleId: sale.id,
+        customerId: customer.id,
+        total
+      });
+      return { success: true, creditId: result.id, message: "Cuenta por cobrar creada correctamente." };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : "No se pudo crear la cuenta por cobrar" };
+    }
+  });
+  ipcMain2.handle("accounting:payment:create", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.reportsView)) {
+      return { success: false, message: "Tu rol no puede registrar pagos" };
+    }
+    const parsed = createAccountingPaymentSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Datos invalidos para el abono" };
+    const credit = await prisma2.customerCredit.findUnique({
+      where: { id: parsed.data.creditId },
+      include: {
+        sale: {
+          include: {
+            returns: true
+          }
+        }
+      }
+    });
+    if (!credit)
+      return { success: false, message: "La cuenta por cobrar ya no existe" };
+    if (credit.balance <= 0)
+      return { success: false, message: "La cuenta por cobrar ya se encuentra saldada" };
+    if (parsed.data.amount > credit.balance)
+      return { success: false, message: "El abono supera el saldo pendiente" };
+    const cashSession = await prisma2.cashSession.findFirst({
+      where: { status: CashSessionStatus.OPEN },
+      orderBy: { openedAt: "desc" }
+    });
+    if (!cashSession) {
+      return { success: false, message: "Abre el control diario antes de registrar abonos" };
+    }
+    try {
+      const result = await prisma2.$transaction(async (tx) => {
+        const payment = await tx.customerPayment.create({
+          data: {
+            customerId: credit.customerId,
+            creditId: credit.id,
+            method: parsed.data.method,
+            amount: parsed.data.amount,
+            note: parsed.data.note || null
+          }
+        });
+        const paidAmount = credit.total - credit.balance + parsed.data.amount;
+        const nextBalance = Math.max(credit.total - paidAmount, 0);
+        const nextStatus = deriveCreditStatus(nextBalance, credit.total, credit.dueDate);
+        await tx.customerCredit.update({
+          where: { id: credit.id },
+          data: {
+            balance: nextBalance,
+            status: nextStatus
+          }
+        });
+        await tx.cashMovement.create({
+          data: {
+            sessionId: cashSession.id,
+            type: CashMovementType.INCOME_IN,
+            amount: parsed.data.amount,
+            note: buildTreasuryMovementNote({
+              label: `Abono cartera ${credit.sale.invoiceNumber}`,
+              medium: parsed.data.method === PaymentMethod.CASH ? "CASH" : "TRANSFER",
+              sourceType: "ACCOUNTING_PAYMENT",
+              userNote: parsed.data.note || null
+            })
+          }
+        });
+        if (nextBalance <= 0) {
+          const returnedTotal = credit.sale.returns.reduce((sum, entry) => sum + entry.total, 0);
+          await tx.sale.update({
+            where: { id: credit.saleId },
+            data: {
+              status: mapSaleStatusFromReturns(credit.sale.total, returnedTotal)
+            }
+          });
+        }
+        return payment;
+      });
+      await logAudit(prisma2, currentSessionUser2, "accounting", "create", "CustomerPayment", result.id, void 0, {
+        creditId: credit.id,
+        amount: parsed.data.amount,
+        method: parsed.data.method
+      });
+      return { success: true, paymentId: result.id, message: "Abono registrado correctamente." };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : "No se pudo registrar el abono" };
+    }
+  });
+  ipcMain2.handle("accounting:credit-note:create", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.reportsView)) {
+      return { success: false, message: "Tu rol no puede registrar notas credito" };
+    }
+    const parsed = createAccountingCreditNoteSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Datos invalidos para la nota credito" };
+    const sale = await prisma2.sale.findUnique({
+      where: { id: parsed.data.saleId },
+      include: {
+        returns: true,
+        credits: true
+      }
+    });
+    if (!sale)
+      return { success: false, message: "La venta ya no existe" };
+    const returnedTotal = sale.returns.reduce((sum, entry) => sum + entry.total, 0);
+    const availableAmount = Math.max(sale.total - returnedTotal, 0);
+    if (availableAmount <= 0)
+      return { success: false, message: "La venta no tiene saldo disponible para nota credito" };
+    if (parsed.data.amount > availableAmount)
+      return { success: false, message: "La nota credito supera el saldo disponible de la venta" };
+    try {
+      const result = await prisma2.$transaction(async (tx) => {
+        const creditNote = await tx.saleReturn.create({
+          data: {
+            saleId: sale.id,
+            total: parsed.data.amount,
+            reason: parsed.data.reason || null
+          }
+        });
+        const nextReturnedTotal = returnedTotal + parsed.data.amount;
+        await tx.sale.update({
+          where: { id: sale.id },
+          data: {
+            status: mapSaleStatusFromReturns(sale.total, nextReturnedTotal)
+          }
+        });
+        const credit = sale.credits[0];
+        if (credit) {
+          const paidAmount = Math.max(credit.total - credit.balance, 0);
+          const nextTotal = Math.max(credit.total - parsed.data.amount, 0);
+          const nextBalance = Math.max(nextTotal - paidAmount, 0);
+          await tx.customerCredit.update({
+            where: { id: credit.id },
+            data: {
+              total: nextTotal,
+              balance: nextBalance,
+              status: deriveCreditStatus(nextBalance, nextTotal, credit.dueDate)
+            }
+          });
+        }
+        return creditNote;
+      });
+      await logAudit(prisma2, currentSessionUser2, "accounting", "create", "SaleReturn", result.id, void 0, {
+        saleId: sale.id,
+        total: parsed.data.amount
+      });
+      return { success: true, creditNoteId: result.id, message: "Nota credito registrada correctamente." };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : "No se pudo registrar la nota credito" };
+    }
+  });
+  ipcMain2.handle("accounting:expense:create", async (_event, payload) => {
+    const currentSessionUser2 = getCurrentSessionUser();
+    if (!currentSessionUser2)
+      return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.reportsView)) {
+      return { success: false, message: "Tu rol no puede registrar gastos" };
+    }
+    const parsed = createAccountingExpenseSchema.safeParse(payload);
+    if (!parsed.success)
+      return { success: false, message: "Datos invalidos para el gasto" };
+    const activeSession = await prisma2.cashSession.findFirst({
+      where: { status: CashSessionStatus.OPEN },
+      orderBy: { openedAt: "desc" }
+    });
+    if (!activeSession)
+      return { success: false, message: "Abre caja general antes de registrar gastos o retiros" };
+    const sourceMedium = normalizeTreasuryMedium(parsed.data.sourceMedium);
+    const sourcePlatform = sourceMedium === "CORRESPONDENT" && parsed.data.sourcePlatformId ? await prisma2.correspondentPlatform.findUnique({
+      where: { id: parsed.data.sourcePlatformId },
+      select: { id: true, name: true }
+    }) : null;
+    if (sourceMedium === "CORRESPONDENT" && !sourcePlatform) {
+      return { success: false, message: "Selecciona un corresponsal valido para registrar el egreso" };
+    }
+    try {
+      const expense = await prisma2.cashMovement.create({
+        data: {
+          sessionId: activeSession.id,
+          type: parsed.data.type,
+          amount: parsed.data.amount,
+          note: buildTreasuryMovementNote({
+            label: parsed.data.note,
+            medium: sourceMedium,
+            platformId: (sourcePlatform == null ? void 0 : sourcePlatform.id) ?? null,
+            platformName: (sourcePlatform == null ? void 0 : sourcePlatform.name) ?? null,
+            sourceType: "EXPENSE",
+            userNote: parsed.data.note
+          })
+        }
+      });
+      await logAudit(prisma2, currentSessionUser2, "accounting", "create", "CashMovement", expense.id, void 0, {
+        type: parsed.data.type,
+        amount: parsed.data.amount,
+        note: parsed.data.note,
+        sourceMedium,
+        sourcePlatform: (sourcePlatform == null ? void 0 : sourcePlatform.name) ?? null
+      });
+      return { success: true, expenseId: expense.id, message: "Gasto registrado correctamente." };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : "No se pudo registrar el gasto" };
+    }
   });
 }
 const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
@@ -2642,9 +5207,295 @@ function startOfRange(range) {
 function buildInvoiceNumber(prefix, sequence) {
   return `${prefix}-${String(sequence).padStart(6, "0")}`;
 }
+function normalizeOptionalText(value) {
+  const normalized = value == null ? void 0 : value.trim();
+  return normalized ? normalized : null;
+}
+function buildUserDisplayName(firstName, lastName) {
+  return [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
+}
+function normalizeUsernamePart(value) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+}
+function buildUsernameBase(firstName, lastName, documentNumber) {
+  const firstPart = normalizeUsernamePart(firstName).slice(0, 3).padEnd(3, "x");
+  const lastPart = normalizeUsernamePart(lastName).slice(0, 3).padEnd(3, "x");
+  const documentDigits = documentNumber.replace(/\D/g, "");
+  const documentPart = documentDigits.slice(-3).padStart(3, "0");
+  return `${firstPart}${lastPart}${documentPart}`;
+}
+async function generateUniqueUsername(params) {
+  const baseUsername = buildUsernameBase(params.firstName, params.lastName, params.documentNumber);
+  let counter = 0;
+  let candidate = baseUsername;
+  let existing = true;
+  while (existing) {
+    const suffix = counter === 0 ? "" : String(counter + 1).padStart(2, "0");
+    candidate = `${baseUsername}${suffix}`;
+    existing = Boolean(
+      await params.prismaClient.user.findFirst({
+        where: {
+          username: candidate,
+          ...params.excludeUserId ? { NOT: { id: params.excludeUserId } } : {}
+        },
+        select: { id: true }
+      })
+    );
+    counter += 1;
+  }
+  return candidate;
+}
+function parseBirthDate(value) {
+  if (!value)
+    return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day)
+    return null;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+function mapRoleKeyToPrismaRole(roleKey) {
+  return roleKey === "ADMIN" ? Role.ADMIN : Role.EMPLOYEE;
+}
+function roleProfileSystemKey(roleKey) {
+  return `SYSTEM_${roleKey}`;
+}
+function hasCurrentSessionPermission(permissionKey) {
+  var _a;
+  if (!permissionKey)
+    return true;
+  return Boolean((_a = currentSessionUser == null ? void 0 : currentSessionUser.permissions) == null ? void 0 : _a.includes(permissionKey));
+}
+async function loadPermissionKeysForRoleProfile(prismaClient, roleProfileId) {
+  if (!roleProfileId)
+    return [];
+  const records = await prismaClient.rolePermission.findMany({
+    where: {
+      roleProfileId,
+      allowed: true
+    },
+    select: { permissionKey: true },
+    orderBy: { permissionKey: "asc" }
+  });
+  return records.map((record) => record.permissionKey);
+}
+async function resolveRoleProfileForUser(prismaClient, userId) {
+  var _a, _b, _c, _d;
+  const user = await prismaClient.user.findUnique({
+    where: { id: userId },
+    include: {
+      roleProfile: {
+        include: {
+          permissions: {
+            where: { allowed: true },
+            orderBy: { permissionKey: "asc" }
+          }
+        }
+      }
+    }
+  });
+  if (!user)
+    return null;
+  const permissions = ((_a = user.roleProfile) == null ? void 0 : _a.permissions.map((permission) => permission.permissionKey)) ?? ((_b = await prismaClient.roleProfile.findUnique({
+    where: { key: roleProfileSystemKey(user.role) },
+    include: {
+      permissions: {
+        where: { allowed: true },
+        orderBy: { permissionKey: "asc" }
+      }
+    }
+  })) == null ? void 0 : _b.permissions.map((permission) => permission.permissionKey)) ?? [];
+  return {
+    roleProfileId: ((_c = user.roleProfile) == null ? void 0 : _c.id) ?? null,
+    roleProfileName: ((_d = user.roleProfile) == null ? void 0 : _d.name) ?? null,
+    permissions
+  };
+}
+async function ensureUserSchemaIfNeeded(prismaClient) {
+  const columns = await prismaClient.$queryRawUnsafe(`PRAGMA table_info("User");`);
+  const existingColumns = new Set(columns.map((column) => column.name));
+  const statements = [];
+  if (!existingColumns.has("firstName")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "firstName" TEXT;`);
+  }
+  if (!existingColumns.has("lastName")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "lastName" TEXT;`);
+  }
+  if (!existingColumns.has("documentNumber")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "documentNumber" TEXT;`);
+  }
+  if (!existingColumns.has("email")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "email" TEXT;`);
+  }
+  if (!existingColumns.has("phone")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "phone" TEXT;`);
+  }
+  if (!existingColumns.has("address")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "address" TEXT;`);
+  }
+  if (!existingColumns.has("birthDate")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "birthDate" DATETIME;`);
+  }
+  if (!existingColumns.has("internalCode")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "internalCode" TEXT;`);
+  }
+  for (const statement of statements) {
+    await prismaClient.$executeRawUnsafe(statement);
+  }
+  await prismaClient.$executeRawUnsafe(`
+    UPDATE "User"
+    SET "firstName" = "name"
+    WHERE "name" IS NOT NULL
+      AND ("firstName" IS NULL OR TRIM("firstName") = '');
+  `);
+  await prismaClient.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "User_documentNumber_key" ON "User"("documentNumber");`
+  );
+  const users = await prismaClient.user.findMany({
+    select: {
+      id: true,
+      internalCode: true
+    },
+    orderBy: [{ createdAt: "asc" }, { username: "asc" }]
+  });
+  const assignedCodes = [];
+  for (const user of users) {
+    const internalCode = resolveManagedCode({
+      desiredCode: user.internalCode,
+      existingCodes: assignedCodes,
+      prefix: "USR",
+      digits: 4,
+      maxLength: 30
+    });
+    if (internalCode !== user.internalCode) {
+      await prismaClient.user.update({
+        where: { id: user.id },
+        data: { internalCode }
+      });
+    }
+    assignedCodes.push(internalCode);
+  }
+  await prismaClient.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "User_internalCode_key" ON "User"("internalCode");`
+  );
+}
+async function ensureProductSchemaIfNeeded(prismaClient) {
+  const columns = await prismaClient.$queryRawUnsafe(`PRAGMA table_info("Product");`);
+  const existingColumns = new Set(columns.map((column) => column.name));
+  if (!existingColumns.has("unitMeasure")) {
+    await prismaClient.$executeRawUnsafe(
+      `ALTER TABLE "Product" ADD COLUMN "unitMeasure" TEXT NOT NULL DEFAULT 'UNIDAD';`
+    );
+  }
+  await prismaClient.$executeRawUnsafe(`
+    UPDATE "Product"
+    SET "unitMeasure" = 'UNIDAD'
+    WHERE "unitMeasure" IS NULL OR TRIM("unitMeasure") = '';
+  `);
+}
+async function ensureRoleSchemaIfNeeded(prismaClient) {
+  await prismaClient.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "RoleProfile" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "key" TEXT,
+      "name" TEXT NOT NULL,
+      "description" TEXT,
+      "baseRole" TEXT NOT NULL DEFAULT 'EMPLOYEE',
+      "isSystem" BOOLEAN NOT NULL DEFAULT false,
+      "isActive" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  await prismaClient.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "RoleProfile_key_key" ON "RoleProfile"("key");
+  `);
+  await prismaClient.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "RoleProfile_name_key" ON "RoleProfile"("name");
+  `);
+  await prismaClient.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "RolePermission" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "roleProfileId" TEXT NOT NULL,
+      "permissionKey" TEXT NOT NULL,
+      "allowed" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "RolePermission_roleProfileId_fkey" FOREIGN KEY ("roleProfileId") REFERENCES "RoleProfile" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    );
+  `);
+  await prismaClient.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "RolePermission_roleProfileId_permissionKey_key"
+    ON "RolePermission"("roleProfileId", "permissionKey");
+  `);
+  await prismaClient.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "RolePermission_roleProfileId_idx"
+    ON "RolePermission"("roleProfileId");
+  `);
+  const userColumns = await prismaClient.$queryRawUnsafe(`PRAGMA table_info("User");`);
+  const existingUserColumns = new Set(userColumns.map((column) => column.name));
+  if (!existingUserColumns.has("roleProfileId")) {
+    await prismaClient.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN "roleProfileId" TEXT;`);
+  }
+  await prismaClient.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "User_roleProfileId_idx"
+    ON "User"("roleProfileId");
+  `);
+}
+async function seedRoleProfilesIfNeeded(prismaClient) {
+  for (const definition of ROLE_DEFINITIONS) {
+    const permissionCatalog = flattenRolePermissionCatalog(definition);
+    const existingProfile = await prismaClient.roleProfile.findUnique({
+      where: { key: roleProfileSystemKey(definition.key) },
+      select: { id: true }
+    });
+    const roleProfile = existingProfile ? await prismaClient.roleProfile.update({
+      where: { id: existingProfile.id },
+      data: {
+        name: definition.name,
+        description: definition.description,
+        baseRole: mapRoleKeyToPrismaRole(definition.key),
+        isSystem: true
+      }
+    }) : await prismaClient.roleProfile.create({
+      data: {
+        key: roleProfileSystemKey(definition.key),
+        name: definition.name,
+        description: definition.description,
+        baseRole: mapRoleKeyToPrismaRole(definition.key),
+        isSystem: true,
+        isActive: true
+      }
+    });
+    const existingPermissionCount = await prismaClient.rolePermission.count({
+      where: { roleProfileId: roleProfile.id }
+    });
+    if (existingPermissionCount === 0 && permissionCatalog.length > 0) {
+      await prismaClient.rolePermission.createMany({
+        data: permissionCatalog.map((permission) => ({
+          roleProfileId: roleProfile.id,
+          permissionKey: permission.key,
+          allowed: true
+        }))
+      });
+    }
+  }
+  const systemProfiles = await prismaClient.roleProfile.findMany({
+    where: { key: { in: ROLE_DEFINITIONS.map((definition) => roleProfileSystemKey(definition.key)) } },
+    select: { id: true, baseRole: true }
+  });
+  for (const profile of systemProfiles) {
+    await prismaClient.user.updateMany({
+      where: {
+        role: profile.baseRole,
+        roleProfileId: null
+      },
+      data: {
+        roleProfileId: profile.id
+      }
+    });
+  }
+}
 async function bootstrapAppData() {
   await ensureCorrespondentSchemaIfNeeded(prisma);
-  await seedAdminIfNeeded(prisma);
   await seedCoreConfigIfNeeded(prisma);
   await seedCorrespondentCatalogIfNeeded(prisma);
   registerCorrespondentIpcHandlers({
@@ -2659,16 +5510,23 @@ app.whenReady().then(async () => {
   process.env.DATABASE_URL = `file:${dbPath}`;
   prisma = new PrismaClient();
   appConnectedAt = /* @__PURE__ */ new Date();
+  await ensureUserSchemaIfNeeded(prisma);
+  await ensureRoleSchemaIfNeeded(prisma);
+  await ensureBackofficeSchemaIfNeeded(prisma);
+  await seedAdminIfNeeded(prisma);
+  await seedRoleProfilesIfNeeded(prisma);
+  await ensureProductSchemaIfNeeded(prisma);
   registerBackofficeIpcHandlers({
     ipcMain,
     prisma,
     getCurrentSessionUser: () => currentSessionUser,
     getConnectedAt: () => appConnectedAt
   });
+  await bootstrapAppData();
   createWindow();
-  void bootstrapAppData().catch((error) => {
-    console.error("Error inicializando modulos en segundo plano:", error);
-  });
+}).catch((error) => {
+  console.error("No se pudo inicializar la aplicacion POS.", error);
+  app.quit();
 });
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
@@ -2712,11 +5570,15 @@ ipcMain.handle("auth:login", async (_event, payload) => {
     username,
     success: true
   });
+  const roleProfile = await resolveRoleProfileForUser(prisma, user.id);
   currentSessionUser = {
     id: user.id,
     username: user.username,
     name: user.name ?? void 0,
-    role: user.role
+    role: user.role,
+    roleProfileId: (roleProfile == null ? void 0 : roleProfile.roleProfileId) ?? null,
+    roleProfileName: (roleProfile == null ? void 0 : roleProfile.roleProfileName) ?? null,
+    permissions: (roleProfile == null ? void 0 : roleProfile.permissions) ?? []
   };
   return {
     success: true,
@@ -2730,20 +5592,446 @@ ipcMain.handle("auth:createUser", async (_event, payload) => {
   if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
     return { success: false, message: "Solo admins pueden crear usuarios" };
   }
-  const { newUsername, newPassword, name, role } = parsed.data;
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.usersCreate)) {
+    return { success: false, message: "Tu rol no puede crear usuarios" };
+  }
+  const {
+    internalCode: desiredInternalCode,
+    firstName,
+    lastName,
+    documentNumber,
+    email,
+    phone,
+    address,
+    birthDate,
+    newPassword,
+    role,
+    roleProfileId,
+    isActive
+  } = parsed.data;
   const passwordHash = await bcrypt.hash(newPassword, 10);
+  const fullName = buildUserDisplayName(firstName, lastName);
   try {
+    const duplicateDocument = await prisma.user.findFirst({
+      where: { documentNumber },
+      select: { id: true }
+    });
+    if (duplicateDocument) {
+      return { success: false, message: "La cedula ya esta registrada para otro usuario" };
+    }
+    const selectedRoleProfile = roleProfileId ? await prisma.roleProfile.findUnique({
+      where: { id: roleProfileId },
+      select: { id: true, baseRole: true, isActive: true }
+    }) : await prisma.roleProfile.findUnique({
+      where: { key: roleProfileSystemKey(role ?? Role.EMPLOYEE) },
+      select: { id: true, baseRole: true, isActive: true }
+    });
+    if (!selectedRoleProfile || !selectedRoleProfile.isActive) {
+      return { success: false, message: "El perfil de rol seleccionado no esta disponible" };
+    }
+    const username = await generateUniqueUsername({
+      prismaClient: prisma,
+      firstName,
+      lastName,
+      documentNumber
+    });
+    const existingInternalCodes = (await prisma.user.findMany({
+      select: { internalCode: true }
+    })).map((user) => user.internalCode);
+    const internalCode = resolveManagedCode({
+      desiredCode: desiredInternalCode,
+      existingCodes: existingInternalCodes,
+      prefix: "USR",
+      digits: 4,
+      maxLength: 30
+    });
     await prisma.user.create({
       data: {
-        username: newUsername,
-        name: (name == null ? void 0 : name.trim()) || null,
+        internalCode,
+        username,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        name: fullName,
+        documentNumber,
+        email: normalizeOptionalText(email),
+        phone: normalizeOptionalText(phone),
+        address: normalizeOptionalText(address),
+        birthDate: parseBirthDate(birthDate),
         passwordHash,
-        role: role ?? Role.EMPLOYEE
+        role: selectedRoleProfile.baseRole,
+        roleProfileId: selectedRoleProfile.id,
+        isActive: isActive ?? true
       }
     });
-    return { success: true };
-  } catch {
-    return { success: false, message: "Usuario duplicado" };
+    return { success: true, username };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo crear el usuario";
+    return { success: false, message };
+  }
+});
+ipcMain.handle("users:update", async (_event, payload) => {
+  const parsed = updateUserInputSchema.safeParse(payload);
+  if (!parsed.success)
+    return { success: false, message: "Datos invalidos" };
+  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+    return { success: false, message: "Solo admins pueden editar usuarios" };
+  }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.usersEdit)) {
+    return { success: false, message: "Tu rol no puede editar usuarios" };
+  }
+  const {
+    id,
+    internalCode: desiredInternalCode,
+    firstName,
+    lastName,
+    documentNumber,
+    email,
+    phone,
+    address,
+    birthDate,
+    newPassword,
+    role,
+    roleProfileId,
+    isActive
+  } = parsed.data;
+  const existingUser = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true, role: true, isActive: true, roleProfileId: true, internalCode: true }
+  });
+  if (!existingUser) {
+    return { success: false, message: "El usuario ya no existe" };
+  }
+  const duplicateDocument = await prisma.user.findFirst({
+    where: {
+      documentNumber,
+      NOT: { id }
+    },
+    select: { id: true }
+  });
+  if (duplicateDocument) {
+    return { success: false, message: "La cedula ya esta registrada para otro usuario" };
+  }
+  const selectedRoleProfile = roleProfileId ? await prisma.roleProfile.findUnique({
+    where: { id: roleProfileId },
+    select: { id: true, baseRole: true, isActive: true, name: true }
+  }) : await prisma.roleProfile.findUnique({
+    where: { key: roleProfileSystemKey(role ?? existingUser.role) },
+    select: { id: true, baseRole: true, isActive: true, name: true }
+  });
+  if (!selectedRoleProfile || !selectedRoleProfile.isActive) {
+    return { success: false, message: "El perfil de rol seleccionado no esta disponible" };
+  }
+  if (existingUser.role === Role.ADMIN && (selectedRoleProfile.baseRole !== Role.ADMIN || !isActive)) {
+    const remainingAdmins = await prisma.user.count({
+      where: {
+        role: Role.ADMIN,
+        isActive: true,
+        NOT: { id }
+      }
+    });
+    if (remainingAdmins === 0) {
+      return { success: false, message: "Debe existir al menos un administrador activo" };
+    }
+  }
+  const username = await generateUniqueUsername({
+    prismaClient: prisma,
+    firstName,
+    lastName,
+    documentNumber,
+    excludeUserId: id
+  });
+  const fullName = buildUserDisplayName(firstName, lastName);
+  try {
+    const existingInternalCodes = (await prisma.user.findMany({
+      where: { NOT: { id } },
+      select: { internalCode: true }
+    })).map((user) => user.internalCode);
+    const internalCode = resolveManagedCode({
+      desiredCode: desiredInternalCode,
+      existingCodes: existingInternalCodes,
+      prefix: "USR",
+      digits: 4,
+      maxLength: 30
+    });
+    await prisma.user.update({
+      where: { id },
+      data: {
+        internalCode,
+        username,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        name: fullName,
+        documentNumber,
+        email: normalizeOptionalText(email),
+        phone: normalizeOptionalText(phone),
+        address: normalizeOptionalText(address),
+        birthDate: parseBirthDate(birthDate),
+        role: selectedRoleProfile.baseRole,
+        roleProfileId: selectedRoleProfile.id,
+        isActive,
+        ...(newPassword == null ? void 0 : newPassword.trim()) ? {
+          passwordHash: await bcrypt.hash(newPassword, 10)
+        } : {}
+      }
+    });
+    if (currentSessionUser.id === id) {
+      currentSessionUser = {
+        ...currentSessionUser,
+        username,
+        name: fullName,
+        role: selectedRoleProfile.baseRole,
+        roleProfileId: selectedRoleProfile.id,
+        roleProfileName: selectedRoleProfile.name,
+        permissions: await loadPermissionKeysForRoleProfile(prisma, selectedRoleProfile.id)
+      };
+    }
+    return { success: true, username };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo actualizar el usuario";
+    return { success: false, message };
+  }
+});
+ipcMain.handle("auth:get-profile", async () => {
+  var _a;
+  if (!currentSessionUser) {
+    return { success: false, message: "Debes iniciar sesion" };
+  }
+  const profile = await prisma.user.findUnique({
+    where: { id: currentSessionUser.id },
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+      birthDate: true,
+      role: true
+    }
+  });
+  if (!profile) {
+    return { success: false, message: "Tu usuario ya no existe" };
+  }
+  return {
+    success: true,
+    profile: {
+      ...profile,
+      birthDate: ((_a = profile.birthDate) == null ? void 0 : _a.toISOString().slice(0, 10)) ?? null
+    }
+  };
+});
+ipcMain.handle("auth:update-profile", async (_event, payload) => {
+  var _a;
+  const parsed = updateOwnProfileInputSchema.safeParse(payload);
+  if (!parsed.success) {
+    return { success: false, message: "Datos invalidos" };
+  }
+  if (!currentSessionUser) {
+    return { success: false, message: "Debes iniciar sesion" };
+  }
+  const { firstName, lastName, phone, birthDate } = parsed.data;
+  const fullName = buildUserDisplayName(firstName, lastName);
+  const updated = await prisma.user.update({
+    where: { id: currentSessionUser.id },
+    data: {
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      name: fullName,
+      phone: normalizeOptionalText(phone),
+      birthDate: parseBirthDate(birthDate)
+    },
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+      birthDate: true,
+      role: true
+    }
+  });
+  currentSessionUser = {
+    ...currentSessionUser,
+    name: fullName
+  };
+  return {
+    success: true,
+    user: currentSessionUser,
+    profile: {
+      ...updated,
+      birthDate: ((_a = updated.birthDate) == null ? void 0 : _a.toISOString().slice(0, 10)) ?? null
+    }
+  };
+});
+ipcMain.handle("auth:change-password", async (_event, payload) => {
+  const parsed = changeOwnPasswordInputSchema.safeParse(payload);
+  if (!parsed.success) {
+    return { success: false, message: "Datos invalidos" };
+  }
+  if (!currentSessionUser) {
+    return { success: false, message: "Debes iniciar sesion" };
+  }
+  const { currentPassword, newPassword, confirmPassword } = parsed.data;
+  if (newPassword !== confirmPassword) {
+    return { success: false, message: "La confirmacion no coincide con la nueva contrasena" };
+  }
+  const user = await prisma.user.findUnique({
+    where: { id: currentSessionUser.id },
+    select: { id: true, passwordHash: true }
+  });
+  if (!user) {
+    return { success: false, message: "Tu usuario ya no existe" };
+  }
+  const isCurrentValid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!isCurrentValid) {
+    return { success: false, message: "La contrasena actual es incorrecta" };
+  }
+  const isSamePassword = await bcrypt.compare(newPassword, user.passwordHash);
+  if (isSamePassword) {
+    return { success: false, message: "La nueva contrasena debe ser diferente a la anterior" };
+  }
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: await bcrypt.hash(newPassword, 10)
+    }
+  });
+  return { success: true };
+});
+ipcMain.handle("roles:list", async () => {
+  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+    return { success: false, message: "Solo admins pueden ver roles", roles: [] };
+  }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.rolesView)) {
+    return { success: false, message: "Tu rol no puede ver roles", roles: [] };
+  }
+  const roles = await prisma.roleProfile.findMany({
+    include: {
+      permissions: {
+        where: { allowed: true },
+        orderBy: { permissionKey: "asc" },
+        select: { permissionKey: true }
+      },
+      _count: {
+        select: { users: true }
+      }
+    },
+    orderBy: [{ isSystem: "desc" }, { name: "asc" }]
+  });
+  return {
+    success: true,
+    roles: roles.map((roleProfile) => ({
+      id: roleProfile.id,
+      key: roleProfile.key,
+      name: roleProfile.name,
+      description: roleProfile.description,
+      baseRole: roleProfile.baseRole,
+      isSystem: roleProfile.isSystem,
+      isActive: roleProfile.isActive,
+      permissionKeys: roleProfile.permissions.map((permission) => permission.permissionKey),
+      usersCount: roleProfile._count.users,
+      createdAt: roleProfile.createdAt.toISOString(),
+      updatedAt: roleProfile.updatedAt.toISOString()
+    }))
+  };
+});
+ipcMain.handle("roles:create", async (_event, payload) => {
+  const parsed = createRoleProfileInputSchema.safeParse(payload);
+  if (!parsed.success)
+    return { success: false, message: "Datos invalidos para el rol" };
+  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+    return { success: false, message: "Solo admins pueden crear roles" };
+  }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.rolesManage)) {
+    return { success: false, message: "Tu rol no puede crear roles" };
+  }
+  if (parsed.data.permissionKeys.length > 0) {
+    const invalidPermission = parsed.data.permissionKeys.find(
+      (permissionKey) => !getPermissionCatalogItem(parsed.data.baseRole, permissionKey)
+    );
+    if (invalidPermission) {
+      return { success: false, message: "Uno o mas permisos no pertenecen al rol base seleccionado" };
+    }
+  }
+  try {
+    const created = await prisma.roleProfile.create({
+      data: {
+        name: parsed.data.name.trim(),
+        description: normalizeOptionalText(parsed.data.description),
+        baseRole: parsed.data.baseRole,
+        isSystem: false,
+        isActive: parsed.data.isActive ?? true,
+        permissions: {
+          create: parsed.data.permissionKeys.map((permissionKey) => ({
+            permissionKey,
+            allowed: true
+          }))
+        }
+      },
+      select: { id: true }
+    });
+    return { success: true, roleId: created.id };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo crear el rol";
+    return { success: false, message };
+  }
+});
+ipcMain.handle("roles:update", async (_event, payload) => {
+  const parsed = updateRoleProfileInputSchema.safeParse(payload);
+  if (!parsed.success)
+    return { success: false, message: "Datos invalidos para el rol" };
+  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+    return { success: false, message: "Solo admins pueden editar roles" };
+  }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.rolesManage)) {
+    return { success: false, message: "Tu rol no puede editar roles" };
+  }
+  const existing = await prisma.roleProfile.findUnique({
+    where: { id: parsed.data.id },
+    select: { id: true, baseRole: true, isSystem: true, name: true }
+  });
+  if (!existing) {
+    return { success: false, message: "El rol ya no existe" };
+  }
+  const invalidPermission = parsed.data.permissionKeys.find(
+    (permissionKey) => !getPermissionCatalogItem(existing.baseRole, permissionKey)
+  );
+  if (invalidPermission) {
+    return { success: false, message: "Uno o mas permisos no pertenecen al rol base seleccionado" };
+  }
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.roleProfile.update({
+        where: { id: parsed.data.id },
+        data: {
+          name: parsed.data.name.trim(),
+          description: normalizeOptionalText(parsed.data.description),
+          isActive: parsed.data.isActive ?? true
+        }
+      });
+      await tx.rolePermission.deleteMany({ where: { roleProfileId: parsed.data.id } });
+      await tx.rolePermission.createMany({
+        data: parsed.data.permissionKeys.map((permissionKey) => ({
+          roleProfileId: parsed.data.id,
+          permissionKey,
+          allowed: true
+        }))
+      });
+    });
+    if (currentSessionUser.roleProfileId === parsed.data.id) {
+      currentSessionUser = {
+        ...currentSessionUser,
+        roleProfileName: parsed.data.name.trim(),
+        permissions: parsed.data.permissionKeys
+      };
+    }
+    return { success: true, roleId: parsed.data.id };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo actualizar el rol";
+    return { success: false, message };
   }
 });
 ipcMain.handle("auth:logout", async () => {
@@ -2776,12 +6064,39 @@ ipcMain.handle("products:list", async () => {
   });
 });
 ipcMain.handle("sales:create", async (_event, payload) => {
+  var _a, _b, _c;
   if (!currentSessionUser) {
     return { success: false, message: "Debes iniciar sesion para vender" };
+  }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.salesCreate)) {
+    return { success: false, message: "Tu rol no puede registrar ventas" };
+  }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.salesManagePayments)) {
+    return { success: false, message: "Tu rol no puede gestionar pagos" };
   }
   const parsed = createSaleSchema.safeParse(payload);
   if (!parsed.success) {
     return { success: false, message: "Datos invalidos para la venta" };
+  }
+  let selectedCustomer = null;
+  if (parsed.data.customerId) {
+    selectedCustomer = await prisma.customer.findFirst({
+      where: {
+        id: parsed.data.customerId,
+        isActive: true
+      },
+      select: {
+        id: true,
+        name: true
+      }
+    });
+    if (!selectedCustomer) {
+      return { success: false, message: "El cliente seleccionado ya no esta disponible" };
+    }
+  }
+  const saleCustomerName = (selectedCustomer == null ? void 0 : selectedCustomer.name) ?? ((_a = parsed.data.customer) == null ? void 0 : _a.trim()) ?? "Consumidor final";
+  if (saleCustomerName !== "Consumidor final" && !hasCurrentSessionPermission(APP_PERMISSION_KEYS.salesChangeCustomer)) {
+    return { success: false, message: "Tu rol no puede cambiar el cliente en la factura" };
   }
   const productIds = parsed.data.items.map((item) => item.productId);
   const products = await prisma.product.findMany({
@@ -2820,13 +6135,46 @@ ipcMain.handle("sales:create", async (_event, payload) => {
   const total = subtotal + tax;
   const costTotal = normalizedItems.reduce((sum, item) => sum + item.product.cost * item.qty, 0);
   const profit = normalizedItems.reduce((sum, item) => sum + item.lineProfit, 0);
-  const amountPaid = parsed.data.amountPaid ?? total;
-  const changeAmount = parsed.data.paymentMethod === "CASH" ? Math.max(0, amountPaid - total) : 0;
+  const requestedPayments = parsed.data.payments && parsed.data.payments.length > 0 ? parsed.data.payments : [
+    {
+      method: parsed.data.paymentMethod,
+      amount: parsed.data.amountPaid ?? total
+    }
+  ];
+  const normalizedPayments = requestedPayments.map((payment) => ({
+    method: payment.method,
+    amount: money(payment.amount)
+  })).filter((payment) => payment.amount > 0);
+  if (normalizedPayments.length === 0 && !parsed.data.allowDebt) {
+    return { success: false, message: "Debes registrar al menos un pago para completar la venta" };
+  }
+  const amountPaid = normalizedPayments.reduce((sum, payment) => sum + payment.amount, 0);
+  const changeAmount = Math.max(0, amountPaid - total);
+  const cashReceived = normalizedPayments.filter((payment) => payment.method === "CASH").reduce((sum, payment) => sum + payment.amount, 0);
+  if (changeAmount > cashReceived) {
+    return { success: false, message: "Las vueltas solo pueden salir de un pago en efectivo" };
+  }
+  let remainingAmount = total;
+  const appliedTotals = /* @__PURE__ */ new Map();
+  for (const payment of normalizedPayments) {
+    if (remainingAmount <= 0)
+      break;
+    const appliedAmount = Math.min(payment.amount, remainingAmount);
+    if (appliedAmount <= 0)
+      continue;
+    appliedTotals.set(
+      payment.method,
+      (appliedTotals.get(payment.method) ?? 0) + appliedAmount
+    );
+    remainingAmount -= appliedAmount;
+  }
+  const primaryPaymentMethod = ((_b = [...appliedTotals.entries()].sort((a, b) => b[1] - a[1])[0]) == null ? void 0 : _b[0]) ?? (((_c = normalizedPayments[0]) == null ? void 0 : _c.method) ?? parsed.data.paymentMethod);
+  const appliedCashAmount = appliedTotals.get(PaymentMethod.CASH) ?? 0;
   if (parsed.data.clientTotal !== void 0 && Math.abs(parsed.data.clientTotal - total) > 1) {
     return { success: false, message: "El total enviado no coincide con el calculo del sistema" };
   }
-  if (parsed.data.paymentMethod === "CASH" && amountPaid < total) {
-    return { success: false, message: "El efectivo recibido no alcanza para cubrir la venta" };
+  if (amountPaid < total && !parsed.data.allowDebt) {
+    return { success: false, message: "El pago recibido no alcanza para cubrir la venta" };
   }
   try {
     const sale = await prisma.$transaction(async (tx) => {
@@ -2846,8 +6194,9 @@ ipcMain.handle("sales:create", async (_event, payload) => {
       const createdSale = await tx.sale.create({
         data: {
           invoiceNumber,
-          customer: parsed.data.customer,
-          paymentMethod: parsed.data.paymentMethod,
+          customer: saleCustomerName,
+          customerId: (selectedCustomer == null ? void 0 : selectedCustomer.id) ?? null,
+          paymentMethod: primaryPaymentMethod,
           subtotal,
           tax,
           total,
@@ -2872,19 +6221,19 @@ ipcMain.handle("sales:create", async (_event, payload) => {
             }))
           },
           payments: {
-            create: {
-              method: parsed.data.paymentMethod,
-              amount: amountPaid
-            }
+            create: normalizedPayments.map((payment) => ({
+              method: payment.method,
+              amount: payment.amount
+            }))
           }
         }
       });
-      if (activeCashSession && parsed.data.paymentMethod === "CASH") {
+      if (activeCashSession && appliedCashAmount > 0) {
         await tx.cashMovement.create({
           data: {
             sessionId: activeCashSession.id,
             type: CashMovementType.SALE_IN,
-            amount: total,
+            amount: appliedCashAmount,
             note: createdSale.invoiceNumber
           }
         });
@@ -2970,8 +6319,7 @@ ipcMain.handle("dashboard:stats", async (_event, range = "day") => {
     },
     paymentSummary: [
       { label: "Efectivo", value: paymentSummary.CASH ?? 0 },
-      { label: "Tarjeta", value: paymentSummary.CARD ?? 0 },
-      { label: "Transferencia", value: paymentSummary.TRANSFER ?? 0 }
+      { label: "Transferencia", value: (paymentSummary.CARD ?? 0) + (paymentSummary.TRANSFER ?? 0) }
     ],
     topProducts,
     recentSales: sales.slice(0, 6).map((sale) => ({

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
@@ -20,6 +21,7 @@ import { formatCurrency, toDateInputValue } from "@/features/correspondent/utils
 type FeedbackState = { severity: "success" | "error" | "info"; message: string } | null;
 
 export default function CorrespondentClosuresView() {
+  const navigate = useNavigate();
   const [businessDate, setBusinessDate] = useState(toDateInputValue());
   const [closures, setClosures] = useState<CorrespondentClosureItem[]>([]);
   const [totals, setTotals] = useState({
@@ -32,8 +34,8 @@ export default function CorrespondentClosuresView() {
   const [openingBalances, setOpeningBalances] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-  const [savingPlatform, setSavingPlatform] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
+  const cashRoute = useMemo(() => (window.location.pathname.startsWith("/admin") ? "/admin/cash" : "/app/cash"), []);
 
   const loadClosures = useCallback(async (dateValue = businessDate) => {
     setLoading(true);
@@ -81,29 +83,6 @@ export default function CorrespondentClosuresView() {
     void loadClosures();
   }, [loadClosures]);
 
-  async function handleClosePlatform(platformId: string) {
-    setSavingPlatform(platformId);
-    try {
-      const response = await window.api.createCorrespondentClosure({
-        platformId,
-        businessDate: new Date(`${businessDate}T00:00:00`).toISOString(),
-        openingBalance: Number(openingBalances[platformId] || 0),
-        reportedBalance: Number(reportedValues[platformId] || 0),
-        note: notes[platformId] || undefined,
-      });
-
-      if (!response.success) {
-        setFeedback({ severity: "error", message: response.message || "No se pudo cerrar la plataforma" });
-        return;
-      }
-
-      setFeedback({ severity: "success", message: "Cierre registrado correctamente." });
-      await loadClosures();
-    } finally {
-      setSavingPlatform(null);
-    }
-  }
-
   if (loading) {
     return (
       <Box display="flex" alignItems="center" justifyContent="center" minHeight={420}>
@@ -123,8 +102,8 @@ export default function CorrespondentClosuresView() {
           <Stack spacing={2}>
             <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
               <Box display="flex" alignItems="center" gap={0.5}>
-                <Typography variant="h5">Cuadre de caja</Typography>
-                <HelpHint title="Resumen consolidado del dia con entradas, salidas y desglose por tipo para cada corresponsal." />
+                <Typography variant="h5">Resumen diario del corresponsal</Typography>
+                <HelpHint title="Consulta por plataforma lo que movio el corresponsal, pero el cuadre operativo diario ahora se realiza desde Caja general." />
               </Box>
               <Stack direction="row" spacing={1}>
                 <TextField
@@ -139,6 +118,17 @@ export default function CorrespondentClosuresView() {
                 </Button>
               </Stack>
             </Box>
+
+            <Alert
+              severity="info"
+              action={
+                <Button color="inherit" size="small" onClick={() => navigate(cashRoute)}>
+                  Ir a caja general
+                </Button>
+              }
+            >
+              El cuadre operativo diario de POS y corresponsal se registra desde Caja general. Esta vista queda como resumen de apoyo por plataforma.
+            </Alert>
 
             <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(4, 1fr)" }} gap={2}>
               <Card variant="outlined">
@@ -246,10 +236,8 @@ export default function CorrespondentClosuresView() {
                   label="Saldo base en plataforma"
                   type="number"
                   value={openingBalances[item.platformId] ?? ""}
-                  onChange={(event) =>
-                    setOpeningBalances((prev) => ({ ...prev, [item.platformId]: event.target.value }))
-                  }
-                  disabled={Boolean(item.closure)}
+                  InputProps={{ readOnly: true }}
+                  disabled
                   inputProps={{ step: "100" }}
                 />
                 <TextField
@@ -261,17 +249,15 @@ export default function CorrespondentClosuresView() {
                   label="Saldo actual en plataforma"
                   type="number"
                   value={reportedValues[item.platformId] ?? ""}
-                  onChange={(event) =>
-                    setReportedValues((prev) => ({ ...prev, [item.platformId]: event.target.value }))
-                  }
-                  disabled={Boolean(item.closure)}
+                  InputProps={{ readOnly: true }}
+                  disabled
                   inputProps={{ step: "100" }}
                 />
                 <TextField
                   label="Observacion"
                   value={notes[item.platformId] ?? ""}
-                  onChange={(event) => setNotes((prev) => ({ ...prev, [item.platformId]: event.target.value }))}
-                  disabled={Boolean(item.closure)}
+                  InputProps={{ readOnly: true }}
+                  disabled
                   multiline
                   minRows={2}
                 />
@@ -286,12 +272,8 @@ export default function CorrespondentClosuresView() {
                   </Alert>
                 ) : null}
 
-                <Button
-                  variant="contained"
-                  disabled={Boolean(item.closure) || savingPlatform === item.platformId}
-                  onClick={() => void handleClosePlatform(item.platformId)}
-                >
-                  {savingPlatform === item.platformId ? "Cerrando..." : "Cerrar plataforma"}
+                <Button variant="outlined" onClick={() => navigate(cashRoute)}>
+                  Registrar cuadre en caja general
                 </Button>
                     </>
                   );

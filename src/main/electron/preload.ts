@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { LoginInput, LoginResult, CreateUserInput, UpdateUserInput } from "./ipc/schemas/auth.schema";
+import type {
+  ChangeOwnPasswordInput,
+  CreateUserInput,
+  GetOwnProfileResult,
+  LoginInput,
+  LoginResult,
+  UpdateOwnProfileInput,
+  UpdateUserInput,
+} from "./ipc/schemas/auth.schema";
 import type {
   AccountingRangeInput,
   CreateAccountingCreditInput,
@@ -34,6 +42,23 @@ contextBridge.exposeInMainWorld("api", {
 
   updateUser: (payload: UpdateUserInput): Promise<{ success: boolean; message?: string; username?: string }> =>
     ipcRenderer.invoke("users:update", payload),
+
+  getOwnProfile: (): Promise<GetOwnProfileResult> =>
+    ipcRenderer.invoke("auth:get-profile"),
+
+  updateOwnProfile: (
+    payload: UpdateOwnProfileInput,
+  ): Promise<{ success: boolean; message?: string; user?: LoginResult["user"]; profile?: GetOwnProfileResult["profile"] }> =>
+    ipcRenderer.invoke("auth:update-profile", payload),
+
+  changeOwnPassword: (payload: ChangeOwnPasswordInput): Promise<{ success: boolean; message?: string }> =>
+    ipcRenderer.invoke("auth:change-password", payload),
+
+  getReadNotifications: (): Promise<{ success: boolean; message?: string; readKeys: string[] }> =>
+    ipcRenderer.invoke("notifications:get-read"),
+
+  markNotificationsRead: (readKeys: string[]): Promise<{ success: boolean; message?: string }> =>
+    ipcRenderer.invoke("notifications:mark-read", { readKeys }),
 
   logout: (): Promise<{ success: boolean }> =>
     ipcRenderer.invoke("auth:logout"),
@@ -115,6 +140,7 @@ contextBridge.exposeInMainWorld("api", {
   getCashSummary: () => ipcRenderer.invoke("cash:summary"),
   openCashSession: (payload: {
     openingCashAmount: number;
+    openingTransferAmount?: number;
     note?: string | null;
     cashBreakdown?: Record<string, number>;
     correspondentBalances?: Array<{ platformId: string; amount: number }>;
@@ -122,6 +148,7 @@ contextBridge.exposeInMainWorld("api", {
   closeCashSession: (payload: {
     sessionId: string;
     countedCashAmount: number;
+    countedTransferAmount?: number;
     note?: string | null;
     cashBreakdown?: Record<string, number>;
     correspondentBalances?: Array<{ platformId: string; amount: number }>;
@@ -200,6 +227,8 @@ contextBridge.exposeInMainWorld("api", {
     purchasedAt?: string;
     note?: string | null;
     markAsPaid?: boolean;
+    paymentMedium?: "CASH" | "TRANSFER" | "CORRESPONDENT";
+    paymentPlatformId?: string | null;
     items: Array<{
       productId: string;
       qty: number;

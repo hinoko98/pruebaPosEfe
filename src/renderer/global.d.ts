@@ -1,4 +1,12 @@
-import type { LoginInput, LoginResult, CreateUserInput, UpdateUserInput } from "~/main/electron/ipc/schemas/auth.schema";
+import type {
+  ChangeOwnPasswordInput,
+  CreateUserInput,
+  GetOwnProfileResult,
+  LoginInput,
+  LoginResult,
+  UpdateOwnProfileInput,
+  UpdateUserInput,
+} from "~/main/electron/ipc/schemas/auth.schema";
 import type {
   AccountingRangeInput,
   CreateAccountingCreditInput,
@@ -278,11 +286,19 @@ type AccountingSummaryResponse = {
   success: boolean;
   message?: string;
   summary: {
+    salesCount: number;
+    salesTotal: number;
+    collectedSalesTotal: number;
+    pendingSalesBalance: number;
     pendingCreditsCount: number;
     pendingCreditsBalance: number;
     paymentsTotal: number;
+    collectionsTotal: number;
+    operationalIncomeTotal: number;
     creditNotesTotal: number;
     expensesTotal: number;
+    grossProfitTotal: number;
+    averageTicket: number;
     netOperationalBalance: number;
   };
   customers: Array<{
@@ -298,6 +314,11 @@ type AccountingSummaryResponse = {
     customer: string;
     customerId: string | null;
     total: number;
+    paidAtSale: number;
+    pendingAmount: number;
+    grossProfit: number;
+    paymentSummary: string;
+    collectionStatus: "PAID" | "PARTIAL" | "PENDING" | "RETURNED";
     status: "COMPLETED" | "CANCELLED" | "PARTIALLY_RETURNED" | "RETURNED" | "CREDIT";
     createdAt: string;
     returnedTotal: number;
@@ -310,6 +331,13 @@ type AccountingSummaryResponse = {
       status: "PENDING" | "PARTIAL" | "PAID" | "OVERDUE" | "CANCELLED";
       dueDate: string | null;
     } | null;
+  }>;
+  paymentSummary: Array<{
+    method: "CASH" | "CARD" | "TRANSFER";
+    label: string;
+    salesAmount: number;
+    collectionsAmount: number;
+    totalAmount: number;
   }>;
   credits: Array<{
     id: string;
@@ -352,7 +380,21 @@ type AccountingSummaryResponse = {
     type: "EXPENSE_OUT" | "WITHDRAWAL_OUT";
     amount: number;
     note: string | null;
+    sourceMedium: "CASH" | "TRANSFER" | "CORRESPONDENT";
+    sourcePlatform: string | null;
     createdAt: string;
+  }>;
+  movementHistory: Array<{
+    id: string;
+    createdAt: string;
+    category: "SALE" | "COLLECTION" | "CREDIT_NOTE" | "EXPENSE";
+    title: string;
+    detail: string;
+    medium: string;
+    amount: number;
+    direction: "IN" | "OUT";
+    reference: string | null;
+    operationalImpact: number;
   }>;
 };
 
@@ -389,22 +431,53 @@ type BusinessSettingsResponse = {
 type CashSummaryResponse = {
   success: boolean;
   message?: string;
+  previousReference?: {
+    sessionId: string;
+    registerName: string;
+    user: string;
+    closedAt: string | null;
+    countedCashAmount: number;
+    countedTransferAmount: number;
+    countedAvailableAmount: number;
+    closingBreakdown: Record<string, number>;
+    correspondent: Array<{
+      platformId: string;
+      platform: string;
+      countedAmount: number;
+    }>;
+  } | null;
   activeSession: null | {
     id: string;
     registerName: string;
     user: string;
     openedAt: string;
     openingAmount: number;
+    openingTransferAmount: number;
+    openingAvailableAmount: number;
     expectedCash: number;
-    countedCashAmount: number | null;
-    cashDifferenceAmount: number | null;
+    expectedTransferAmount: number;
+    expectedAvailableAmount: number;
+    countedCashAmount: number;
+    countedTransferAmount: number;
+    countedAvailableAmount: number;
+    cashDifferenceAmount: number;
+    transferDifferenceAmount: number;
+    availableDifferenceAmount: number;
     salesCash: number;
     salesCard: number;
     salesTransfer: number;
     manualIncome: number;
     manualExpense: number;
+    manualTransferIncome: number;
+    manualTransferExpense: number;
     openingBreakdown: Record<string, number>;
     closingBreakdown: Record<string, number>;
+    openingComparison?: {
+      cashDifferenceAmount: number;
+      transferDifferenceAmount: number;
+      correspondentDifferenceTotal: number;
+      differenceAmount: number;
+    } | null;
     correspondent: Array<{
       platformId: string;
       platform: string;
@@ -412,6 +485,8 @@ type CashSummaryResponse = {
       totalIn: number;
       totalOut: number;
       totalCommission: number;
+      manualIncome: number;
+      manualExpense: number;
       expectedAmount: number;
       countedAmount: number | null;
       differenceAmount: number | null;
@@ -420,8 +495,10 @@ type CashSummaryResponse = {
       id: string;
       createdAt: string;
       type: string;
+      medium: string;
       detail: string;
       amount: number;
+      signedAmount: number;
     }>;
   };
   recentSessions: Array<{
@@ -432,7 +509,9 @@ type CashSummaryResponse = {
     openedAt: string;
     closedAt: string | null;
     openingAmount: number;
+    openingAvailableAmount?: number;
     countedAmount: number | null;
+    countedAvailableAmount?: number;
     differenceAmount: number;
   }>;
 };
@@ -449,6 +528,7 @@ type UsersListResponse = {
     username: string;
     documentNumber: string | null;
     email: string | null;
+    phone: string | null;
     address: string | null;
     birthDate: string | null;
     role: "ADMIN" | "EMPLOYEE";
@@ -701,6 +781,13 @@ declare global {
       login: (payload: LoginInput) => Promise<LoginResult>;
       createUser: (payload: CreateUserInput) => Promise<{ success: boolean; message?: string; username?: string }>;
       updateUser: (payload: UpdateUserInput) => Promise<{ success: boolean; message?: string; username?: string }>;
+      getOwnProfile: () => Promise<GetOwnProfileResult>;
+      updateOwnProfile: (
+        payload: UpdateOwnProfileInput,
+      ) => Promise<{ success: boolean; message?: string; user?: LoginResult["user"]; profile?: GetOwnProfileResult["profile"] }>;
+      changeOwnPassword: (payload: ChangeOwnPasswordInput) => Promise<{ success: boolean; message?: string }>;
+      getReadNotifications: () => Promise<{ success: boolean; message?: string; readKeys: string[] }>;
+      markNotificationsRead: (readKeys: string[]) => Promise<{ success: boolean; message?: string }>;
       logout: () => Promise<{ success: boolean }>;
       listProducts: () => Promise<PosProduct[]>;
       createSale: (payload: CreateSaleInput) => Promise<CreateSaleResult>;
@@ -758,6 +845,7 @@ declare global {
       getCashSummary: () => Promise<CashSummaryResponse>;
       openCashSession: (payload: {
         openingCashAmount: number;
+        openingTransferAmount?: number;
         note?: string | null;
         cashBreakdown?: Record<string, number>;
         correspondentBalances?: Array<{ platformId: string; amount: number }>;
@@ -765,6 +853,7 @@ declare global {
       closeCashSession: (payload: {
         sessionId: string;
         countedCashAmount: number;
+        countedTransferAmount?: number;
         note?: string | null;
         cashBreakdown?: Record<string, number>;
         correspondentBalances?: Array<{ platformId: string; amount: number }>;
@@ -837,6 +926,8 @@ declare global {
         purchasedAt?: string;
         note?: string | null;
         markAsPaid?: boolean;
+        paymentMedium?: "CASH" | "TRANSFER" | "CORRESPONDENT";
+        paymentPlatformId?: string | null;
         items: Array<{
           productId: string;
           qty: number;

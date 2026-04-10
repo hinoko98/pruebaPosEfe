@@ -33,6 +33,13 @@ function newTab(number: number): SaleTab {
 
 export const fmt = (value: number) => "$" + Math.round(value).toLocaleString("es-CO");
 
+const normalizeSearchValue = (value: string | null | undefined) =>
+  (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
 function MenuToggleIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round">
@@ -41,9 +48,86 @@ function MenuToggleIcon() {
   );
 }
 
+function InvoiceCollapsedRail({
+  onOpen,
+  itemCount,
+}: {
+  onOpen: () => void;
+  itemCount: number;
+}) {
+  return (
+    <aside
+      style={{
+        width: 58,
+        minWidth: 58,
+        flexShrink: 0,
+        background: "#ffffff",
+        borderLeft: "1px solid #dbe4f0",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 12,
+        padding: "12px 10px",
+      }}
+    >
+      <button
+        onClick={onOpen}
+        title="Mostrar factura"
+        style={{
+          width: 38,
+          height: 38,
+          borderRadius: 12,
+          border: "1px solid #dfe8f2",
+          background: "white",
+          color: "#5f748a",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+        }}
+      >
+        <MenuToggleIcon />
+      </button>
+
+      <div
+        style={{
+          writingMode: "vertical-rl",
+          transform: "rotate(180deg)",
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: "0.08em",
+          color: "#7a8ea3",
+          textTransform: "uppercase",
+        }}
+      >
+        Factura
+      </div>
+
+      <div
+        style={{
+          minWidth: 30,
+          minHeight: 30,
+          borderRadius: 999,
+          background: itemCount > 0 ? "#e0f2fe" : "#f1f5f9",
+          color: itemCount > 0 ? "#0369a1" : "#94a3b8",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 12,
+          fontWeight: 800,
+          padding: "0 8px",
+        }}
+      >
+        {itemCount}
+      </div>
+    </aside>
+  );
+}
+
 export default function PosView() {
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [customers, setCustomers] = useState<Array<{ id: string; name: string; document?: string | null; phone?: string | null }>>([]);
   const [tabs, setTabs] = useState<SaleTab[]>([newTab(1)]);
   const [activeId, setActiveId] = useState<string>(() => tabs[0].id);
@@ -90,6 +174,7 @@ export default function PosView() {
   const currentPayments = activeTab.payments.length ? activeTab.payments : [{ method: "CASH" as PaymentMethod, amount: 0 }];
   const selectedCustomer =
     customers.find((customer) => customer.name === activeTab.customer) ?? null;
+  const cartCount = activeTab.cart.reduce((sum, item) => sum + item.qty, 0);
   const canCreateSales = hasPermission(user, APP_PERMISSION_KEYS.salesCreate);
   const canChangeCustomer = hasPermission(user, APP_PERMISSION_KEYS.salesChangeCustomer);
   const canManagePayments = hasPermission(user, APP_PERMISSION_KEYS.salesManagePayments);
@@ -134,6 +219,7 @@ export default function PosView() {
             lineId: crypto.randomUUID(),
             productId: product.id,
             name: product.name,
+            sku: product.sku,
             price: product.price,
             qty: Math.min(qty, maxStock),
             taxRate: product.taxRate ?? 0,
@@ -187,6 +273,21 @@ export default function PosView() {
       total: Math.round(total),
     };
   }, [activeTab.cart]);
+
+  const filteredProducts = useMemo(() => {
+    const normalizedQuery = normalizeSearchValue(searchQuery);
+
+    if (!normalizedQuery) {
+      return products;
+    }
+
+    return products.filter((product) => {
+      const normalizedName = normalizeSearchValue(product.name);
+      const normalizedSku = normalizeSearchValue(product.sku);
+
+      return normalizedName.startsWith(normalizedQuery) || normalizedSku.startsWith(normalizedQuery);
+    });
+  }, [products, searchQuery]);
 
   const finalize = async ({ payments: paymentsPlan, registerDebt, dueDate, debtAmount }: PaymentDialogSubmit) => {
     if (activeTab.cart.length === 0) return;
@@ -324,40 +425,9 @@ export default function PosView() {
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-          <SearchBar products={products} onPick={addToCart} onScan={handleScan} />
+          <SearchBar onScan={handleScan} onSearchChange={setSearchQuery} />
 
-          {!invoiceVisible ? (
-            <div
-              style={{
-                padding: "10px 14px 0",
-                background: "white",
-                borderBottom: "1px solid #e2e8f0",
-              }}
-            >
-              <button
-                onClick={() => setInvoiceVisible(true)}
-                style={{
-                  height: 36,
-                  padding: "0 14px",
-                  borderRadius: 10,
-                  border: "1px solid #cbd5e1",
-                  background: "white",
-                  color: "#0f172a",
-                  fontFamily: "inherit",
-                  fontWeight: 700,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  cursor: "pointer",
-                }}
-              >
-                <MenuToggleIcon />
-                Mostrar factura
-              </button>
-            </div>
-          ) : null}
-
-          <ProductShelf products={products} onPick={addToCart} />
+          <ProductShelf products={filteredProducts} onPick={addToCart} searchQuery={searchQuery} />
         </div>
 
         {invoiceVisible ? (
@@ -389,7 +459,9 @@ export default function PosView() {
             canChangeCustomer={canChangeCustomer}
             canCheckout={canCheckout}
           />
-        ) : null}
+        ) : (
+          <InvoiceCollapsedRail onOpen={() => setInvoiceVisible(true)} itemCount={cartCount} />
+        )}
       </div>
 
       <PaymentDialog

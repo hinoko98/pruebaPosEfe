@@ -13,7 +13,13 @@ import {
   Role,
 } from "@prisma/client";
 
-import { createUserInputSchema, loginInputSchema, updateUserInputSchema } from "./ipc/schemas/auth.schema";
+import {
+  changeOwnPasswordInputSchema,
+  createUserInputSchema,
+  loginInputSchema,
+  updateOwnProfileInputSchema,
+  updateUserInputSchema,
+} from "./ipc/schemas/auth.schema";
 import { createRoleProfileInputSchema, updateRoleProfileInputSchema } from "./ipc/schemas/roles.schema";
 import { createSaleSchema } from "./ipc/schemas/sales.schema";
 import {
@@ -352,6 +358,9 @@ async function ensureUserSchemaIfNeeded(prismaClient: PrismaClient) {
   if (!existingColumns.has("email")) {
     statements.push(`ALTER TABLE "User" ADD COLUMN "email" TEXT;`);
   }
+  if (!existingColumns.has("phone")) {
+    statements.push(`ALTER TABLE "User" ADD COLUMN "phone" TEXT;`);
+  }
   if (!existingColumns.has("address")) {
     statements.push(`ALTER TABLE "User" ADD COLUMN "address" TEXT;`);
   }
@@ -408,6 +417,27 @@ async function ensureUserSchemaIfNeeded(prismaClient: PrismaClient) {
   await prismaClient.$executeRawUnsafe(
     `CREATE UNIQUE INDEX IF NOT EXISTS "User_internalCode_key" ON "User"("internalCode");`
   );
+}
+
+async function ensureNotificationsSchemaIfNeeded(prismaClient: PrismaClient) {
+  await prismaClient.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "NotificationRead" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "userId" TEXT NOT NULL,
+      "readKey" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "NotificationRead_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    );
+  `);
+
+  await prismaClient.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "NotificationRead_userId_readKey_key"
+    ON "NotificationRead"("userId", "readKey");
+  `);
+  await prismaClient.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "NotificationRead_userId_idx"
+    ON "NotificationRead"("userId");
+  `);
 }
 
 async function ensureProductSchemaIfNeeded(prismaClient: PrismaClient) {
@@ -565,6 +595,7 @@ app.whenReady()
     prisma = new PrismaClient();
     appConnectedAt = new Date();
     await ensureUserSchemaIfNeeded(prisma);
+    await ensureNotificationsSchemaIfNeeded(prisma);
     await ensureRoleSchemaIfNeeded(prisma);
     await ensureBackofficeSchemaIfNeeded(prisma);
     await seedAdminIfNeeded(prisma);
@@ -666,7 +697,20 @@ ipcMain.handle("auth:createUser", async (_event: IpcMainInvokeEvent, payload) =>
     return { success: false, message: "Tu rol no puede crear usuarios" };
   }
 
-  const { internalCode: desiredInternalCode, firstName, lastName, documentNumber, email, address, birthDate, newPassword, role, roleProfileId, isActive } = parsed.data;
+  const {
+    internalCode: desiredInternalCode,
+    firstName,
+    lastName,
+    documentNumber,
+    email,
+    phone,
+    address,
+    birthDate,
+    newPassword,
+    role,
+    roleProfileId,
+    isActive,
+  } = parsed.data;
   const passwordHash = await bcrypt.hash(newPassword, 10);
   const fullName = buildUserDisplayName(firstName, lastName);
 
@@ -722,6 +766,7 @@ ipcMain.handle("auth:createUser", async (_event: IpcMainInvokeEvent, payload) =>
         name: fullName,
         documentNumber,
         email: normalizeOptionalText(email),
+        phone: normalizeOptionalText(phone),
         address: normalizeOptionalText(address),
         birthDate: parseBirthDate(birthDate),
         passwordHash,
@@ -749,7 +794,21 @@ ipcMain.handle("users:update", async (_event: IpcMainInvokeEvent, payload) => {
     return { success: false, message: "Tu rol no puede editar usuarios" };
   }
 
-  const { id, internalCode: desiredInternalCode, firstName, lastName, documentNumber, email, address, birthDate, newPassword, role, roleProfileId, isActive } = parsed.data;
+  const {
+    id,
+    internalCode: desiredInternalCode,
+    firstName,
+    lastName,
+    documentNumber,
+    email,
+    phone,
+    address,
+    birthDate,
+    newPassword,
+    role,
+    roleProfileId,
+    isActive,
+  } = parsed.data;
   const existingUser = await prisma.user.findUnique({
     where: { id },
     select: { id: true, role: true, isActive: true, roleProfileId: true, internalCode: true },
@@ -836,6 +895,7 @@ ipcMain.handle("users:update", async (_event: IpcMainInvokeEvent, payload) => {
         name: fullName,
         documentNumber,
         email: normalizeOptionalText(email),
+        phone: normalizeOptionalText(phone),
         address: normalizeOptionalText(address),
         birthDate: parseBirthDate(birthDate),
         role: selectedRoleProfile.baseRole,
@@ -866,6 +926,186 @@ ipcMain.handle("users:update", async (_event: IpcMainInvokeEvent, payload) => {
     const message = error instanceof Error ? error.message : "No se pudo actualizar el usuario";
     return { success: false, message };
   }
+});
+
+ipcMain.handle("auth:get-profile", async () => {
+  if (!currentSessionUser) {
+    return { success: false, message: "Debes iniciar sesion" };
+  }
+
+  const profile = await prisma.user.findUnique({
+    where: { id: currentSessionUser.id },
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+      birthDate: true,
+      role: true,
+    },
+  });
+
+  if (!profile) {
+    return { success: false, message: "Tu usuario ya no existe" };
+  }
+
+  return {
+    success: true,
+    profile: {
+      ...profile,
+      birthDate: profile.birthDate?.toISOString().slice(0, 10) ?? null,
+    },
+  };
+});
+
+ipcMain.handle("auth:update-profile", async (_event: IpcMainInvokeEvent, payload) => {
+  const parsed = updateOwnProfileInputSchema.safeParse(payload);
+  if (!parsed.success) {
+    return { success: false, message: "Datos invalidos" };
+  }
+
+  if (!currentSessionUser) {
+    return { success: false, message: "Debes iniciar sesion" };
+  }
+
+  const { firstName, lastName, email, phone, birthDate } = parsed.data;
+  const fullName = buildUserDisplayName(firstName, lastName);
+
+  const updated = await prisma.user.update({
+    where: { id: currentSessionUser.id },
+    data: {
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      name: fullName,
+      email: normalizeOptionalText(email),
+      phone: normalizeOptionalText(phone),
+      birthDate: parseBirthDate(birthDate),
+    },
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+      birthDate: true,
+      role: true,
+    },
+  });
+
+  currentSessionUser = {
+    ...currentSessionUser,
+    name: fullName,
+  };
+
+  return {
+    success: true,
+    user: currentSessionUser,
+    profile: {
+      ...updated,
+      birthDate: updated.birthDate?.toISOString().slice(0, 10) ?? null,
+    },
+  };
+});
+
+ipcMain.handle("auth:change-password", async (_event: IpcMainInvokeEvent, payload) => {
+  const parsed = changeOwnPasswordInputSchema.safeParse(payload);
+  if (!parsed.success) {
+    return { success: false, message: "Datos invalidos" };
+  }
+
+  if (!currentSessionUser) {
+    return { success: false, message: "Debes iniciar sesion" };
+  }
+
+  const { currentPassword, newPassword, confirmPassword } = parsed.data;
+
+  if (newPassword !== confirmPassword) {
+    return { success: false, message: "La confirmacion no coincide con la nueva contrasena" };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: currentSessionUser.id },
+    select: { id: true, passwordHash: true },
+  });
+
+  if (!user) {
+    return { success: false, message: "Tu usuario ya no existe" };
+  }
+
+  const isCurrentValid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!isCurrentValid) {
+    return { success: false, message: "La contrasena actual es incorrecta" };
+  }
+
+  const isSamePassword = await bcrypt.compare(newPassword, user.passwordHash);
+  if (isSamePassword) {
+    return { success: false, message: "La nueva contrasena debe ser diferente a la anterior" };
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: await bcrypt.hash(newPassword, 10),
+    },
+  });
+
+  return { success: true };
+});
+
+ipcMain.handle("notifications:get-read", async () => {
+  if (!currentSessionUser) {
+    return { success: false, message: "Debes iniciar sesion", readKeys: [] };
+  }
+
+  const reads = await prisma.notificationRead.findMany({
+    where: { userId: currentSessionUser.id },
+    select: { readKey: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return {
+    success: true,
+    readKeys: reads.map((entry) => entry.readKey),
+  };
+});
+
+ipcMain.handle("notifications:mark-read", async (_event: IpcMainInvokeEvent, payload) => {
+  if (!currentSessionUser) {
+    return { success: false, message: "Debes iniciar sesion" };
+  }
+
+  const readKeys = Array.isArray(payload?.readKeys)
+    ? payload.readKeys.filter((value: unknown): value is string => typeof value === "string" && value.trim().length > 0)
+    : [];
+
+  if (readKeys.length === 0) {
+    return { success: true };
+  }
+
+  await Promise.all(
+    readKeys.map((readKey: string) =>
+      prisma.notificationRead.upsert({
+        where: {
+          userId_readKey: {
+            userId: currentSessionUser!.id,
+            readKey,
+          },
+        },
+        update: {},
+        create: {
+          userId: currentSessionUser!.id,
+          readKey,
+        },
+      })
+    )
+  );
+
+  return { success: true };
 });
 
 ipcMain.handle("roles:list", async () => {

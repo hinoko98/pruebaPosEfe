@@ -4,10 +4,46 @@ import { fmt } from "../views/PosView";
 export default function ProductShelf({
   products,
   onPick,
+  searchQuery,
 }: {
   products: Product[];
   onPick: (product: Product) => void;
+  searchQuery?: string;
 }) {
+  if (products.length === 0) {
+    return (
+      <div
+        style={{
+          background: "white",
+          borderBottom: "1px solid #e2e8f0",
+          padding: "24px 14px",
+          flex: 1,
+          minHeight: 0,
+        }}
+      >
+        <div
+          style={{
+            border: "1px dashed #cbd5e1",
+            borderRadius: 16,
+            padding: "28px 18px",
+            textAlign: "center",
+            color: "#64748b",
+            background: "#f8fafc",
+          }}
+        >
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>
+            No hay articulos para mostrar
+          </div>
+          <div style={{ fontSize: 13 }}>
+            {searchQuery?.trim()
+              ? `No encontramos coincidencias para "${searchQuery.trim()}".`
+              : "No hay productos disponibles en este momento."}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -50,10 +86,9 @@ export default function ProductShelf({
         >
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{product.name}</div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>
-              {product.category || "General"}
-              {product.subcategory ? ` / ${product.subcategory}` : ""}
-            </div>
+            {product.sku ? (
+              <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>SKU: {product.sku}</div>
+            ) : null}
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>

@@ -273,6 +273,11 @@ export default function InvoicePanel({
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: "#163047" }}>{item.name}</div>
+                      {item.sku ? (
+                        <div style={{ fontSize: 11, color: "#6f859a", marginTop: 2 }}>
+                          SKU: {item.sku}
+                        </div>
+                      ) : null}
                       <div style={{ fontSize: 11, color: "#8a9aac", marginTop: 3 }}>
                         {fmt(item.price)} c/u
                       </div>

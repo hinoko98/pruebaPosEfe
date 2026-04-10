@@ -99,6 +99,8 @@ const createPurchaseSchema = z.object({
   purchasedAt: z.string().datetime().optional(),
   note: z.string().trim().max(300).optional().nullable(),
   markAsPaid: z.boolean().optional().default(false),
+  paymentMedium: z.enum(["CASH", "TRANSFER", "CORRESPONDENT"]).optional().default("CASH"),
+  paymentPlatformId: z.string().uuid().optional().nullable(),
   items: z
     .array(
       z.object({
@@ -118,6 +120,7 @@ const cashPlatformAmountSchema = z.object({
 
 const openCashSessionSchema = z.object({
   openingCashAmount: z.number().min(0),
+  openingTransferAmount: z.number().min(0).optional().default(0),
   note: z.string().trim().max(300).optional().nullable(),
   cashBreakdown: z.record(z.string(), z.number()).optional().default({}),
   correspondentBalances: z.array(cashPlatformAmountSchema).optional().default([]),
@@ -126,6 +129,7 @@ const openCashSessionSchema = z.object({
 const closeCashSessionSchema = z.object({
   sessionId: z.string().uuid(),
   countedCashAmount: z.number().min(0),
+  countedTransferAmount: z.number().min(0).optional().default(0),
   note: z.string().trim().max(300).optional().nullable(),
   cashBreakdown: z.record(z.string(), z.number()).optional().default({}),
   correspondentBalances: z.array(cashPlatformAmountSchema).optional().default([]),
@@ -361,6 +365,62 @@ function stringifySessionMeta(meta: Record<string, unknown>) {
   return JSON.stringify(meta);
 }
 
+type TreasuryMedium = "CASH" | "TRANSFER" | "CORRESPONDENT";
+
+type TreasuryMovementMeta = {
+  label?: string;
+  medium?: TreasuryMedium;
+  platformId?: string | null;
+  platformName?: string | null;
+  sourceType?: "SALE" | "ACCOUNTING_PAYMENT" | "PURCHASE" | "EXPENSE" | "MANUAL";
+  userNote?: string | null;
+};
+
+function toAmountMap(items?: Array<{ platformId: string; amount: number }> | null) {
+  return new Map((items ?? []).map((item) => [item.platformId, Number(item.amount || 0)]));
+}
+
+function normalizeTreasuryMedium(value?: string | null): TreasuryMedium {
+  if (value === "TRANSFER" || value === "CORRESPONDENT") return value;
+  return "CASH";
+}
+
+function parseTreasuryMovementMeta(note?: string | null): TreasuryMovementMeta | null {
+  if (!note) return null;
+  try {
+    const parsed = JSON.parse(note) as TreasuryMovementMeta;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!parsed.medium && !parsed.label && !parsed.sourceType) return null;
+    return {
+      ...parsed,
+      medium: normalizeTreasuryMedium(parsed.medium),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildTreasuryMovementNote(meta: TreasuryMovementMeta) {
+  return JSON.stringify(meta);
+}
+
+function resolveMovementLabel(note?: string | null, fallback = "Movimiento de caja") {
+  const meta = parseTreasuryMovementMeta(note);
+  return meta?.label || meta?.userNote || note || fallback;
+}
+
+function resolveMovementMedium(note?: string | null) {
+  return parseTreasuryMovementMeta(note)?.medium ?? "CASH";
+}
+
+function resolveMovementPlatformId(note?: string | null) {
+  return parseTreasuryMovementMeta(note)?.platformId ?? null;
+}
+
+function resolveMovementPlatformName(note?: string | null) {
+  return parseTreasuryMovementMeta(note)?.platformName ?? null;
+}
+
 function buildDateRangeFilter(dateFrom?: string, dateTo?: string) {
   return dateFrom || dateTo
     ? {
@@ -368,6 +428,213 @@ function buildDateRangeFilter(dateFrom?: string, dateTo?: string) {
         ...(dateTo ? { lte: new Date(dateTo) } : {}),
       }
     : undefined;
+}
+
+function getSessionSection(meta: Record<string, unknown>, key: "opening" | "closing") {
+  const raw = meta[key];
+  return raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+}
+
+function getSectionTransferAmount(section: Record<string, unknown>) {
+  return Number(section.transferAmount ?? 0);
+}
+
+function buildSalePaymentTotals(
+  sales: Array<{
+    total: number;
+    paymentMethod: PaymentMethod;
+    payments?: Array<{ method: PaymentMethod; amount: number }>;
+  }>
+) {
+  return sales.reduce(
+    (acc, sale) => {
+      if (sale.payments && sale.payments.length > 0) {
+        for (const payment of sale.payments) {
+          if (payment.method === PaymentMethod.CASH) acc.cash += payment.amount;
+          if (payment.method === PaymentMethod.TRANSFER || payment.method === PaymentMethod.CARD) {
+            acc.transfer += payment.amount;
+          }
+        }
+        return acc;
+      }
+
+      if (sale.paymentMethod === PaymentMethod.CASH) {
+        acc.cash += sale.total;
+      } else {
+        acc.transfer += sale.total;
+      }
+      return acc;
+    },
+    { cash: 0, transfer: 0 }
+  );
+}
+
+function buildCorrespondentMovementMap(
+  movements: Array<{ type: CashMovementType; amount: number; note: string | null }>
+) {
+  const map = new Map<string, { manualIncome: number; manualExpense: number; platformName: string | null }>();
+
+  for (const move of movements) {
+    const medium = resolveMovementMedium(move.note);
+    if (medium !== "CORRESPONDENT") continue;
+    const platformId = resolveMovementPlatformId(move.note);
+    if (!platformId) continue;
+    const current = map.get(platformId) ?? { manualIncome: 0, manualExpense: 0, platformName: resolveMovementPlatformName(move.note) };
+    if (move.type === CashMovementType.INCOME_IN) current.manualIncome += move.amount;
+    if (move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT) {
+      current.manualExpense += move.amount;
+    }
+    if (!current.platformName) current.platformName = resolveMovementPlatformName(move.note);
+    map.set(platformId, current);
+  }
+
+  return map;
+}
+
+function buildSessionTreasurySnapshot(params: {
+  session: {
+    openingAmount: number;
+    countedAmount?: number | null;
+    note?: string | null;
+    sales: Array<{
+      id: string;
+      invoiceNumber: string;
+      customer: string;
+      total: number;
+      paymentMethod: PaymentMethod;
+      createdAt: Date;
+      payments?: Array<{ method: PaymentMethod; amount: number }>;
+    }>;
+    movements: Array<{ id: string; type: CashMovementType; amount: number; note: string | null; createdAt: Date }>;
+    correspondentTransactions: Array<{
+      id: string;
+      amount: number;
+      commissionAmount: number;
+      performedAt: Date;
+      platform: { id: string; name: string };
+      type: { name: string; direction: CorrespondentDirection };
+    }>;
+  };
+  platforms: Array<{ id: string; name: string }>;
+}) {
+  const sessionMeta = parseSessionMeta(params.session.note);
+  const opening = getSessionSection(sessionMeta, "opening");
+  const closing = getSessionSection(sessionMeta, "closing");
+  const openingCorrespondent = toAmountMap(
+    (opening.correspondentBalances as Array<{ platformId: string; amount: number }> | undefined) ?? []
+  );
+  const closingCorrespondent = toAmountMap(
+    (closing.correspondentBalances as Array<{ platformId: string; amount: number }> | undefined) ?? []
+  );
+  const openingTransferAmount = getSectionTransferAmount(opening);
+  const countedTransferAmount = closing.transferAmount === undefined ? null : getSectionTransferAmount(closing);
+
+  const saleTotals = buildSalePaymentTotals(params.session.sales);
+  const cashManualIncome = params.session.movements
+    .filter((move) => move.type === CashMovementType.INCOME_IN && resolveMovementMedium(move.note) === "CASH")
+    .reduce((sum, move) => sum + move.amount, 0);
+  const transferManualIncome = params.session.movements
+    .filter((move) => move.type === CashMovementType.INCOME_IN && resolveMovementMedium(move.note) === "TRANSFER")
+    .reduce((sum, move) => sum + move.amount, 0);
+  const cashManualExpense = params.session.movements
+    .filter(
+      (move) =>
+        (move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT) &&
+        resolveMovementMedium(move.note) === "CASH"
+    )
+    .reduce((sum, move) => sum + move.amount, 0);
+  const transferManualExpense = params.session.movements
+    .filter(
+      (move) =>
+        (move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT) &&
+        resolveMovementMedium(move.note) === "TRANSFER"
+    )
+    .reduce((sum, move) => sum + move.amount, 0);
+  const correspondentManualMap = buildCorrespondentMovementMap(params.session.movements);
+
+  const expectedCash = params.session.openingAmount + saleTotals.cash + cashManualIncome - cashManualExpense;
+  const expectedTransferAmount =
+    openingTransferAmount + saleTotals.transfer + transferManualIncome - transferManualExpense;
+
+  const correspondentByPlatform = params.platforms.map((platform) => {
+    const platformTransactions = params.session.correspondentTransactions.filter(
+      (transaction) => transaction.platform.id === platform.id
+    );
+    const totalIn = platformTransactions
+      .filter((transaction) => transaction.type.direction === CorrespondentDirection.IN)
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    const totalOut = platformTransactions
+      .filter((transaction) => transaction.type.direction === CorrespondentDirection.OUT)
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    const totalCommission = platformTransactions.reduce((sum, transaction) => sum + transaction.commissionAmount, 0);
+    const manualAdjustments = correspondentManualMap.get(platform.id) ?? {
+      manualIncome: 0,
+      manualExpense: 0,
+      platformName: platform.name,
+    };
+    const openingAmount = openingCorrespondent.get(platform.id) ?? 0;
+    const expectedAmount =
+      openingAmount +
+      totalIn -
+      totalOut +
+      totalCommission +
+      manualAdjustments.manualIncome -
+      manualAdjustments.manualExpense;
+    const countedAmount = closingCorrespondent.has(platform.id) ? closingCorrespondent.get(platform.id) ?? 0 : null;
+
+    return {
+      platformId: platform.id,
+      platform: platform.name,
+      openingAmount,
+      totalIn,
+      totalOut,
+      totalCommission,
+      manualIncome: manualAdjustments.manualIncome,
+      manualExpense: manualAdjustments.manualExpense,
+      expectedAmount,
+      countedAmount,
+      differenceAmount: countedAmount === null ? null : countedAmount - expectedAmount,
+    };
+  });
+
+  const openingCorrespondentTotal = correspondentByPlatform.reduce((sum, item) => sum + item.openingAmount, 0);
+  const correspondentExpectedTotal = correspondentByPlatform.reduce((sum, item) => sum + item.expectedAmount, 0);
+  const countedCorrespondentTotal = correspondentByPlatform.reduce(
+    (sum, item) => sum + (item.countedAmount ?? item.expectedAmount),
+    0
+  );
+  const countedCashAmount =
+    closing.cashBreakdown && typeof closing.cashBreakdown === "object"
+      ? null
+      : params.session.countedAmount ?? null;
+  const expectedAvailableTotal = expectedCash + expectedTransferAmount + correspondentExpectedTotal;
+  const countedAvailableTotal =
+    (params.session.countedAmount ?? expectedCash) +
+    (countedTransferAmount ?? expectedTransferAmount) +
+    countedCorrespondentTotal;
+
+  return {
+    sessionMeta,
+    opening,
+    closing,
+    openingTransferAmount,
+    countedTransferAmount,
+    salesCash: saleTotals.cash,
+    salesTransfer: saleTotals.transfer,
+    cashManualIncome,
+    transferManualIncome,
+    cashManualExpense,
+    transferManualExpense,
+    expectedCash,
+    expectedTransferAmount,
+    openingCorrespondentTotal,
+    correspondentExpectedTotal,
+    countedCorrespondentTotal,
+    correspondentByPlatform,
+    expectedAvailableTotal,
+    countedAvailableTotal,
+    countedCashAmount,
+  };
 }
 
 function startOfToday() {
@@ -590,7 +857,7 @@ export function registerBackofficeIpcHandlers({
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
 
-    const [activeSession, recentSessions, platforms] = await Promise.all([
+    const [activeSession, previousClosedSession, recentSessions, platforms] = await Promise.all([
       prisma.cashSession.findFirst({
         where: { status: CashSessionStatus.OPEN },
         include: {
@@ -604,6 +871,12 @@ export function registerBackofficeIpcHandlers({
               total: true,
               paymentMethod: true,
               createdAt: true,
+              payments: {
+                select: {
+                  method: true,
+                  amount: true,
+                },
+              },
             },
             orderBy: { createdAt: "desc" },
           },
@@ -621,6 +894,14 @@ export function registerBackofficeIpcHandlers({
         },
         orderBy: { openedAt: "desc" },
       }),
+      prisma.cashSession.findFirst({
+        where: { status: CashSessionStatus.CLOSED },
+        include: {
+          register: true,
+          user: { select: { username: true, name: true } },
+        },
+        orderBy: { closedAt: "desc" },
+      }),
       prisma.cashSession.findMany({
         include: {
           register: true,
@@ -630,15 +911,50 @@ export function registerBackofficeIpcHandlers({
         take: 20,
       }),
       prisma.correspondentPlatform.findMany({
-        where: { isActive: true },
         orderBy: { name: "asc" },
       }),
     ]);
+
+    const previousReference = previousClosedSession
+      ? (() => {
+          const previousMeta = parseSessionMeta(previousClosedSession.note);
+          const previousClosing = getSessionSection(previousMeta, "closing");
+          const previousCorrespondentMap = toAmountMap(
+            (previousClosing.correspondentBalances as Array<{ platformId: string; amount: number }> | undefined) ?? []
+          );
+          const closingRows = platforms
+            .map((platform) => ({
+              platformId: platform.id,
+              platform: platform.name,
+              countedAmount: previousCorrespondentMap.get(platform.id) ?? 0,
+            }))
+            .filter((item) => item.countedAmount > 0);
+          const countedTransferAmount = getSectionTransferAmount(previousClosing);
+          return {
+            sessionId: previousClosedSession.id,
+            registerName: previousClosedSession.register.name,
+            user: previousClosedSession.user.name ?? previousClosedSession.user.username,
+            closedAt: previousClosedSession.closedAt?.toISOString() ?? null,
+            countedCashAmount: previousClosedSession.countedAmount ?? 0,
+            countedTransferAmount,
+            countedAvailableAmount:
+              (previousClosedSession.countedAmount ?? 0) +
+              countedTransferAmount +
+              closingRows.reduce((sum, item) => sum + item.countedAmount, 0),
+            closingBreakdown:
+              previousClosing.cashBreakdown && typeof previousClosing.cashBreakdown === "object"
+                ? (previousClosing.cashBreakdown as Record<string, number>)
+                : {},
+            correspondent: closingRows,
+          };
+        })()
+      : null;
 
     if (!activeSession) {
       return {
         success: true,
         activeSession: null,
+        previousReference,
         recentSessions: recentSessions.map((session) => ({
           id: session.id,
           registerName: session.register.name,
@@ -647,69 +963,45 @@ export function registerBackofficeIpcHandlers({
           openedAt: session.openedAt.toISOString(),
           closedAt: session.closedAt?.toISOString() ?? null,
           openingAmount: session.openingAmount,
+          openingAvailableAmount:
+            session.openingAmount +
+            getSectionTransferAmount(getSessionSection(parseSessionMeta(session.note), "opening")) +
+            ((getSessionSection(parseSessionMeta(session.note), "opening").correspondentBalances as
+              | Array<{ platformId: string; amount: number }>
+              | undefined) ?? []
+            ).reduce((sum, item) => sum + Number(item.amount || 0), 0),
           countedAmount: session.countedAmount,
+          countedAvailableAmount:
+            (session.countedAmount ?? 0) +
+            getSectionTransferAmount(getSessionSection(parseSessionMeta(session.note), "closing")) +
+            ((getSessionSection(parseSessionMeta(session.note), "closing").correspondentBalances as
+              | Array<{ platformId: string; amount: number }>
+              | undefined) ?? []
+            ).reduce((sum, item) => sum + Number(item.amount || 0), 0),
           differenceAmount: session.differenceAmount,
         })),
       };
     }
-
-    const sessionMeta = parseSessionMeta(activeSession.note);
-    const opening = (sessionMeta.opening as Record<string, unknown> | undefined) ?? {};
-    const closing = (sessionMeta.closing as Record<string, unknown> | undefined) ?? {};
-    const openingCorrespondent =
-      ((opening.correspondentBalances as Array<{ platformId: string; amount: number }>) || []);
-    const closingCorrespondent =
-      ((closing.correspondentBalances as Array<{ platformId: string; amount: number }>) || []);
-    const openingMap = new Map(openingCorrespondent.map((item) => [item.platformId, item.amount]));
-    const closingMap = new Map(closingCorrespondent.map((item) => [item.platformId, item.amount]));
-
-    const salesCash = activeSession.sales
-      .filter((sale) => sale.paymentMethod === PaymentMethod.CASH)
-      .reduce((sum, sale) => sum + sale.total, 0);
-    const salesCard = activeSession.sales
-      .filter((sale) => sale.paymentMethod === PaymentMethod.CARD)
-      .reduce((sum, sale) => sum + sale.total, 0);
-    const salesTransfer = activeSession.sales
-      .filter((sale) => sale.paymentMethod === PaymentMethod.TRANSFER)
-      .reduce((sum, sale) => sum + sale.total, 0);
-    const manualIncome = activeSession.movements
-      .filter((move) => move.type === CashMovementType.INCOME_IN)
-      .reduce((sum, move) => sum + move.amount, 0);
-    const manualExpense = activeSession.movements
-      .filter((move) => move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT)
-      .reduce((sum, move) => sum + move.amount, 0);
-    const expectedCash = activeSession.openingAmount + salesCash + manualIncome - manualExpense;
-
-    const correspondentByPlatform = platforms.map((platform) => {
-      const platformTransactions = activeSession.correspondentTransactions.filter(
-        (transaction) => transaction.platform.id === platform.id
-      );
-      const totalIn = platformTransactions
-        .filter((transaction) => transaction.type.direction === CorrespondentDirection.IN)
-        .reduce((sum, transaction) => sum + transaction.amount, 0);
-      const totalOut = platformTransactions
-        .filter((transaction) => transaction.type.direction === CorrespondentDirection.OUT)
-        .reduce((sum, transaction) => sum + transaction.amount, 0);
-      const totalCommission = platformTransactions.reduce(
-        (sum, transaction) => sum + transaction.commissionAmount,
-        0
-      );
-      const openingAmount = openingMap.get(platform.id) ?? 0;
-      const expectedAmount = openingAmount + totalIn - totalOut + totalCommission;
-      const countedAmount = closingMap.get(platform.id) ?? null;
-
-      return {
-        platformId: platform.id,
-        platform: platform.name,
-        openingAmount,
-        totalIn,
-        totalOut,
-        totalCommission,
-        expectedAmount,
-        countedAmount,
-        differenceAmount: countedAmount === null ? null : countedAmount - expectedAmount,
-      };
+    const treasury = buildSessionTreasurySnapshot({
+      session: activeSession,
+      platforms,
     });
+    const openingAvailableAmount =
+      activeSession.openingAmount + treasury.openingTransferAmount + treasury.openingCorrespondentTotal;
+    const countedCashAmount = activeSession.countedAmount ?? treasury.expectedCash;
+    const countedTransferAmount = treasury.countedTransferAmount ?? treasury.expectedTransferAmount;
+    const openingComparison = previousReference
+      ? {
+          cashDifferenceAmount: activeSession.openingAmount - previousReference.countedCashAmount,
+          transferDifferenceAmount: treasury.openingTransferAmount - previousReference.countedTransferAmount,
+          correspondentDifferenceTotal: treasury.correspondentByPlatform.reduce((sum, item) => {
+            const previousAmount =
+              previousReference.correspondent.find((previous) => previous.platformId === item.platformId)?.countedAmount ?? 0;
+            return sum + (item.openingAmount - previousAmount);
+          }, 0),
+          differenceAmount: openingAvailableAmount - previousReference.countedAvailableAmount,
+        }
+      : null;
 
     return {
       success: true,
@@ -719,43 +1011,100 @@ export function registerBackofficeIpcHandlers({
         user: activeSession.user.name ?? activeSession.user.username,
         openedAt: activeSession.openedAt.toISOString(),
         openingAmount: activeSession.openingAmount,
-        expectedCash,
-        countedCashAmount: activeSession.countedAmount,
-        cashDifferenceAmount: activeSession.countedAmount === null ? null : activeSession.countedAmount - expectedCash,
-        salesCash,
-        salesCard,
-        salesTransfer,
-        manualIncome,
-        manualExpense,
-        openingBreakdown: opening.cashBreakdown ?? {},
-        closingBreakdown: closing.cashBreakdown ?? {},
-        correspondent: correspondentByPlatform,
+        openingTransferAmount: treasury.openingTransferAmount,
+        openingAvailableAmount,
+        expectedCash: treasury.expectedCash,
+        expectedTransferAmount: treasury.expectedTransferAmount,
+        expectedAvailableAmount: treasury.expectedAvailableTotal,
+        countedCashAmount,
+        countedTransferAmount,
+        countedAvailableAmount:
+          countedCashAmount +
+          countedTransferAmount +
+          treasury.correspondentByPlatform.reduce(
+            (sum, item) => sum + (item.countedAmount ?? item.expectedAmount),
+            0
+          ),
+        cashDifferenceAmount: countedCashAmount - treasury.expectedCash,
+        transferDifferenceAmount: countedTransferAmount - treasury.expectedTransferAmount,
+        availableDifferenceAmount:
+          countedCashAmount +
+          countedTransferAmount +
+          treasury.correspondentByPlatform.reduce(
+            (sum, item) => sum + (item.countedAmount ?? item.expectedAmount),
+            0
+          ) -
+          treasury.expectedAvailableTotal,
+        salesCash: treasury.salesCash,
+        salesCard: 0,
+        salesTransfer: treasury.salesTransfer,
+        manualIncome: treasury.cashManualIncome,
+        manualExpense: treasury.cashManualExpense,
+        manualTransferIncome: treasury.transferManualIncome,
+        manualTransferExpense: treasury.transferManualExpense,
+        openingBreakdown:
+          treasury.opening.cashBreakdown && typeof treasury.opening.cashBreakdown === "object"
+            ? (treasury.opening.cashBreakdown as Record<string, number>)
+            : {},
+        closingBreakdown:
+          treasury.closing.cashBreakdown && typeof treasury.closing.cashBreakdown === "object"
+            ? (treasury.closing.cashBreakdown as Record<string, number>)
+            : {},
+        correspondent: treasury.correspondentByPlatform,
+        openingComparison,
         recentActivity: [
-          ...activeSession.sales.map((sale) => ({
-            id: sale.id,
-            createdAt: sale.createdAt.toISOString(),
-            type: "Venta",
-            detail: `${sale.invoiceNumber} - ${sale.customer}`,
-            amount: sale.total,
-          })),
+          ...activeSession.sales.flatMap((sale) =>
+            (sale.payments && sale.payments.length > 0
+              ? sale.payments
+              : [
+                  {
+                    method: sale.paymentMethod,
+                    amount: sale.total,
+                  },
+                ]
+            ).map((payment, index) => ({
+              id: `${sale.id}-${payment.method}-${index}`,
+              createdAt: sale.createdAt.toISOString(),
+              type: "Venta",
+              medium:
+                payment.method === PaymentMethod.CASH ? "Efectivo" : payment.method === PaymentMethod.CARD ? "Transferencia" : "Transferencia",
+              detail: `${sale.invoiceNumber} - ${sale.customer}`,
+              amount: payment.amount,
+              signedAmount: payment.amount,
+            }))
+          ),
           ...activeSession.correspondentTransactions.map((transaction) => ({
             id: transaction.id,
             createdAt: transaction.performedAt.toISOString(),
             type: "Corresponsal",
-            detail: `${transaction.platform.name} - ${transaction.type.name}`,
+            medium: transaction.platform.name,
+            detail: `${transaction.type.name}${transaction.commissionAmount > 0 ? ` + comision ${transaction.commissionAmount.toLocaleString("es-CO")}` : ""}`,
             amount: transaction.amount,
+            signedAmount:
+              transaction.type.direction === CorrespondentDirection.OUT ? -transaction.amount : transaction.amount,
           })),
           ...activeSession.movements.map((move) => ({
             id: move.id,
             createdAt: move.createdAt.toISOString(),
             type: move.type,
-            detail: move.note || "Movimiento de caja",
+            medium:
+              resolveMovementMedium(move.note) === "TRANSFER"
+                ? "Transferencias"
+                : resolveMovementMedium(move.note) === "CORRESPONDENT"
+                  ? resolveMovementPlatformName(move.note) || "Corresponsal"
+                  : "Efectivo",
+            detail: resolveMovementLabel(move.note),
             amount: move.amount,
+            signedAmount:
+              move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT
+                ? -move.amount
+                : move.amount,
           })),
         ]
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
           .slice(0, 30),
       },
+      previousReference,
       recentSessions: recentSessions.map((session) => ({
         id: session.id,
         registerName: session.register.name,
@@ -764,7 +1113,21 @@ export function registerBackofficeIpcHandlers({
         openedAt: session.openedAt.toISOString(),
         closedAt: session.closedAt?.toISOString() ?? null,
         openingAmount: session.openingAmount,
+        openingAvailableAmount:
+          session.openingAmount +
+          getSectionTransferAmount(getSessionSection(parseSessionMeta(session.note), "opening")) +
+          ((getSessionSection(parseSessionMeta(session.note), "opening").correspondentBalances as
+            | Array<{ platformId: string; amount: number }>
+            | undefined) ?? []
+          ).reduce((sum, item) => sum + Number(item.amount || 0), 0),
         countedAmount: session.countedAmount,
+        countedAvailableAmount:
+          (session.countedAmount ?? 0) +
+          getSectionTransferAmount(getSessionSection(parseSessionMeta(session.note), "closing")) +
+          ((getSessionSection(parseSessionMeta(session.note), "closing").correspondentBalances as
+            | Array<{ platformId: string; amount: number }>
+            | undefined) ?? []
+          ).reduce((sum, item) => sum + Number(item.amount || 0), 0),
         differenceAmount: session.differenceAmount,
       })),
     };
@@ -790,9 +1153,15 @@ export function registerBackofficeIpcHandlers({
     });
     if (!register) return { success: false, message: "No hay caja activa configurada" };
 
+    const openingAvailableAmount =
+      parsed.data.openingCashAmount +
+      parsed.data.openingTransferAmount +
+      parsed.data.correspondentBalances.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
     const meta = stringifySessionMeta({
       opening: {
         cashBreakdown: parsed.data.cashBreakdown,
+        transferAmount: parsed.data.openingTransferAmount,
         correspondentBalances: parsed.data.correspondentBalances,
         note: parsed.data.note || null,
       },
@@ -804,7 +1173,7 @@ export function registerBackofficeIpcHandlers({
         userId: currentSessionUser.id,
         status: CashSessionStatus.OPEN,
         openingAmount: parsed.data.openingCashAmount,
-        expectedAmount: parsed.data.openingCashAmount,
+        expectedAmount: openingAvailableAmount,
         note: meta,
       },
     });
@@ -833,12 +1202,22 @@ export function registerBackofficeIpcHandlers({
     const session = await prisma.cashSession.findUnique({
       where: { id: parsed.data.sessionId },
       include: {
-        sales: true,
+        sales: {
+          include: {
+            payments: {
+              select: {
+                method: true,
+                amount: true,
+              },
+            },
+          },
+        },
         movements: true,
         correspondentTransactions: {
           where: { status: "REGISTERED" },
           include: {
-            type: { select: { direction: true } },
+            platform: { select: { id: true, name: true } },
+            type: { select: { name: true, direction: true } },
           },
         },
       },
@@ -848,23 +1227,29 @@ export function registerBackofficeIpcHandlers({
       return { success: false, message: "La caja seleccionada no está abierta" };
     }
 
-    const salesCash = session.sales
-      .filter((sale) => sale.paymentMethod === PaymentMethod.CASH)
-      .reduce((sum, sale) => sum + sale.total, 0);
-    const manualIncome = session.movements
-      .filter((move) => move.type === CashMovementType.INCOME_IN)
-      .reduce((sum, move) => sum + move.amount, 0);
-    const manualExpense = session.movements
-      .filter((move) => move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT)
-      .reduce((sum, move) => sum + move.amount, 0);
-    const expectedCash = session.openingAmount + salesCash + manualIncome - manualExpense;
-    const differenceAmount = parsed.data.countedCashAmount - expectedCash;
+    const platforms = await prisma.correspondentPlatform.findMany({
+      orderBy: { name: "asc" },
+    });
+    const treasury = buildSessionTreasurySnapshot({
+      session,
+      platforms,
+    });
+    const expectedCash = treasury.expectedCash;
+    const cashDifferenceAmount = parsed.data.countedCashAmount - expectedCash;
+    const countedCorrespondentTotal = treasury.correspondentByPlatform.reduce((sum, item) => {
+      const counted = parsed.data.correspondentBalances.find((entry) => entry.platformId === item.platformId)?.amount;
+      return sum + Number(counted ?? item.expectedAmount);
+    }, 0);
+    const expectedAvailableAmount = expectedCash + treasury.expectedTransferAmount + treasury.correspondentExpectedTotal;
+    const countedAvailableAmount = parsed.data.countedCashAmount + parsed.data.countedTransferAmount + countedCorrespondentTotal;
+    const differenceAmount = countedAvailableAmount - expectedAvailableAmount;
 
     const previousMeta = parseSessionMeta(session.note);
     const updatedMeta = stringifySessionMeta({
       ...previousMeta,
       closing: {
         cashBreakdown: parsed.data.cashBreakdown,
+        transferAmount: parsed.data.countedTransferAmount,
         correspondentBalances: parsed.data.correspondentBalances,
         note: parsed.data.note || null,
       },
@@ -876,7 +1261,7 @@ export function registerBackofficeIpcHandlers({
         data: {
           status: CashSessionStatus.CLOSED,
           countedAmount: parsed.data.countedCashAmount,
-          expectedAmount: expectedCash,
+          expectedAmount: expectedAvailableAmount,
           differenceAmount,
           note: updatedMeta,
           closedAt: new Date(),
@@ -898,7 +1283,11 @@ export function registerBackofficeIpcHandlers({
             sessionId: session.id,
             type: CashMovementType.DIFFERENCE,
             amount: differenceAmount,
-            note: "Diferencia de cierre",
+            note: buildTreasuryMovementNote({
+              label: `Diferencia general de cierre (${cashDifferenceAmount >= 0 ? "POS" : "negativa"} en efectivo: ${cashDifferenceAmount.toLocaleString("es-CO")})`,
+              medium: "CASH",
+              sourceType: "MANUAL",
+            }),
           },
         });
       }
@@ -940,6 +1329,7 @@ export function registerBackofficeIpcHandlers({
         username: user.username,
         documentNumber: user.documentNumber,
         email: user.email,
+        phone: user.phone,
         address: user.address,
         birthDate: user.birthDate?.toISOString().slice(0, 10) ?? null,
         role: user.role,
@@ -1677,6 +2067,29 @@ export function registerBackofficeIpcHandlers({
     const purchasedAt = parsed.data.purchasedAt ? new Date(parsed.data.purchasedAt) : new Date();
     const status = parsed.data.markAsPaid ? PurchaseStatus.PAID : PurchaseStatus.RECEIVED;
     const balance = parsed.data.markAsPaid ? 0 : total;
+    const paymentMedium = normalizeTreasuryMedium(parsed.data.paymentMedium);
+    const paymentPlatform =
+      paymentMedium === "CORRESPONDENT" && parsed.data.paymentPlatformId
+        ? await prisma.correspondentPlatform.findUnique({
+            where: { id: parsed.data.paymentPlatformId },
+            select: { id: true, name: true },
+          })
+        : null;
+
+    if (paymentMedium === "CORRESPONDENT" && !paymentPlatform) {
+      return { success: false, message: "Selecciona un corresponsal valido para pagar la compra" };
+    }
+
+    const activeSession = parsed.data.markAsPaid
+      ? await prisma.cashSession.findFirst({
+          where: { status: CashSessionStatus.OPEN },
+          orderBy: { openedAt: "desc" },
+        })
+      : null;
+
+    if (parsed.data.markAsPaid && !activeSession) {
+      return { success: false, message: "Abre el control diario antes de registrar compras pagadas" };
+    }
 
     try {
       const purchase = await prisma.$transaction(async (tx) => {
@@ -1740,6 +2153,24 @@ export function registerBackofficeIpcHandlers({
           });
         }
 
+        if (parsed.data.markAsPaid && activeSession) {
+          await tx.cashMovement.create({
+            data: {
+              sessionId: activeSession.id,
+              type: CashMovementType.EXPENSE_OUT,
+              amount: total,
+              note: buildTreasuryMovementNote({
+                label: `Compra pagada ${createdPurchase.number} - ${supplier.name}`,
+                medium: paymentMedium,
+                platformId: paymentPlatform?.id ?? null,
+                platformName: paymentPlatform?.name ?? null,
+                sourceType: "PURCHASE",
+                userNote: parsed.data.note || null,
+              }),
+            },
+          });
+        }
+
         return createdPurchase;
       });
 
@@ -1747,6 +2178,9 @@ export function registerBackofficeIpcHandlers({
         number: purchase.number,
         supplier: supplier.name,
         total: purchase.total,
+        markAsPaid: parsed.data.markAsPaid,
+        paymentMedium,
+        paymentPlatform: paymentPlatform?.name ?? null,
       });
 
       return { success: true, purchaseId: purchase.id };
@@ -2018,6 +2452,13 @@ export function registerBackofficeIpcHandlers({
             orderBy: { createdAt: "desc" },
           },
           returns: true,
+          payments: {
+            orderBy: { createdAt: "asc" },
+            select: {
+              method: true,
+              amount: true,
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
         take: 150,
@@ -2122,16 +2563,161 @@ export function registerBackofficeIpcHandlers({
       };
     });
 
+    const mappedSales = sales.map((sale) => {
+      const returnedTotal = sale.returns.reduce((sum, entry) => sum + entry.total, 0);
+      const credit = sale.credits[0] ?? null;
+      const paidAtSale = sale.payments.reduce((sum, payment) => sum + payment.amount, 0);
+      const netSaleTotal = Math.max(sale.total - returnedTotal, 0);
+      const pendingAmount = credit ? credit.balance : Math.max(netSaleTotal - paidAtSale, 0);
+      const collectionStatus =
+        returnedTotal >= sale.total
+          ? "RETURNED"
+          : pendingAmount <= 0
+            ? "PAID"
+            : paidAtSale > 0
+              ? "PARTIAL"
+              : "PENDING";
+      const paymentSummary = sale.payments.length
+        ? sale.payments
+            .map((payment) => `${paymentMethodLabel(payment.method)} $${payment.amount.toLocaleString("es-CO")}`)
+            .join(" + ")
+        : credit
+          ? "Pendiente por cartera"
+          : paymentMethodLabel(sale.paymentMethod);
+
+      return {
+        id: sale.id,
+        invoiceNumber: sale.invoiceNumber,
+        customer: sale.customer,
+        customerId: sale.customerRef?.id ?? null,
+        total: sale.total,
+        paidAtSale,
+        pendingAmount,
+        returnedTotal,
+        grossProfit: sale.profit,
+        paymentSummary,
+        collectionStatus,
+        status: sale.status,
+        createdAt: sale.createdAt.toISOString(),
+        availableCreditTotal: Math.max(sale.total - returnedTotal, 0),
+        availableCreditNoteTotal: Math.max(sale.total - returnedTotal, 0),
+        credit: credit
+          ? {
+              id: credit.id,
+              total: credit.total,
+              balance: credit.balance,
+              status: deriveCreditStatus(credit.balance, credit.total, credit.dueDate),
+              dueDate: credit.dueDate?.toISOString() ?? null,
+            }
+          : null,
+      };
+    });
+
+    const paymentSummaryMap = new Map<PaymentMethod, { salesAmount: number; collectionsAmount: number }>();
+    for (const method of [PaymentMethod.CASH, PaymentMethod.CARD, PaymentMethod.TRANSFER]) {
+      paymentSummaryMap.set(method, { salesAmount: 0, collectionsAmount: 0 });
+    }
+    for (const sale of sales) {
+      if (sale.payments.length === 0) {
+        const current = paymentSummaryMap.get(sale.paymentMethod) ?? { salesAmount: 0, collectionsAmount: 0 };
+        current.salesAmount += sale.total;
+        paymentSummaryMap.set(sale.paymentMethod, current);
+        continue;
+      }
+      for (const payment of sale.payments) {
+        const current = paymentSummaryMap.get(payment.method) ?? { salesAmount: 0, collectionsAmount: 0 };
+        current.salesAmount += payment.amount;
+        paymentSummaryMap.set(payment.method, current);
+      }
+    }
+    for (const payment of payments) {
+      const current = paymentSummaryMap.get(payment.method) ?? { salesAmount: 0, collectionsAmount: 0 };
+      current.collectionsAmount += payment.amount;
+      paymentSummaryMap.set(payment.method, current);
+    }
+
+    const collectedSalesTotal = mappedSales.reduce((sum, sale) => sum + sale.paidAtSale, 0);
+    const collectionsTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
+    const pendingSalesBalance = mappedSales.reduce((sum, sale) => sum + sale.pendingAmount, 0);
+    const grossProfitTotal = mappedSales.reduce((sum, sale) => sum + sale.grossProfit, 0);
+
+    const movementHistory = [
+      ...mappedSales.map((sale) => ({
+        id: `sale-${sale.id}`,
+        createdAt: sale.createdAt,
+        category: "SALE" as const,
+        title: `Venta ${sale.invoiceNumber}`,
+        detail: `${sale.customer} | cobrado al momento $${sale.paidAtSale.toLocaleString("es-CO")} | pendiente $${sale.pendingAmount.toLocaleString("es-CO")}`,
+        medium: sale.paymentSummary,
+        amount: sale.total,
+        direction: "IN" as const,
+        reference: sale.invoiceNumber,
+        operationalImpact: sale.paidAtSale,
+      })),
+      ...payments.map((payment) => ({
+        id: `collection-${payment.id}`,
+        createdAt: payment.createdAt.toISOString(),
+        category: "COLLECTION" as const,
+        title: `Abono cartera ${payment.credit?.sale.invoiceNumber ?? ""}`.trim(),
+        detail: `${payment.customer.name} | ${payment.note || "Sin detalle"}`,
+        medium: paymentMethodLabel(payment.method),
+        amount: payment.amount,
+        direction: "IN" as const,
+        reference: payment.credit?.sale.invoiceNumber ?? null,
+        operationalImpact: payment.amount,
+      })),
+      ...creditNotes.map((note) => ({
+        id: `credit-note-${note.id}`,
+        createdAt: note.createdAt.toISOString(),
+        category: "CREDIT_NOTE" as const,
+        title: `Nota credito ${note.sale.invoiceNumber}`,
+        detail: `${note.sale.customer} | ${note.reason || "Ajuste sobre venta"}`,
+        medium: "Ajuste comercial",
+        amount: note.total,
+        direction: "OUT" as const,
+        reference: note.sale.invoiceNumber,
+        operationalImpact: -note.total,
+      })),
+      ...expenses.map((expense) => ({
+        id: `expense-${expense.id}`,
+        createdAt: expense.createdAt.toISOString(),
+        category: "EXPENSE" as const,
+        title: expense.type === CashMovementType.WITHDRAWAL_OUT ? "Retiro operativo" : "Gasto operativo",
+        detail: resolveMovementLabel(expense.note),
+        medium:
+          parseTreasuryMovementMeta(expense.note)?.medium === "CORRESPONDENT"
+            ? parseTreasuryMovementMeta(expense.note)?.platformName || "Corresponsal"
+            : parseTreasuryMovementMeta(expense.note)?.medium === "TRANSFER"
+              ? "Transferencias"
+              : "Efectivo",
+        amount: expense.amount,
+        direction: "OUT" as const,
+        reference: null,
+        operationalImpact: -expense.amount,
+      })),
+    ]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 250);
+
     return {
       success: true,
       summary: {
+        salesCount: mappedSales.length,
+        salesTotal: mappedSales.reduce((sum, sale) => sum + sale.total, 0),
+        collectedSalesTotal,
+        pendingSalesBalance,
         pendingCreditsCount: mappedCredits.filter((credit) => credit.balance > 0).length,
         pendingCreditsBalance: mappedCredits.reduce((sum, credit) => sum + credit.balance, 0),
-        paymentsTotal: payments.reduce((sum, payment) => sum + payment.amount, 0),
+        paymentsTotal: collectionsTotal,
+        collectionsTotal,
+        operationalIncomeTotal: collectedSalesTotal + collectionsTotal,
         creditNotesTotal: creditNotes.reduce((sum, note) => sum + note.total, 0),
         expensesTotal: expenses.reduce((sum, expense) => sum + expense.amount, 0),
+        grossProfitTotal,
+        averageTicket: mappedSales.length > 0 ? money(mappedSales.reduce((sum, sale) => sum + sale.total, 0) / mappedSales.length) : 0,
         netOperationalBalance:
-          payments.reduce((sum, payment) => sum + payment.amount, 0) -
+          collectedSalesTotal +
+          collectionsTotal -
           creditNotes.reduce((sum, note) => sum + note.total, 0) -
           expenses.reduce((sum, expense) => sum + expense.amount, 0),
       },
@@ -2142,31 +2728,15 @@ export function registerBackofficeIpcHandlers({
         document: customer.document,
         phone: customer.phone,
       })),
-      sales: sales.map((sale) => {
-        const returnedTotal = sale.returns.reduce((sum, entry) => sum + entry.total, 0);
-        const credit = sale.credits[0] ?? null;
-        return {
-          id: sale.id,
-          invoiceNumber: sale.invoiceNumber,
-          customer: sale.customer,
-          customerId: sale.customerRef?.id ?? null,
-          total: sale.total,
-          status: sale.status,
-          createdAt: sale.createdAt.toISOString(),
-          returnedTotal,
-          availableCreditTotal: Math.max(sale.total - returnedTotal, 0),
-          availableCreditNoteTotal: Math.max(sale.total - returnedTotal, 0),
-          credit: credit
-            ? {
-                id: credit.id,
-                total: credit.total,
-                balance: credit.balance,
-                status: deriveCreditStatus(credit.balance, credit.total, credit.dueDate),
-                dueDate: credit.dueDate?.toISOString() ?? null,
-              }
-            : null,
-        };
-      }),
+      paymentSummary: [...paymentSummaryMap.entries()].map(([method, totals]) => ({
+        method,
+        label: paymentMethodLabel(method),
+        salesAmount: totals.salesAmount,
+        collectionsAmount: totals.collectionsAmount,
+        totalAmount: totals.salesAmount + totals.collectionsAmount,
+      })),
+      movementHistory,
+      sales: mappedSales,
       credits: mappedCredits,
       payments: payments.map((payment) => ({
         id: payment.id,
@@ -2188,16 +2758,21 @@ export function registerBackofficeIpcHandlers({
         reason: note.reason,
         createdAt: note.createdAt.toISOString(),
       })),
-      expenses: expenses.map((expense) => ({
-        id: expense.id,
-        sessionId: expense.sessionId,
-        registerName: expense.session.register.name,
-        userName: expense.session.user.name ?? expense.session.user.username,
-        type: expense.type,
-        amount: expense.amount,
-        note: expense.note,
-        createdAt: expense.createdAt.toISOString(),
-      })),
+      expenses: expenses.map((expense) => {
+        const meta = parseTreasuryMovementMeta(expense.note);
+        return {
+          id: expense.id,
+          sessionId: expense.sessionId,
+          registerName: expense.session.register.name,
+          userName: expense.session.user.name ?? expense.session.user.username,
+          type: expense.type,
+          amount: expense.amount,
+          note: resolveMovementLabel(expense.note),
+          sourceMedium: meta?.medium ?? "CASH",
+          sourcePlatform: meta?.platformName ?? null,
+          createdAt: expense.createdAt.toISOString(),
+        };
+      }),
     };
   });
 
@@ -2296,16 +2871,13 @@ export function registerBackofficeIpcHandlers({
     if (credit.balance <= 0) return { success: false, message: "La cuenta por cobrar ya se encuentra saldada" };
     if (parsed.data.amount > credit.balance) return { success: false, message: "El abono supera el saldo pendiente" };
 
-    const cashSession =
-      parsed.data.method === PaymentMethod.CASH
-        ? await prisma.cashSession.findFirst({
-            where: { status: CashSessionStatus.OPEN },
-            orderBy: { openedAt: "desc" },
-          })
-        : null;
+    const cashSession = await prisma.cashSession.findFirst({
+      where: { status: CashSessionStatus.OPEN },
+      orderBy: { openedAt: "desc" },
+    });
 
-    if (parsed.data.method === PaymentMethod.CASH && !cashSession) {
-      return { success: false, message: "Abre caja general antes de registrar abonos en efectivo" };
+    if (!cashSession) {
+      return { success: false, message: "Abre el control diario antes de registrar abonos" };
     }
 
     try {
@@ -2332,16 +2904,19 @@ export function registerBackofficeIpcHandlers({
           },
         });
 
-        if (cashSession) {
-          await tx.cashMovement.create({
-            data: {
-              sessionId: cashSession.id,
-              type: CashMovementType.INCOME_IN,
-              amount: parsed.data.amount,
-              note: parsed.data.note || `Abono ${credit.sale.invoiceNumber}`,
-            },
-          });
-        }
+        await tx.cashMovement.create({
+          data: {
+            sessionId: cashSession.id,
+            type: CashMovementType.INCOME_IN,
+            amount: parsed.data.amount,
+            note: buildTreasuryMovementNote({
+              label: `Abono cartera ${credit.sale.invoiceNumber}`,
+              medium: parsed.data.method === PaymentMethod.CASH ? "CASH" : "TRANSFER",
+              sourceType: "ACCOUNTING_PAYMENT",
+              userNote: parsed.data.note || null,
+            }),
+          },
+        });
 
         if (nextBalance <= 0) {
           const returnedTotal = credit.sale.returns.reduce((sum, entry) => sum + entry.total, 0);
@@ -2455,13 +3030,33 @@ export function registerBackofficeIpcHandlers({
     });
     if (!activeSession) return { success: false, message: "Abre caja general antes de registrar gastos o retiros" };
 
+    const sourceMedium = normalizeTreasuryMedium(parsed.data.sourceMedium);
+    const sourcePlatform =
+      sourceMedium === "CORRESPONDENT" && parsed.data.sourcePlatformId
+        ? await prisma.correspondentPlatform.findUnique({
+            where: { id: parsed.data.sourcePlatformId },
+            select: { id: true, name: true },
+          })
+        : null;
+
+    if (sourceMedium === "CORRESPONDENT" && !sourcePlatform) {
+      return { success: false, message: "Selecciona un corresponsal valido para registrar el egreso" };
+    }
+
     try {
       const expense = await prisma.cashMovement.create({
         data: {
           sessionId: activeSession.id,
           type: parsed.data.type as CashMovementType,
           amount: parsed.data.amount,
-          note: parsed.data.note,
+          note: buildTreasuryMovementNote({
+            label: parsed.data.note,
+            medium: sourceMedium,
+            platformId: sourcePlatform?.id ?? null,
+            platformName: sourcePlatform?.name ?? null,
+            sourceType: "EXPENSE",
+            userNote: parsed.data.note,
+          }),
         },
       });
 
@@ -2469,6 +3064,8 @@ export function registerBackofficeIpcHandlers({
         type: parsed.data.type,
         amount: parsed.data.amount,
         note: parsed.data.note,
+        sourceMedium,
+        sourcePlatform: sourcePlatform?.name ?? null,
       });
 
       return { success: true, expenseId: expense.id, message: "Gasto registrado correctamente." };

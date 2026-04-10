@@ -12,7 +12,6 @@ import Typography from "@mui/material/Typography";
 
 import LogoutIcon from "@mui/icons-material/Logout";
 import SettingsIcon from "@mui/icons-material/Settings";
-import SecurityIcon from "@mui/icons-material/Security";
 import PersonIcon from "@mui/icons-material/Person";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 
@@ -165,12 +164,6 @@ export function defaultUserMenuItems(
       label: "Mi Perfil",
       icon: <PersonIcon />,
       path: `${basePath}/profile`,
-    },
-    {
-      key: "security",
-      label: "Seguridad",
-      icon: <SecurityIcon />,
-      path: `${basePath}/security`,
     },
     {
       key: "settings",

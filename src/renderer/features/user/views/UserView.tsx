@@ -48,6 +48,7 @@ type UserFormState = {
   lastName: string;
   documentNumber: string;
   email: string;
+  phone: string;
   address: string;
   birthDate: string;
   newPassword: string;
@@ -62,6 +63,7 @@ const initialFormState: UserFormState = {
   lastName: "",
   documentNumber: "",
   email: "",
+  phone: "",
   address: "",
   birthDate: "",
   newPassword: "",
@@ -102,6 +104,7 @@ function toEditForm(user: UserRow): UserFormState {
     lastName: user.lastName ?? "",
     documentNumber: user.documentNumber ?? "",
     email: user.email ?? "",
+    phone: user.phone ?? "",
     address: user.address ?? "",
     birthDate: user.birthDate ?? "",
     newPassword: "",
@@ -169,6 +172,7 @@ export function UserView() {
         row.username,
         row.documentNumber || "",
         row.email || "",
+        row.phone || "",
         row.address || "",
         rolLabel(row.role),
         row.isActive ? "activo" : "inactivo",
@@ -235,6 +239,7 @@ export function UserView() {
       lastName: form.lastName,
       documentNumber: form.documentNumber,
       email: form.email || null,
+      phone: form.phone || null,
       address: form.address || null,
       birthDate: form.birthDate || null,
       newPassword: form.newPassword,
@@ -266,6 +271,7 @@ export function UserView() {
       lastName: form.lastName,
       documentNumber: form.documentNumber,
       email: form.email || null,
+      phone: form.phone || null,
       address: form.address || null,
       birthDate: form.birthDate || null,
       newPassword: form.newPassword,
@@ -337,6 +343,14 @@ export function UserView() {
           onChange={(event) => updateForm("email", event.target.value)}
         />
       </Box>
+
+      <TextField
+        label="Telefono"
+        value={form.phone}
+        onChange={(event) => updateForm("phone", event.target.value.replace(/\D/g, "").slice(0, 10))}
+        inputProps={{ inputMode: "numeric", pattern: "[0-9]*", maxLength: 10 }}
+        helperText="Opcional. Usa 10 digitos."
+      />
 
       <TextField
         label="Direccion"
@@ -457,7 +471,7 @@ export function UserView() {
         <Stack spacing={2}>
           <TextField
             label="Buscar usuario"
-            placeholder="Codigo, nombre, usuario, cedula, correo o rol"
+            placeholder="Codigo, nombre, usuario, cedula, correo, telefono o rol"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -581,22 +595,27 @@ export function UserView() {
 
               <Box display="grid" gridTemplateColumns={{ xs: "1fr", sm: "repeat(2, 1fr)" }} gap={2}>
                 <TextField label="Correo" value={formatOptionalValue(detailUser.email)} disabled />
-                <TextField label="Direccion" value={formatOptionalValue(detailUser.address)} disabled multiline minRows={2} />
+                <TextField label="Telefono" value={formatOptionalValue(detailUser.phone)} disabled />
               </Box>
 
               <Box display="grid" gridTemplateColumns={{ xs: "1fr", sm: "repeat(2, 1fr)" }} gap={2}>
-                <TextField label="Fecha de nacimiento" value={formatOptionalValue(detailUser.birthDate)} disabled />
+                <TextField label="Direccion" value={formatOptionalValue(detailUser.address)} disabled multiline minRows={2} />
                 <TextField label="Fecha de registro" value={new Date(detailUser.createdAt).toLocaleString("es-CO")} disabled />
               </Box>
 
               <Box display="grid" gridTemplateColumns={{ xs: "1fr", sm: "repeat(2, 1fr)" }} gap={2}>
-                <TextField label="Rol" value={rolLabel(detailUser.role)} disabled />
+                <TextField label="Fecha de nacimiento" value={formatOptionalValue(detailUser.birthDate)} disabled />
                 <TextField label="Perfil de rol" value={detailUser.roleProfileName || "Sin perfil"} disabled />
               </Box>
 
               <Box display="grid" gridTemplateColumns={{ xs: "1fr", sm: "repeat(2, 1fr)" }} gap={2}>
+                <TextField label="Rol" value={rolLabel(detailUser.role)} disabled />
                 <TextField label="Estado" value={detailUser.isActive ? "Activo" : "Inactivo"} disabled />
+              </Box>
+
+              <Box display="grid" gridTemplateColumns={{ xs: "1fr", sm: "repeat(2, 1fr)" }} gap={2}>
                 <TextField label="Ventas registradas" value={String(detailUser.salesCount)} disabled />
+                <TextField label="Sesiones registradas" value={String(detailUser.sessionsCount)} disabled />
               </Box>
             </Stack>
           ) : null}

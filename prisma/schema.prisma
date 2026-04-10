@@ -123,6 +123,7 @@ model User {
   name         String?
   documentNumber String? @unique
   email        String?
+  phone        String?
   address      String?
   birthDate    DateTime?
   role         Role     @default(EMPLOYEE)
@@ -142,8 +143,21 @@ model User {
   correspondentClosures               CorrespondentDailyClosure[]
   correspondentAuditLogs              CorrespondentAuditLog[]
   correspondentEvidences             CorrespondentEvidence[]
+  notificationReads                   NotificationRead[]
 
   @@index([roleProfileId])
+}
+
+model NotificationRead {
+  id        String   @id @default(uuid())
+  userId    String
+  readKey   String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, readKey])
+  @@index([userId])
 }
 
 model RoleProfile {

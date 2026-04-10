@@ -30,7 +30,7 @@ export function CorrespondentModuleNav() {
         path: user?.role === "ADMIN" ? "/admin/correspondent/history" : "/app/correspondent/history",
       },
       {
-        label: "Cuadre de caja",
+        label: "Resumen diario",
         path: user?.role === "ADMIN" ? "/admin/correspondent/closures" : "/app/correspondent/closures",
       },
       {
@@ -48,7 +48,7 @@ export function CorrespondentModuleNav() {
         <Stack spacing={2}>
           <Box display="flex" alignItems="center" gap={0.5}>
             <Typography variant="h5">Modulo corresponsal</Typography>
-            <HelpHint title="Cuatro vistas separadas para registrar, consultar, cuadrar y administrar los corresponsales." />
+            <HelpHint title="Registra y consulta movimientos de corresponsal. El cuadre operativo diario se centraliza en Caja general." />
           </Box>
 
           <Box display="flex" gap={1} flexWrap="wrap">

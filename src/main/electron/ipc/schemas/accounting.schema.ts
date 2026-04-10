@@ -2,6 +2,10 @@ import { z } from "zod";
 
 import { paymentMethodSchema } from "./sales.schema";
 
+export const treasurySourceMediumSchema = z.enum(["CASH", "TRANSFER", "CORRESPONDENT"]);
+
+export type TreasurySourceMediumInput = z.infer<typeof treasurySourceMediumSchema>;
+
 export const accountingRangeSchema = z
   .object({
     dateFrom: z.string().datetime().optional(),
@@ -42,6 +46,8 @@ export const createAccountingExpenseSchema = z.object({
   amount: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
   note: z.string().trim().min(2, "La descripcion es obligatoria").max(250),
   type: z.enum(["EXPENSE_OUT", "WITHDRAWAL_OUT"]).optional().default("EXPENSE_OUT"),
+  sourceMedium: treasurySourceMediumSchema.optional().default("CASH"),
+  sourcePlatformId: z.string().uuid("Plataforma invalida").optional().nullable(),
 });
 
 export type CreateAccountingExpenseInput = z.infer<typeof createAccountingExpenseSchema>;

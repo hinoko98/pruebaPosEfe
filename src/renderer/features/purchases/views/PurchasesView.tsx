@@ -33,6 +33,7 @@ import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
 import { useTablePagination } from "@/hooks/useTablePagination";
 
 type PurchaseRow = Awaited<ReturnType<typeof window.api.listPurchases>>["purchases"][number];
+type CorrespondentPlatform = Awaited<ReturnType<typeof window.api.getCorrespondentCatalog>>["platforms"][number];
 
 type PurchaseFormRow = {
   lineId: string;
@@ -83,21 +84,25 @@ export default function PurchasesView() {
   const [createOpen, setCreateOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState<Awaited<ReturnType<typeof window.api.getPurchaseDetail>>["purchase"] | null>(null);
+  const [correspondentPlatforms, setCorrespondentPlatforms] = useState<CorrespondentPlatform[]>([]);
 
   const [supplierId, setSupplierId] = useState("");
   const [purchasedAt, setPurchasedAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState("");
   const [markAsPaid, setMarkAsPaid] = useState(false);
+  const [paymentMedium, setPaymentMedium] = useState<"CASH" | "TRANSFER" | "CORRESPONDENT">("CASH");
+  const [paymentPlatformId, setPaymentPlatformId] = useState("");
   const [rows, setRows] = useState<PurchaseFormRow[]>([emptyPurchaseRow()]);
   const canCreatePurchases = hasPermission(user, APP_PERMISSION_KEYS.purchasesCreate);
   const canViewPurchaseDetails = hasPermission(user, APP_PERMISSION_KEYS.purchasesDetails);
 
   const loadData = async () => {
     setLoading(true);
-    const [purchasesResponse, suppliersResponse, productsResponse] = await Promise.all([
+    const [purchasesResponse, suppliersResponse, productsResponse, correspondentResponse] = await Promise.all([
       window.api.listPurchases(),
       window.api.listSuppliers(),
       window.api.listProductsAdmin(),
+      window.api.getCorrespondentCatalog(),
     ]);
 
     if (!purchasesResponse.success) {
@@ -106,7 +111,7 @@ export default function PurchasesView() {
       return;
     }
 
-    if (!suppliersResponse.success || !productsResponse.success) {
+    if (!suppliersResponse.success || !productsResponse.success || !correspondentResponse.success) {
       setFeedback({ severity: "error", message: "No se pudieron cargar proveedores o productos para compras." });
       setLoading(false);
       return;
@@ -115,6 +120,7 @@ export default function PurchasesView() {
     setPurchases(purchasesResponse.purchases);
     setSuppliers(suppliersResponse.suppliers.filter((supplier) => supplier.isActive));
     setProducts(productsResponse.products.filter((product) => product.isActive));
+    setCorrespondentPlatforms(correspondentResponse.platforms);
     setLoading(false);
   };
 
@@ -195,6 +201,8 @@ export default function PurchasesView() {
     setPurchasedAt(new Date().toISOString().slice(0, 10));
     setNote("");
     setMarkAsPaid(false);
+    setPaymentMedium("CASH");
+    setPaymentPlatformId("");
     setRows([emptyPurchaseRow()]);
   };
 
@@ -223,11 +231,18 @@ export default function PurchasesView() {
       return;
     }
 
+    if (markAsPaid && paymentMedium === "CORRESPONDENT" && !paymentPlatformId) {
+      setFeedback({ severity: "error", message: "Selecciona el corresponsal desde el que salio el pago." });
+      return;
+    }
+
     const response = await window.api.createPurchase({
       supplierId,
       purchasedAt: new Date(`${purchasedAt}T12:00:00`).toISOString(),
       note: note.trim() || null,
       markAsPaid,
+      paymentMedium,
+      paymentPlatformId: paymentMedium === "CORRESPONDENT" ? paymentPlatformId || null : null,
       items: normalizedRows,
     });
 
@@ -385,6 +400,39 @@ export default function PurchasesView() {
               control={<Checkbox checked={markAsPaid} onChange={(event) => setMarkAsPaid(event.target.checked)} />}
               label="Marcar compra como pagada"
             />
+
+            {markAsPaid ? (
+              <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: paymentMedium === "CORRESPONDENT" ? "1fr 1fr" : "1fr" }} gap={2}>
+                <TextField
+                  select
+                  label="Medio desde el que sale el dinero"
+                  value={paymentMedium}
+                  onChange={(event) => {
+                    const nextValue = event.target.value as "CASH" | "TRANSFER" | "CORRESPONDENT";
+                    setPaymentMedium(nextValue);
+                    if (nextValue !== "CORRESPONDENT") setPaymentPlatformId("");
+                  }}
+                >
+                  <MenuItem value="CASH">Efectivo</MenuItem>
+                  <MenuItem value="TRANSFER">Transferencias</MenuItem>
+                  <MenuItem value="CORRESPONDENT">Corresponsal</MenuItem>
+                </TextField>
+                {paymentMedium === "CORRESPONDENT" ? (
+                  <TextField
+                    select
+                    label="Plataforma corresponsal"
+                    value={paymentPlatformId}
+                    onChange={(event) => setPaymentPlatformId(event.target.value)}
+                  >
+                    {correspondentPlatforms.map((platform) => (
+                      <MenuItem key={platform.id} value={platform.id}>
+                        {platform.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                ) : null}
+              </Box>
+            ) : null}
 
             <Box sx={{ overflowX: "auto" }}>
               <Table size="small">
