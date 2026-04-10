@@ -10,6 +10,7 @@ import HelpHint from "@/components/ui/HelpHint";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
+import { alpha, useTheme } from "@mui/material/styles";
 
 import type { CartItem, Payment, PaymentMethod, Product } from "../types";
 
@@ -51,9 +52,19 @@ function MenuToggleIcon() {
 function InvoiceCollapsedRail({
   onOpen,
   itemCount,
+  isDark,
+  colors,
 }: {
   onOpen: () => void;
   itemCount: number;
+  isDark: boolean;
+  colors: {
+    surface: string;
+    border: string;
+    muted: string;
+    pillBg: string;
+    pillText: string;
+  };
 }) {
   return (
     <aside
@@ -61,8 +72,8 @@ function InvoiceCollapsedRail({
         width: 58,
         minWidth: 58,
         flexShrink: 0,
-        background: "#ffffff",
-        borderLeft: "1px solid #dbe4f0",
+        background: colors.surface,
+        borderLeft: `1px solid ${colors.border}`,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -77,9 +88,9 @@ function InvoiceCollapsedRail({
           width: 38,
           height: 38,
           borderRadius: 12,
-          border: "1px solid #dfe8f2",
-          background: "white",
-          color: "#5f748a",
+          border: `1px solid ${colors.border}`,
+          background: colors.surface,
+          color: colors.muted,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -96,7 +107,7 @@ function InvoiceCollapsedRail({
           fontSize: 11,
           fontWeight: 700,
           letterSpacing: "0.08em",
-          color: "#7a8ea3",
+          color: colors.muted,
           textTransform: "uppercase",
         }}
       >
@@ -108,8 +119,8 @@ function InvoiceCollapsedRail({
           minWidth: 30,
           minHeight: 30,
           borderRadius: 999,
-          background: itemCount > 0 ? "#e0f2fe" : "#f1f5f9",
-          color: itemCount > 0 ? "#0369a1" : "#94a3b8",
+          background: itemCount > 0 ? colors.pillBg : isDark ? alpha("#ffffff", 0.06) : "#f1f5f9",
+          color: itemCount > 0 ? colors.pillText : colors.muted,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -125,6 +136,8 @@ function InvoiceCollapsedRail({
 }
 
 export default function PosView() {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -377,6 +390,22 @@ export default function PosView() {
     setFeedback(`Factura ${completedSale.invoiceNumber} enviada a impresion.`);
   };
 
+  const shellColors = useMemo(
+    () => ({
+      background: theme.palette.background.default,
+      surface: theme.palette.background.paper,
+      border: theme.palette.divider,
+      text: theme.palette.text.primary,
+      muted: theme.palette.text.secondary,
+      feedbackBg: isDark ? alpha(theme.palette.primary.main, 0.14) : alpha(theme.palette.primary.main, 0.1),
+      feedbackBorder: isDark ? alpha(theme.palette.primary.main, 0.24) : alpha(theme.palette.primary.main, 0.2),
+      feedbackText: theme.palette.primary.main,
+      pillBg: isDark ? alpha(theme.palette.primary.main, 0.18) : alpha(theme.palette.primary.main, 0.12),
+      pillText: theme.palette.primary.main,
+    }),
+    [isDark, theme]
+  );
+
   return (
     <div
       style={{
@@ -384,7 +413,7 @@ export default function PosView() {
         flexDirection: "column",
         height: "calc(100vh - 120px)",
         minHeight: 0,
-        background: "#f1f5f9",
+        background: shellColors.background,
         borderRadius: 16,
         overflow: "hidden",
       }}
@@ -396,12 +425,12 @@ export default function PosView() {
           justifyContent: "space-between",
           gap: 12,
           padding: "10px 14px",
-          background: "white",
-          borderBottom: "1px solid #e2e8f0",
+          background: shellColors.surface,
+          borderBottom: `1px solid ${shellColors.border}`,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <strong style={{ fontSize: 16, color: "#0f172a" }}>Facturar</strong>
+          <strong style={{ fontSize: 16, color: shellColors.text }}>Facturar</strong>
           <HelpHint title="Busca productos, arma la venta, define cliente y confirma el pago sin salir del flujo principal de caja." />
         </div>
       </div>
@@ -412,9 +441,9 @@ export default function PosView() {
         <div
           style={{
             padding: "10px 14px",
-            background: "#eff6ff",
-            color: "#1d4ed8",
-            borderBottom: "1px solid #dbeafe",
+            background: shellColors.feedbackBg,
+            color: shellColors.feedbackText,
+            borderBottom: `1px solid ${shellColors.feedbackBorder}`,
             fontSize: 13,
             fontWeight: 600,
           }}
@@ -460,7 +489,18 @@ export default function PosView() {
             canCheckout={canCheckout}
           />
         ) : (
-          <InvoiceCollapsedRail onOpen={() => setInvoiceVisible(true)} itemCount={cartCount} />
+          <InvoiceCollapsedRail
+            onOpen={() => setInvoiceVisible(true)}
+            itemCount={cartCount}
+            isDark={isDark}
+            colors={{
+              surface: shellColors.surface,
+              border: shellColors.border,
+              muted: shellColors.muted,
+              pillBg: shellColors.pillBg,
+              pillText: shellColors.pillText,
+            }}
+          />
         )}
       </div>
 

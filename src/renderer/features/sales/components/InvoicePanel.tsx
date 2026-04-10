@@ -1,4 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
+import type { Theme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 
 import type { CartItem } from "../types";
 import { fmt } from "../views/PosView";
@@ -73,9 +75,24 @@ export default function InvoicePanel({
   canChangeCustomer?: boolean;
   canCheckout?: boolean;
 }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
   const isEmpty = cart.length === 0;
   const selectedCustomer = customers.find((entry) => entry.name === customer);
   const cartCount = cart.reduce((sum, item) => sum + item.qty, 0);
+  const inputStyle = getFieldStyle(theme);
+  const colors = {
+    surface: theme.palette.background.paper,
+    panel: isDark ? alpha(theme.palette.common.white, 0.03) : "#fbfdff",
+    panelSoft: isDark ? alpha(theme.palette.common.white, 0.02) : "#f8fbfe",
+    border: theme.palette.divider,
+    text: theme.palette.text.primary,
+    muted: theme.palette.text.secondary,
+    primary: theme.palette.primary.main,
+    primarySoft: isDark ? alpha(theme.palette.primary.main, 0.16) : alpha(theme.palette.primary.main, 0.08),
+    primarySoftStrong: isDark ? alpha(theme.palette.primary.main, 0.2) : "#edf7ff",
+    danger: theme.palette.error.main,
+  };
 
   return (
     <aside
@@ -83,8 +100,8 @@ export default function InvoicePanel({
         width: 398,
         minWidth: 398,
         flexShrink: 0,
-        background: "#ffffff",
-        borderLeft: "1px solid #dbe4f0",
+        background: colors.surface,
+        borderLeft: `1px solid ${colors.border}`,
         display: "flex",
         flexDirection: "column",
         height: "100%",
@@ -93,7 +110,7 @@ export default function InvoicePanel({
       <div
         style={{
           padding: "14px 14px 10px",
-          borderBottom: "1px solid #edf2f7",
+          borderBottom: `1px solid ${colors.border}`,
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -101,14 +118,14 @@ export default function InvoicePanel({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <h2 style={{ margin: 0, fontSize: 15, color: "#12304a", fontWeight: 800 }}>Factura de venta</h2>
+          <h2 style={{ margin: 0, fontSize: 15, color: colors.text, fontWeight: 800 }}>Factura de venta</h2>
           <span
             style={{
               width: 20,
               height: 20,
               borderRadius: 999,
-              background: "#edf7ff",
-              color: "#4f87b9",
+              background: colors.primarySoftStrong,
+              color: colors.primary,
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
@@ -125,9 +142,9 @@ export default function InvoicePanel({
             width: 30,
             height: 30,
             borderRadius: 10,
-            border: "1px solid #dfe8f2",
-            background: "white",
-            color: "#70859b",
+            border: `1px solid ${colors.border}`,
+            background: colors.surface,
+            color: colors.muted,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -141,20 +158,20 @@ export default function InvoicePanel({
       <div
         style={{
           padding: "12px 14px 10px",
-          borderBottom: "1px solid #edf2f7",
+          borderBottom: `1px solid ${colors.border}`,
           display: "grid",
           gap: 12,
         }}
       >
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <FieldShell label="Lista de precio">
-            <select style={fieldStyle} defaultValue="General">
+            <select style={inputStyle} defaultValue="General">
               <option value="General">General</option>
             </select>
           </FieldShell>
 
           <FieldShell label="Numeracion">
-            <select style={fieldStyle} defaultValue="Principal">
+            <select style={inputStyle} defaultValue="Principal">
               <option value="Principal">Principal</option>
             </select>
           </FieldShell>
@@ -165,7 +182,7 @@ export default function InvoicePanel({
             <select
               value={selectedCustomer ? selectedCustomer.name : customer || "Consumidor final"}
               onChange={(event) => onCustomerChange(event.target.value)}
-              style={fieldStyle}
+              style={inputStyle}
               disabled={!canChangeCustomer}
             >
               <option value="Consumidor final">Consumidor final</option>
@@ -187,8 +204,8 @@ export default function InvoicePanel({
               height: 36,
               borderRadius: 12,
               border: "none",
-              background: "#dff8f8",
-              color: "#24989c",
+              background: colors.primarySoft,
+              color: colors.primary,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -207,7 +224,7 @@ export default function InvoicePanel({
           minHeight: 0,
           display: "flex",
           flexDirection: "column",
-          background: "#fbfdff",
+          background: colors.panel,
         }}
       >
         <div
@@ -222,14 +239,16 @@ export default function InvoicePanel({
               style={{
                 height: "100%",
                 borderRadius: 18,
-                background: "linear-gradient(180deg, #ffffff 0%, #fbfcff 100%)",
-                border: "1px solid #edf2f7",
+                background: isDark
+                  ? `linear-gradient(180deg, ${alpha(theme.palette.common.white, 0.02)} 0%, ${alpha(theme.palette.common.white, 0.01)} 100%)`
+                  : `linear-gradient(180deg, ${theme.palette.background.paper} 0%, ${colors.panel} 100%)`,
+                border: `1px solid ${colors.border}`,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
                 textAlign: "center",
-                color: "#8a9aac",
+                color: colors.muted,
                 gap: 12,
                 padding: "28px",
               }}
@@ -239,17 +258,17 @@ export default function InvoicePanel({
                   width: 64,
                   height: 64,
                   borderRadius: 20,
-                  border: "1px solid #e7eef7",
-                  background: "#ffffff",
+                  border: `1px solid ${colors.border}`,
+                  background: colors.surface,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  color: "#7c8fa4",
+                  color: colors.muted,
                 }}
               >
                 <EmptyBagIcon />
               </div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#52677c" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: colors.text }}>
                 Aqui veras los productos que elijas
               </div>
               <div style={{ fontSize: 13, lineHeight: 1.6 }}>
@@ -262,8 +281,8 @@ export default function InvoicePanel({
                 <div
                   key={item.lineId}
                   style={{
-                    background: "#ffffff",
-                    border: "1px solid #e7eef7",
+                    background: colors.surface,
+                    border: `1px solid ${colors.border}`,
                     borderRadius: 16,
                     padding: "12px 12px 10px",
                     display: "grid",
@@ -272,13 +291,13 @@ export default function InvoicePanel({
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: "#163047" }}>{item.name}</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: colors.text }}>{item.name}</div>
                       {item.sku ? (
-                        <div style={{ fontSize: 11, color: "#6f859a", marginTop: 2 }}>
+                        <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>
                           SKU: {item.sku}
                         </div>
                       ) : null}
-                      <div style={{ fontSize: 11, color: "#8a9aac", marginTop: 3 }}>
+                      <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>
                         {fmt(item.price)} c/u
                       </div>
                     </div>
@@ -288,7 +307,7 @@ export default function InvoicePanel({
                       style={{
                         border: "none",
                         background: "transparent",
-                        color: "#f05d5e",
+                        color: colors.danger,
                         cursor: "pointer",
                         fontSize: 12,
                         fontWeight: 700,
@@ -305,11 +324,11 @@ export default function InvoicePanel({
                       style={{
                         height: 34,
                         borderRadius: 999,
-                        border: "1px solid #dbe5ef",
+                        border: `1px solid ${colors.border}`,
                         display: "inline-flex",
                         alignItems: "center",
                         overflow: "hidden",
-                        background: "#ffffff",
+                        background: colors.surface,
                       }}
                     >
                       <QtyAction onClick={() => onQty(item.lineId, item.qty - 1)}>
@@ -326,7 +345,7 @@ export default function InvoicePanel({
                           textAlign: "center",
                           fontSize: 13,
                           fontWeight: 700,
-                          color: "#163047",
+                          color: colors.text,
                           fontFamily: "inherit",
                         }}
                       />
@@ -335,7 +354,7 @@ export default function InvoicePanel({
                       </QtyAction>
                     </div>
 
-                    <div style={{ fontSize: 14, fontWeight: 800, color: "#1b87a6" }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: colors.primary }}>
                       {fmt(item.price * item.qty)}
                     </div>
                   </div>
@@ -347,8 +366,8 @@ export default function InvoicePanel({
 
         <div
           style={{
-            borderTop: "1px solid #edf2f7",
-            background: "#ffffff",
+            borderTop: `1px solid ${colors.border}`,
+            background: colors.surface,
             padding: "12px 14px 10px",
             display: "grid",
             gap: 10,
@@ -357,8 +376,8 @@ export default function InvoicePanel({
           <div
             style={{
               borderRadius: 16,
-              background: "#f8fbfe",
-              border: "1px solid #e8eef5",
+              background: colors.panelSoft,
+              border: `1px solid ${colors.border}`,
               padding: "12px",
               display: "grid",
               gap: 7,
@@ -366,7 +385,7 @@ export default function InvoicePanel({
           >
             <TotalRow label="Subtotal" value={fmt(totals.subtotal)} />
             <TotalRow label="IVA" value={fmt(totals.tax)} />
-            <div style={{ borderTop: "1px solid #e1e8f0", paddingTop: 7 }}>
+            <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 7 }}>
               <TotalRow label="Total" value={fmt(totals.total)} strong />
             </div>
           </div>
@@ -379,8 +398,8 @@ export default function InvoicePanel({
               height: 42,
               borderRadius: 12,
               border: "none",
-              background: isEmpty || saving || !canCheckout ? "#d7dee7" : "#15a9c8",
-              color: "#ffffff",
+              background: isEmpty || saving || !canCheckout ? (isDark ? alpha(theme.palette.common.white, 0.14) : "#d7dee7") : colors.primary,
+              color: isEmpty || saving || !canCheckout ? theme.palette.text.secondary : theme.palette.primary.contrastText,
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
@@ -401,7 +420,7 @@ export default function InvoicePanel({
               justifyContent: "space-between",
               alignItems: "center",
               gap: 12,
-              color: "#76899d",
+              color: colors.muted,
               fontSize: 12,
             }}
           >
@@ -411,7 +430,7 @@ export default function InvoicePanel({
               style={{
                 border: "none",
                 background: "transparent",
-                color: "#2db1bf",
+                color: colors.primary,
                 fontSize: 12,
                 fontWeight: 700,
                 cursor: "pointer",
@@ -435,9 +454,10 @@ function FieldShell({
   label: string;
   children: ReactNode;
 }) {
+  const theme = useTheme();
   return (
     <label style={{ display: "grid", gap: 6 }}>
-      <span style={{ fontSize: 12, color: "#17324b", fontWeight: 700 }}>{label}</span>
+      <span style={{ fontSize: 12, color: theme.palette.text.primary, fontWeight: 700 }}>{label}</span>
       {children}
     </label>
   );
@@ -450,6 +470,7 @@ function QtyAction({
   children: ReactNode;
   onClick: () => void;
 }) {
+  const theme = useTheme();
   return (
     <button
       onClick={onClick}
@@ -458,7 +479,7 @@ function QtyAction({
         height: 32,
         border: "none",
         background: "transparent",
-        color: "#688096",
+        color: theme.palette.text.secondary,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -479,26 +500,27 @@ function TotalRow({
   value: string;
   strong?: boolean;
 }) {
+  const theme = useTheme();
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-      <span style={{ fontSize: 12, color: strong ? "#133049" : "#7a8ea3", fontWeight: strong ? 800 : 600 }}>
+      <span style={{ fontSize: 12, color: strong ? theme.palette.text.primary : theme.palette.text.secondary, fontWeight: strong ? 800 : 600 }}>
         {label}
       </span>
-      <span style={{ fontSize: 12, color: "#133049", fontWeight: strong ? 800 : 700 }}>{value}</span>
+      <span style={{ fontSize: 12, color: theme.palette.text.primary, fontWeight: strong ? 800 : 700 }}>{value}</span>
     </div>
   );
 }
 
-const fieldStyle: CSSProperties = {
+const getFieldStyle = (theme: Theme): CSSProperties => ({
   width: "100%",
   height: 36,
   borderRadius: 12,
-  border: "1px solid #dfe8f2",
-  background: "#ffffff",
+  border: `1px solid ${theme.palette.divider}`,
+  background: theme.palette.background.paper,
   padding: "0 12px",
   outline: "none",
   fontFamily: "inherit",
   fontSize: 13,
-  color: "#31495f",
+  color: theme.palette.text.primary,
   boxSizing: "border-box",
-};
+});
