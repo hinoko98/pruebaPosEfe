@@ -10,6 +10,7 @@ import List from "@mui/material/List";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
+import { alpha } from "@mui/material/styles";
 
 export type MenuItem =
   | {
@@ -85,20 +86,29 @@ export default function SideMenu({
                 selected={selected}
                 disabled={item.disabled}
                 onClick={() => navigate(item.path)}
-                sx={{
+                sx={(theme) => ({
                   borderRadius: 2,
                   mb: 0.5,
                   "&.Mui-selected": {
-                    backgroundColor: "#dbeafe",
-                    color: "#0f172a",
+                    backgroundColor:
+                      theme.palette.mode === "dark"
+                        ? alpha(theme.palette.primary.main, 0.2)
+                        : alpha(theme.palette.primary.main, 0.14),
+                    color: theme.palette.text.primary,
                   },
                   "&.Mui-selected:hover": {
-                    backgroundColor: "#dbeafe",
+                    backgroundColor:
+                      theme.palette.mode === "dark"
+                        ? alpha(theme.palette.primary.main, 0.24)
+                        : alpha(theme.palette.primary.main, 0.18),
                   },
                   "&:hover": {
-                    backgroundColor: "#eff6ff",
+                    backgroundColor:
+                      theme.palette.mode === "dark"
+                        ? alpha(theme.palette.common.white, 0.04)
+                        : alpha(theme.palette.primary.main, 0.08),
                   },
-                }}
+                })}
               >
                 {item.icon ? (
                   <ListItemIcon sx={{ color: "inherit", minWidth: 40 }}>{item.icon}</ListItemIcon>
@@ -114,12 +124,15 @@ export default function SideMenu({
             <Box key={item.label} sx={{ mb: 0.5 }}>
               <ListItemButton
                 onClick={() => toggleGroup(item.label)}
-                sx={{
+                sx={(theme) => ({
                   borderRadius: 2,
                   "&:hover": {
-                    backgroundColor: "#eff6ff",
+                    backgroundColor:
+                      theme.palette.mode === "dark"
+                        ? alpha(theme.palette.common.white, 0.04)
+                        : alpha(theme.palette.primary.main, 0.08),
                   },
-                }}
+                })}
               >
                 {item.icon ? <ListItemIcon sx={{ minWidth: 40 }}>{item.icon}</ListItemIcon> : null}
                 <ListItemText primary={item.label} />
@@ -134,20 +147,29 @@ export default function SideMenu({
                       selected={isPathActive(child.path, true)}
                       disabled={child.disabled}
                       onClick={() => navigate(child.path)}
-                      sx={{
+                      sx={(theme) => ({
                         borderRadius: 2,
                         mb: 0.25,
                         "&.Mui-selected": {
-                          backgroundColor: "#dbeafe",
-                          color: "#0f172a",
+                          backgroundColor:
+                            theme.palette.mode === "dark"
+                              ? alpha(theme.palette.primary.main, 0.2)
+                              : alpha(theme.palette.primary.main, 0.14),
+                          color: theme.palette.text.primary,
                         },
                         "&.Mui-selected:hover": {
-                          backgroundColor: "#dbeafe",
+                          backgroundColor:
+                            theme.palette.mode === "dark"
+                              ? alpha(theme.palette.primary.main, 0.24)
+                              : alpha(theme.palette.primary.main, 0.18),
                         },
                         "&:hover": {
-                          backgroundColor: "#eff6ff",
+                          backgroundColor:
+                            theme.palette.mode === "dark"
+                              ? alpha(theme.palette.common.white, 0.04)
+                              : alpha(theme.palette.primary.main, 0.08),
                         },
-                      }}
+                      })}
                     >
                       <ListItemIcon sx={{ minWidth: 40, color: "inherit" }}>
                         <ChevronRightIcon fontSize="small" />
