@@ -619,7 +619,7 @@ export default function CorrespondentView() {
           closeModal();
         }}
         fullWidth
-        maxWidth="xs"
+        maxWidth="md"
         PaperProps={{
           sx: {
             borderRadius: 1.25,
@@ -628,10 +628,11 @@ export default function CorrespondentView() {
               : "linear-gradient(180deg, rgba(248,250,252,1) 0%, rgba(255,255,255,1) 100%)",
             border: `1px solid ${theme.palette.divider}`,
             maxHeight: "92vh",
+            width: "min(920px, calc(100vw - 32px))",
           },
         }}
       >
-        <DialogTitle sx={{ pb: 1 }}>
+        <DialogTitle sx={{ px: { xs: 2, sm: 2.5 }, pt: { xs: 2, sm: 2.5 }, pb: 1.25 }}>
           <Stack spacing={0.75}>
             <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
               <Box display="flex" alignItems="center" gap={0.5}>
@@ -640,7 +641,7 @@ export default function CorrespondentView() {
                 </Typography>
                 <HelpHint title="Registra la transaccion y usa el apoyo visual de caja sin cambiar de pantalla." />
               </Box>
-              <Stack direction="row" spacing={1} flexWrap="wrap">
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                 <Chip
                   label={
                     transactionDrafts.length <= 1
@@ -657,6 +658,7 @@ export default function CorrespondentView() {
                       : `${activePlatformsInDraft.length} corresponsales en captura`
                   }
                   variant="outlined"
+                  sx={{ maxWidth: 280 }}
                 />
                 <Chip
                   label={
@@ -673,7 +675,14 @@ export default function CorrespondentView() {
           </Stack>
         </DialogTitle>
 
-        <DialogContent dividers sx={{ borderColor: theme.palette.divider, px: 2, py: 1.5 }}>
+        <DialogContent
+          dividers
+          sx={{
+            borderColor: theme.palette.divider,
+            px: { xs: 2, sm: 2.5 },
+            py: 1.75,
+          }}
+        >
           <Stack spacing={1.5}>
             <SectionCard
               title="Datos"
@@ -701,7 +710,10 @@ export default function CorrespondentView() {
                     <Box
                       key={row.id}
                       display="grid"
-                      gridTemplateColumns={{ xs: "1fr 1fr", sm: "1.1fr 1.1fr 0.8fr auto auto" }}
+                      gridTemplateColumns={{
+                        xs: "1fr",
+                        sm: "minmax(220px, 1.65fr) minmax(200px, 1.2fr) minmax(140px, 0.85fr) auto auto",
+                      }}
                       gap={1}
                       alignItems="center"
                       sx={{
@@ -750,11 +762,13 @@ export default function CorrespondentView() {
                         inputProps={{ inputMode: "numeric" }}
                         size="small"
                         fullWidth
+                        sx={{ minWidth: { sm: 140 } }}
                       />
                       <Chip
                         size="small"
                         color={row.type?.direction === "OUT" ? "warning" : "success"}
                         label={row.type?.direction === "OUT" ? "Retiro" : "Deposito"}
+                        sx={{ justifySelf: { xs: "flex-start", sm: "center" } }}
                       />
                       {transactionDrafts.length > 1 ? (
                         <Button
@@ -762,7 +776,7 @@ export default function CorrespondentView() {
                           color="error"
                           variant="text"
                           onClick={() => handleRemoveTransactionRow(row.id)}
-                          sx={{ minWidth: "auto", px: 1, borderRadius: 1 }}
+                          sx={{ minWidth: "auto", px: 1, borderRadius: 1, justifySelf: { xs: "flex-start", sm: "center" } }}
                         >
                           Quitar
                         </Button>
@@ -951,7 +965,7 @@ export default function CorrespondentView() {
           </Stack>
         </DialogContent>
 
-        <DialogActions sx={{ px: 2, py: 1.5, justifyContent: "flex-end" }}>
+        <DialogActions sx={{ px: { xs: 2, sm: 2.5 }, py: 1.5, justifyContent: "flex-end" }}>
           <Stack direction="row" spacing={1}>
             <Button size="small" color="error" variant="outlined" onClick={closeModal} sx={{ borderRadius: 1 }}>
               Cancelar

@@ -14,6 +14,7 @@ import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { alpha, useTheme } from "@mui/material/styles";
 import FloatingAlert from "@/components/feedback/FloatingAlert";
 import HelpHint from "@/components/ui/HelpHint";
 import { useAuth } from "@/features/auth/hooks/useAuth";
@@ -70,7 +71,7 @@ export default function CashView() {
   const canCloseCash = hasPermission(user, APP_PERMISSION_KEYS.cashClose);
   const activeSession = summary?.activeSession ?? null;
   const previousReference = summary?.previousReference ?? null;
-  const correspondentRows = activeSession?.correspondent ?? [];
+  const correspondentRows = useMemo(() => activeSession?.correspondent ?? [], [activeSession]);
   const sessionsPagination = useTablePagination(summary?.recentSessions ?? []);
   const correspondentPagination = useTablePagination(correspondentRows);
   const activityPagination = useTablePagination(activeSession?.recentActivity ?? []);
@@ -296,11 +297,69 @@ export default function CashView() {
 }
 
 function MetricCard({ title, value, helper }: { title: string; value: string; helper: string }) {
-  return <Card><CardContent><Typography variant="body2" color="text.secondary">{title}</Typography><Typography variant="h5" sx={{ mt: 1 }}>{value}</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>{helper}</Typography></CardContent></Card>;
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+
+  return (
+    <Card
+      sx={{
+        bgcolor: isDark ? alpha(theme.palette.common.white, 0.03) : theme.palette.background.paper,
+      }}
+    >
+      <CardContent>
+        <Typography variant="body2" color="text.secondary">
+          {title}
+        </Typography>
+        <Typography variant="h5" sx={{ mt: 1 }}>
+          {value}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          {helper}
+        </Typography>
+      </CardContent>
+    </Card>
+  );
 }
 
 function SummaryCard({ title, rows, highlight = false }: { title: string; rows: Array<[string, string]>; highlight?: boolean }) {
-  return <Card variant="outlined" sx={highlight ? { borderColor: "#7dd3fc", background: "#f8fdff" } : undefined}><CardContent><Stack spacing={1.25}><Typography variant="subtitle1" fontWeight={800}>{title}</Typography>{rows.map(([label, value]) => <Box key={`${title}-${label}`} display="flex" justifyContent="space-between" gap={2}><Typography variant="body2" color="text.secondary">{label}</Typography><Typography variant="body2" fontWeight={700} textAlign="right">{value}</Typography></Box>)}</Stack></CardContent></Card>;
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+
+  return (
+    <Card
+      variant="outlined"
+      sx={
+        highlight
+          ? {
+              borderColor: alpha(theme.palette.info.main, isDark ? 0.45 : 0.35),
+              bgcolor: isDark
+                ? alpha(theme.palette.info.main, 0.12)
+                : alpha(theme.palette.info.light, 0.18),
+            }
+          : {
+              bgcolor: isDark ? alpha(theme.palette.common.white, 0.03) : theme.palette.background.paper,
+            }
+      }
+    >
+      <CardContent>
+        <Stack spacing={1.25}>
+          <Typography variant="subtitle1" fontWeight={800}>
+            {title}
+          </Typography>
+          {rows.map(([label, value]) => (
+            <Box key={`${title}-${label}`} display="flex" justifyContent="space-between" gap={2}>
+              <Typography variant="body2" color="text.secondary">
+                {label}
+              </Typography>
+              <Typography variant="body2" fontWeight={700} textAlign="right">
+                {value}
+              </Typography>
+            </Box>
+          ))}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
 }
 
 function SectionTitle({ title, helper }: { title: string; helper: string }) {
