@@ -109,10 +109,11 @@ function createWindow() {
 }
 
 function getSeedConfig(): SeedConfig {
-  const enabled = (process.env.SEED_ADMIN_ENABLED ?? "false").toLowerCase() === "true";
+  const enabledEnv = process.env.SEED_ADMIN_ENABLED?.toLowerCase();
+  const enabled = enabledEnv === undefined ? true : enabledEnv === "true";
   const username = process.env.SEED_ADMIN_USERNAME ?? "admin";
   const name = process.env.SEED_ADMIN_NAME ?? "Administrador";
-  const password = process.env.SEED_ADMIN_PASSWORD ?? "";
+  const password = process.env.SEED_ADMIN_PASSWORD ?? "admin123";
   const bcryptRounds = Number(process.env.BCRYPT_ROUNDS ?? "10");
 
   if (enabled && password.trim().length < 8) {
@@ -130,8 +131,8 @@ export async function seedAdminIfNeeded(prismaClient: PrismaClient) {
   const cfg = getSeedConfig();
   if (!cfg.enabled) return;
 
-  const adminExists = await prismaClient.user.findFirst({ where: { role: Role.ADMIN } });
-  if (adminExists) return;
+  const usersCount = await prismaClient.user.count();
+  if (usersCount > 0) return;
 
   const passwordHash = await bcrypt.hash(cfg.password, cfg.bcryptRounds);
 

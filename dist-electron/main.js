@@ -6,7 +6,7 @@ import { mkdir as na, writeFile as oa, readdir as ia, readFile as ca } from "nod
 import _e from "node:os";
 import G from "node:path";
 import { fileURLToPath as da } from "node:url";
-import { CorrespondentDirection as F, CommissionMode as Pe, CorrespondentTransactionStatus as ie, CorrespondentReconciliationStatus as ua, CorrespondentOcrStatus as Me, Role as $, CorrespondentClosureStatus as it, SaleStatus as fe, CashSessionStatus as Z, PaymentMethod as z, CashMovementType as k, InventoryMovementType as Ne, PurchaseStatus as ct, CreditStatus as Te, PrismaClient as la } from "@prisma/client";
+import { CorrespondentDirection as F, CommissionMode as Pe, CorrespondentTransactionStatus as ie, CorrespondentReconciliationStatus as ua, CorrespondentOcrStatus as Me, Role as q, CorrespondentClosureStatus as it, SaleStatus as fe, CashSessionStatus as Z, PaymentMethod as z, CashMovementType as k, InventoryMovementType as Ne, PurchaseStatus as ct, CreditStatus as Te, PrismaClient as la } from "@prisma/client";
 import { z as n } from "zod";
 const Ke = n.enum(["ADMIN", "EMPLOYEE"]), ma = n.object({
   username: n.string().trim().min(1).max(50),
@@ -1193,7 +1193,7 @@ function Wa({
     }
   }), a.handle("correspondent:platform:create", async (m, c) => {
     const o = u();
-    if (!o || o.role !== $.ADMIN)
+    if (!o || o.role !== q.ADMIN)
       return { success: !1, message: "Solo el administrador puede crear corresponsales" };
     const s = Ua.safeParse(c);
     if (!s.success)
@@ -1237,7 +1237,7 @@ function Wa({
     }
   }), a.handle("correspondent:platform:update", async (m, c) => {
     const o = u();
-    if (!o || o.role !== $.ADMIN)
+    if (!o || o.role !== q.ADMIN)
       return { success: !1, message: "Solo el administrador puede editar corresponsales" };
     const s = Ma.safeParse(c);
     if (!s.success)
@@ -1288,7 +1288,7 @@ function Wa({
     }
   }), a.handle("correspondent:platform:delete", async (m, c) => {
     const o = u();
-    if (!o || o.role !== $.ADMIN)
+    if (!o || o.role !== q.ADMIN)
       return { success: !1, message: "Solo el administrador puede eliminar corresponsales" };
     const s = Fa.safeParse(c);
     if (!s.success)
@@ -1327,7 +1327,7 @@ function Wa({
   }), a.handle("correspondent:type:create", async (m, c) => {
     var f;
     const o = u();
-    if (!o || o.role !== $.ADMIN)
+    if (!o || o.role !== q.ADMIN)
       return { success: !1, message: "Solo el administrador puede crear tipos" };
     const s = _a.safeParse(c);
     if (!s.success)
@@ -1380,7 +1380,7 @@ function Wa({
     }
   }), a.handle("correspondent:type:update", async (m, c) => {
     const o = u();
-    if (!o || o.role !== $.ADMIN)
+    if (!o || o.role !== q.ADMIN)
       return { success: !1, message: "Solo el administrador puede editar tipos" };
     const s = Ba.safeParse(c);
     if (!s.success)
@@ -1426,7 +1426,7 @@ function Wa({
     }
   }), a.handle("correspondent:type:delete", async (m, c) => {
     const o = u();
-    if (!o || o.role !== $.ADMIN)
+    if (!o || o.role !== q.ADMIN)
       return { success: !1, message: "Solo el administrador puede eliminar tipos" };
     const s = ka.safeParse(c);
     if (!s.success)
@@ -2937,7 +2937,7 @@ function $s(e, a) {
 }
 async function At(e) {
   const a = e();
-  if (!a || a.role !== $.ADMIN)
+  if (!a || a.role !== q.ADMIN)
     throw new Error("Solo admins pueden ejecutar esta accion");
   return a;
 }
@@ -3092,7 +3092,7 @@ function Nt(e) {
   ).reduce((l, A) => l + A.amount, 0), T = Vs(e.session.movements), I = e.session.openingAmount + t.cash + i - f, g = o + t.transfer + d - p, y = e.platforms.map((l) => {
     const A = e.session.correspondentTransactions.filter(
       (M) => M.platform.id === l.id
-    ), S = A.filter((M) => M.type.direction === F.IN).reduce((M, q) => M + q.amount, 0), L = A.filter((M) => M.type.direction === F.OUT).reduce((M, q) => M + q.amount, 0), h = A.reduce((M, q) => M + q.commissionAmount, 0), O = T.get(l.id) ?? {
+    ), S = A.filter((M) => M.type.direction === F.IN).reduce((M, $) => M + $.amount, 0), L = A.filter((M) => M.type.direction === F.OUT).reduce((M, $) => M + $.amount, 0), h = A.reduce((M, $) => M + $.commissionAmount, 0), O = T.get(l.id) ?? {
       manualIncome: 0,
       manualExpense: 0,
       platformName: l.name
@@ -4740,7 +4740,7 @@ function Js({
       };
     }), y = d.map((l) => {
       var K, M;
-      const A = l.returns.reduce((q, U) => q + U.total, 0), S = l.credits[0] ?? null, L = l.payments.reduce((q, U) => q + U.amount, 0), h = Math.max(l.total - A, 0), O = S ? S.balance : Math.max(h - L, 0), _ = A >= l.total ? "RETURNED" : O <= 0 ? "PAID" : L > 0 ? "PARTIAL" : "PENDING", V = l.payments.length ? l.payments.map((q) => `${pe(q.method)} $${q.amount.toLocaleString("es-CO")}`).join(" + ") : S ? "Pendiente por cartera" : pe(l.paymentMethod);
+      const A = l.returns.reduce(($, U) => $ + U.total, 0), S = l.credits[0] ?? null, L = l.payments.reduce(($, U) => $ + U.amount, 0), h = Math.max(l.total - A, 0), O = S ? S.balance : Math.max(h - L, 0), _ = A >= l.total ? "RETURNED" : O <= 0 ? "PAID" : L > 0 ? "PARTIAL" : "PENDING", V = l.payments.length ? l.payments.map(($) => `${pe($.method)} $${$.amount.toLocaleString("es-CO")}`).join(" + ") : S ? "Pendiente por cartera" : pe(l.paymentMethod);
       return {
         id: l.id,
         invoiceNumber: l.invoiceNumber,
@@ -5177,23 +5177,24 @@ function Wt() {
   }), sa.setApplicationMenu(null), me.maximize(), me.show(), ze ? me.loadURL(ze) : me.loadFile(G.join(Qt, "index.html"));
 }
 function Qs() {
-  const e = (process.env.SEED_ADMIN_ENABLED ?? "false").toLowerCase() === "true", a = process.env.SEED_ADMIN_USERNAME ?? "admin", r = process.env.SEED_ADMIN_NAME ?? "Administrador", u = process.env.SEED_ADMIN_PASSWORD ?? "", m = Number(process.env.BCRYPT_ROUNDS ?? "10");
-  if (e && u.trim().length < 8)
+  var o;
+  const e = (o = process.env.SEED_ADMIN_ENABLED) == null ? void 0 : o.toLowerCase(), a = e === void 0 ? !0 : e === "true", r = process.env.SEED_ADMIN_USERNAME ?? "admin", u = process.env.SEED_ADMIN_NAME ?? "Administrador", m = process.env.SEED_ADMIN_PASSWORD ?? "admin123", c = Number(process.env.BCRYPT_ROUNDS ?? "10");
+  if (a && m.trim().length < 8)
     throw new Error("SEED_ADMIN_PASSWORD es obligatorio y debe tener minimo 8 caracteres.");
-  if (!Number.isFinite(m) || m < 8 || m > 15)
+  if (!Number.isFinite(c) || c < 8 || c > 15)
     throw new Error("BCRYPT_ROUNDS invalido. Usa un valor entre 8 y 15.");
-  return { enabled: e, username: a, name: r, password: u, bcryptRounds: m };
+  return { enabled: a, username: r, name: u, password: m, bcryptRounds: c };
 }
 async function Ws(e) {
   const a = Qs();
-  if (!a.enabled || await e.user.findFirst({ where: { role: $.ADMIN } }))
+  if (!a.enabled || await e.user.count() > 0)
     return;
   const u = await ue.hash(a.password, a.bcryptRounds);
   await e.user.create({
     data: {
       username: a.username,
       name: a.name,
-      role: $.ADMIN,
+      role: q.ADMIN,
       passwordHash: u,
       isActive: !0
     }
@@ -5292,7 +5293,7 @@ function et(e) {
   return !a || !r || !u ? null : new Date(Date.UTC(a, r - 1, u));
 }
 function vt(e) {
-  return e === "ADMIN" ? $.ADMIN : $.EMPLOYEE;
+  return e === "ADMIN" ? q.ADMIN : q.EMPLOYEE;
 }
 function ge(e) {
   return `SYSTEM_${e}`;
@@ -5689,7 +5690,7 @@ X.handle("auth:createUser", async (e, a) => {
   const r = pa.safeParse(a);
   if (!r.success)
     return { success: !1, message: "Datos invalidos" };
-  if (!P || P.role !== $.ADMIN)
+  if (!P || P.role !== q.ADMIN)
     return { success: !1, message: "Solo admins pueden crear usuarios" };
   if (!Q(E.usersCreate))
     return { success: !1, message: "Tu rol no puede crear usuarios" };
@@ -5761,7 +5762,7 @@ X.handle("users:update", async (e, a) => {
   const r = fa.safeParse(a);
   if (!r.success)
     return { success: !1, message: "Datos invalidos" };
-  if (!P || P.role !== $.ADMIN)
+  if (!P || P.role !== q.ADMIN)
     return { success: !1, message: "Solo admins pueden editar usuarios" };
   if (!Q(E.usersEdit))
     return { success: !1, message: "Tu rol no puede editar usuarios" };
@@ -5801,9 +5802,9 @@ X.handle("users:update", async (e, a) => {
   });
   if (!N || !N.isActive)
     return { success: !1, message: "El perfil de rol seleccionado no esta disponible" };
-  if (g.role === $.ADMIN && (N.baseRole !== $.ADMIN || !I) && await R.user.count({
+  if (g.role === q.ADMIN && (N.baseRole !== q.ADMIN || !I) && await R.user.count({
     where: {
-      role: $.ADMIN,
+      role: q.ADMIN,
       isActive: !0,
       NOT: { id: u }
     }
@@ -5977,7 +5978,7 @@ X.handle("notifications:mark-read", async (e, a) => {
     )
   ), { success: !0 });
 });
-X.handle("roles:list", async () => !P || P.role !== $.ADMIN ? { success: !1, message: "Solo admins pueden ver roles", roles: [] } : Q(E.rolesView) ? {
+X.handle("roles:list", async () => !P || P.role !== q.ADMIN ? { success: !1, message: "Solo admins pueden ver roles", roles: [] } : Q(E.rolesView) ? {
   success: !0,
   roles: (await R.roleProfile.findMany({
     include: {
@@ -6012,7 +6013,7 @@ X.handle("roles:create", async (e, a) => {
   if (!r.success)
     return { success: !1, message: "Datos invalidos para el rol" };
   const u = be(r.data.permissionKeys);
-  if (!P || P.role !== $.ADMIN)
+  if (!P || P.role !== q.ADMIN)
     return { success: !1, message: "Solo admins pueden crear roles" };
   if (!Q(E.rolesManage))
     return { success: !1, message: "Tu rol no puede crear roles" };
@@ -6046,7 +6047,7 @@ X.handle("roles:update", async (e, a) => {
   if (!r.success)
     return { success: !1, message: "Datos invalidos para el rol" };
   const u = be(r.data.permissionKeys);
-  if (!P || P.role !== $.ADMIN)
+  if (!P || P.role !== q.ADMIN)
     return { success: !1, message: "Solo admins pueden editar roles" };
   if (!Q(E.rolesManage))
     return { success: !1, message: "Tu rol no puede editar roles" };
@@ -6089,7 +6090,7 @@ X.handle("roles:delete", async (e, a) => {
   const r = Ia.safeParse(a);
   if (!r.success)
     return { success: !1, message: "Datos invalidos para el rol" };
-  if (!P || P.role !== $.ADMIN)
+  if (!P || P.role !== q.ADMIN)
     return { success: !1, message: "Solo admins pueden eliminar roles" };
   if (!Q(E.rolesManage))
     return { success: !1, message: "Tu rol no puede eliminar roles" };
@@ -6193,11 +6194,11 @@ X.handle("sales:create", async (e, a) => {
     });
     if (!K.ok)
       throw new Error(K.message);
-    const { quote: M } = K, q = M.sheetTypeName ? `${O.name} - ${M.sheetTypeName}` : O.name, U = he(M.unitPrice * h.qty), tt = he(U * O.taxRate), ta = U + tt, aa = he((M.unitPrice - O.cost) * h.qty);
+    const { quote: M } = K, $ = M.sheetTypeName ? `${O.name} - ${M.sheetTypeName}` : O.name, U = he(M.unitPrice * h.qty), tt = he(U * O.taxRate), ta = U + tt, aa = he((M.unitPrice - O.cost) * h.qty);
     return {
       product: O,
       quote: M,
-      lineName: q,
+      lineName: $,
       qty: h.qty,
       lineSubtotal: U,
       lineTax: tt,
@@ -6246,7 +6247,7 @@ X.handle("sales:create", async (e, a) => {
           status: "OPEN"
         },
         orderBy: { openedAt: "desc" }
-      }), q = await O.sale.create({
+      }), $ = await O.sale.create({
         data: {
           invoiceNumber: K,
           customer: m,
@@ -6298,7 +6299,7 @@ X.handle("sales:create", async (e, a) => {
           sessionId: M.id,
           type: k.SALE_IN,
           amount: l,
-          note: q.invoiceNumber
+          note: $.invoiceNumber
         }
       });
       for (const U of i)
@@ -6315,11 +6316,11 @@ X.handle("sales:create", async (e, a) => {
             stockBefore: U.product.stock,
             stockAfter: U.product.stock - U.qty,
             referenceType: "SALE",
-            referenceId: q.id,
-            note: q.invoiceNumber
+            referenceId: $.id,
+            note: $.invoiceNumber
           }
         }));
-      return q;
+      return $;
     });
     return {
       success: !0,
