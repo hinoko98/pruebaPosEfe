@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent, Menu } from "electron";
 import bcrypt from "bcryptjs";
 import "dotenv/config";
+import { createHash, randomUUID } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -79,6 +81,10 @@ type SeedConfig = {
 };
 
 type DashboardRange = "day" | "week" | "month";
+
+type SqliteTableLookupRow = {
+  name: string;
+};
 
 function createWindow() {
   win = new BrowserWindow({
@@ -351,6 +357,198 @@ async function resolveRoleProfileForUser(prismaClient: PrismaClient, userId: str
   };
 }
 
+function escapeSqlString(value: string) {
+  return value.replace(/'/g, "''");
+}
+
+async function sqliteTableExists(prismaClient: PrismaClient, tableName: string) {
+  const rows = await prismaClient.$queryRawUnsafe<SqliteTableLookupRow[]>(`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'table' AND name = '${escapeSqlString(tableName)}'
+    LIMIT 1;
+  `);
+
+  return rows.length > 0;
+}
+
+function splitSqlStatements(sql: string) {
+  const statements: string[] = [];
+  const sanitizedSql = sql.replace(/^\s*--.*$/gm, "");
+  let current = "";
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+
+  for (let index = 0; index < sanitizedSql.length; index += 1) {
+    const character = sanitizedSql[index];
+    const previous = sanitizedSql[index - 1];
+
+    if (character === "'" && !inDoubleQuote && previous !== "\\") {
+      inSingleQuote = !inSingleQuote;
+    } else if (character === '"' && !inSingleQuote && previous !== "\\") {
+      inDoubleQuote = !inDoubleQuote;
+    }
+
+    if (character === ";" && !inSingleQuote && !inDoubleQuote) {
+      const statement = current.trim();
+      if (statement) {
+        statements.push(statement);
+      }
+      current = "";
+      continue;
+    }
+
+    current += character;
+  }
+
+  const trailingStatement = current.trim();
+  if (trailingStatement) {
+    statements.push(trailingStatement);
+  }
+
+  return statements;
+}
+
+function getPrismaMigrationsDir() {
+  return path.join(process.env.APP_ROOT, "prisma", "migrations");
+}
+
+function extractErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "object" && error !== null && "meta" in error) {
+    const meta = (error as { meta?: { message?: unknown } }).meta;
+    if (typeof meta?.message === "string") {
+      return meta.message;
+    }
+  }
+
+  return String(error);
+}
+
+function shouldIgnoreBootstrapMigrationError(statement: string, error: unknown) {
+  const trimmedStatement = statement.trim();
+  const isApprovalCodeColumnStatement =
+    trimmedStatement === `ALTER TABLE "CorrespondentTransaction" ADD COLUMN "approvalCode" TEXT`;
+  const isApprovalCodeIndexStatement =
+    trimmedStatement ===
+    `CREATE UNIQUE INDEX "CorrespondentTransaction_approvalCode_key" ON "CorrespondentTransaction"("approvalCode")`;
+
+  if (!isApprovalCodeColumnStatement && !isApprovalCodeIndexStatement) {
+    return false;
+  }
+
+  const message = extractErrorMessage(error);
+  return (
+    message.includes("duplicate column name: approvalCode") ||
+    message.includes(`index CorrespondentTransaction_approvalCode_key already exists`) ||
+    message.includes(`index "CorrespondentTransaction_approvalCode_key" already exists`)
+  );
+}
+
+async function ensurePrismaMigrationsTable(prismaClient: PrismaClient) {
+  await prismaClient.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "_prisma_migrations" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "checksum" TEXT NOT NULL,
+      "finished_at" DATETIME,
+      "migration_name" TEXT NOT NULL,
+      "logs" TEXT,
+      "rolled_back_at" DATETIME,
+      "started_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "applied_steps_count" INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+
+  await prismaClient.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "_prisma_migrations_migration_name_key"
+    ON "_prisma_migrations"("migration_name");
+  `);
+}
+
+async function ensureBaseSchemaIfNeeded(prismaClient: PrismaClient) {
+  const userTableExists = await sqliteTableExists(prismaClient, "User");
+  if (userTableExists) {
+    return;
+  }
+
+  const migrationsDir = getPrismaMigrationsDir();
+  const migrationEntries = await readdir(migrationsDir, { withFileTypes: true });
+  const migrationDirectories = migrationEntries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right));
+
+  if (migrationDirectories.length === 0) {
+    throw new Error(`No se encontraron migraciones Prisma en ${migrationsDir}.`);
+  }
+
+  await ensurePrismaMigrationsTable(prismaClient);
+
+  const appliedMigrations = await prismaClient.$queryRawUnsafe<Array<{ migration_name: string }>>(`
+    SELECT "migration_name"
+    FROM "_prisma_migrations";
+  `);
+  const appliedMigrationNames = new Set(
+    appliedMigrations.map((migration) => migration.migration_name)
+  );
+
+  for (const migrationName of migrationDirectories) {
+    if (appliedMigrationNames.has(migrationName)) {
+      continue;
+    }
+
+    const migrationPath = path.join(migrationsDir, migrationName, "migration.sql");
+    const migrationSql = await readFile(migrationPath, "utf8");
+
+    if (
+      migrationSql.includes(`"Correspondent`) &&
+      !(await sqliteTableExists(prismaClient, "CorrespondentTransaction"))
+    ) {
+      await ensureCorrespondentSchemaIfNeeded(prismaClient);
+    }
+
+    const statements = splitSqlStatements(migrationSql);
+
+    for (const statement of statements) {
+      try {
+        await prismaClient.$executeRawUnsafe(statement);
+      } catch (error) {
+        if (shouldIgnoreBootstrapMigrationError(statement, error)) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    const checksum = createHash("sha256").update(migrationSql).digest("hex");
+    await prismaClient.$executeRawUnsafe(`
+      INSERT INTO "_prisma_migrations" (
+        "id",
+        "checksum",
+        "finished_at",
+        "migration_name",
+        "logs",
+        "rolled_back_at",
+        "started_at",
+        "applied_steps_count"
+      ) VALUES (
+        '${randomUUID()}',
+        '${checksum}',
+        CURRENT_TIMESTAMP,
+        '${escapeSqlString(migrationName)}',
+        '',
+        NULL,
+        CURRENT_TIMESTAMP,
+        ${statements.length}
+      );
+    `);
+  }
+}
+
 async function ensureUserSchemaIfNeeded(prismaClient: PrismaClient) {
   const columns = await prismaClient.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("User");`);
   const existingColumns = new Set(columns.map((column) => column.name));
@@ -614,6 +812,7 @@ app.whenReady()
 
     prisma = new PrismaClient();
     appConnectedAt = new Date();
+    await ensureBaseSchemaIfNeeded(prisma);
     await ensureUserSchemaIfNeeded(prisma);
     await ensureNotificationsSchemaIfNeeded(prisma);
     await ensureRoleSchemaIfNeeded(prisma);
