@@ -72,21 +72,16 @@ contextBridge.exposeInMainWorld("api", {
       price: number;
       pricingConfig: {
         enabled: boolean;
+        basePrice: number;
         minimumPrice: number;
-        sheetTypes: Array<{
+        quantityScales: Array<{
+          minQty: number;
+          unitPrice: number;
+        }>;
+        specialPriceRules: Array<{
           id: string;
-          name: string;
-          basePrice: number;
-          minimumPrice: number | null;
-          quantityScales: Array<{
-            minQty: number;
-            unitPrice: number;
-          }>;
-          specialPriceRules: Array<{
-            id: string;
-            label: string;
-            unitPrice: number;
-          }>;
+          label: string;
+          unitPrice: number;
         }>;
       } | null;
       cost: number;
@@ -206,7 +201,6 @@ contextBridge.exposeInMainWorld("api", {
     lastName?: string;
     documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
     documentNumber?: string | null;
-    segment?: "GENERAL" | "DOCENTE";
     phone?: string | null;
     email?: string | null;
     address?: string | null;
@@ -219,7 +213,6 @@ contextBridge.exposeInMainWorld("api", {
     lastName?: string;
     documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
     documentNumber?: string | null;
-    segment?: "GENERAL" | "DOCENTE";
     phone?: string | null;
     email?: string | null;
     address?: string | null;

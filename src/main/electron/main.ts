@@ -1570,7 +1570,6 @@ ipcMain.handle("sales:create", async (_event, payload) => {
     | {
         id: string;
         name: string;
-        segment: "GENERAL" | "DOCENTE";
       }
     | null = null;
   if (parsed.data.customerId) {
@@ -1582,7 +1581,6 @@ ipcMain.handle("sales:create", async (_event, payload) => {
       select: {
         id: true,
         name: true,
-        segment: true,
       },
     });
 
@@ -1634,7 +1632,6 @@ ipcMain.handle("sales:create", async (_event, payload) => {
       fallbackPrice: product.price,
       pricingConfig: productPricingConfig,
       qty: item.qty,
-      sheetTypeId: item.pricingContext?.sheetTypeId,
       specialRuleId: item.pricingContext?.specialRuleId ?? null,
       manualUnitPrice: item.pricingContext?.manualUnitPrice ?? null,
       canOverrideMinimum: canEditSaleItemPrices,
@@ -1645,7 +1642,7 @@ ipcMain.handle("sales:create", async (_event, payload) => {
     }
 
     const { quote } = pricingResult;
-    const lineName = quote.sheetTypeName ? `${product.name} - ${quote.sheetTypeName}` : product.name;
+    const lineName = product.name;
     const lineSubtotal = money(quote.unitPrice * item.qty);
     const lineTax = money(lineSubtotal * product.taxRate);
     const lineTotal = lineSubtotal + lineTax;
@@ -1770,8 +1767,6 @@ ipcMain.handle("sales:create", async (_event, payload) => {
               lineTotal: item.lineTotal,
               lineProfit: item.lineProfit,
               pricingContextJson: JSON.stringify({
-                sheetTypeId: item.quote.sheetTypeId,
-                sheetTypeName: item.quote.sheetTypeName,
                 specialRuleId: item.quote.specialRuleId,
                 specialRuleLabel: item.quote.specialRuleLabel,
                 source: item.quote.source,

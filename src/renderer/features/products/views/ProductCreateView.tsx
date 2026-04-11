@@ -12,7 +12,6 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import Divider from "@mui/material/Divider";
 import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
@@ -45,7 +44,6 @@ import type {
   ProductPricingConfig,
   ProductPricingScale,
   ProductPricingSpecialRule,
-  ProductPricingSheetType,
 } from "@/features/products/types";
 import { getReferenceUnitPrice } from "../../../../shared/productPricing";
 
@@ -63,15 +61,6 @@ type ProductPricingSpecialRuleFormState = {
   unitPrice: string;
 };
 
-type ProductPricingSheetFormState = {
-  id: string;
-  name: string;
-  basePrice: string;
-  minimumPrice: string;
-  quantityScales: ProductPricingScaleFormState[];
-  specialRules: ProductPricingSpecialRuleFormState[];
-};
-
 export type ProductFormState = {
   name: string;
   barcode: string;
@@ -86,8 +75,10 @@ export type ProductFormState = {
   hasTax: boolean;
   isActive: boolean;
   pricingEnabled: boolean;
+  pricingBasePrice: string;
   pricingMinimumPrice: string;
-  pricingSheetTypes: ProductPricingSheetFormState[];
+  pricingScales: ProductPricingScaleFormState[];
+  pricingSpecialRules: ProductPricingSpecialRuleFormState[];
 };
 
 type ProductFormFieldsProps = {
@@ -145,42 +136,18 @@ function createSpecialRule(label = "", unitPrice = 0, id: string = crypto.random
   };
 }
 
-function createSheet(
-  name = "",
-  basePrice = 0,
-  options?: {
-    minimumPrice?: number;
-    quantityScales?: Array<{ minQty: number; unitPrice: number }>;
-    specialRules?: Array<{ id?: string; label: string; unitPrice: number }>;
-  }
-): ProductPricingSheetFormState {
-  return {
-    id: crypto.randomUUID(),
-    name,
-    basePrice: String(basePrice),
-    minimumPrice:
-      options?.minimumPrice === undefined || options.minimumPrice === null ? "" : String(options.minimumPrice),
-    quantityScales: (options?.quantityScales ?? []).map((scale) => createScale(scale.minQty, scale.unitPrice)),
-    specialRules: (options?.specialRules ?? []).map((rule) =>
-      createSpecialRule(rule.label, rule.unitPrice, rule.id || crypto.randomUUID())
-    ),
-  };
+function buildQuantityScalePreset() {
+  return [
+    createScale(1, 300),
+    createScale(10, 270),
+    createScale(20, 240),
+    createScale(50, 200),
+    createScale(100, 150),
+  ];
 }
 
-function buildPrintPresetSheets() {
-  return [
-    createSheet("Carta", 300, {
-      quantityScales: [
-        { minQty: 1, unitPrice: 300 },
-        { minQty: 10, unitPrice: 270 },
-        { minQty: 20, unitPrice: 240 },
-        { minQty: 50, unitPrice: 200 },
-        { minQty: 100, unitPrice: 150 },
-      ],
-      specialRules: [{ label: "Tarifa especial", unitPrice: 100 }],
-    }),
-    createSheet("Oficio", 400),
-  ];
+function buildSpecialRulePreset() {
+  return [createSpecialRule("Tarifa especial", 100)];
 }
 
 function syncPriceFromMargin(form: ProductFormState): ProductFormState {
@@ -205,18 +172,8 @@ function syncMarginFromPrice(form: ProductFormState): ProductFormState {
   return { ...form, marginPercent: fixedString(marginPercent) };
 }
 
-function buildSheetSpecialRules(sheet: ProductPricingSheetFormState): ProductPricingSpecialRule[] {
-  return sheet.specialRules
-    .map((rule) => ({
-      id: rule.id,
-      label: rule.label.trim(),
-      unitPrice: integerFromString(rule.unitPrice),
-    }))
-    .filter((rule) => rule.label.length > 0 && rule.unitPrice > 0);
-}
-
-function buildSheetScales(sheet: ProductPricingSheetFormState): ProductPricingScale[] {
-  return sheet.quantityScales
+function buildPricingScales(form: ProductFormState): ProductPricingScale[] {
+  return form.pricingScales
     .map((scale) => ({
       minQty: Math.max(1, integerFromString(scale.minQty)),
       unitPrice: integerFromString(scale.unitPrice),
@@ -225,29 +182,29 @@ function buildSheetScales(sheet: ProductPricingSheetFormState): ProductPricingSc
     .sort((left, right) => left.minQty - right.minQty);
 }
 
+function buildSpecialRules(form: ProductFormState): ProductPricingSpecialRule[] {
+  return form.pricingSpecialRules
+    .map((rule) => ({
+      id: rule.id,
+      label: rule.label.trim(),
+      unitPrice: integerFromString(rule.unitPrice),
+    }))
+    .filter((rule) => rule.label.length > 0 && rule.unitPrice > 0);
+}
+
 function buildPricingConfig(form: ProductFormState): ProductPricingConfig | null {
   if (!form.pricingEnabled) return null;
 
-  const sheetTypes: ProductPricingSheetType[] = form.pricingSheetTypes
-    .map((sheet) => ({
-      id: sheet.id,
-      name: sheet.name.trim(),
-      basePrice: integerFromString(sheet.basePrice),
-      minimumPrice: sheet.minimumPrice.trim() ? integerFromString(sheet.minimumPrice) : null,
-      quantityScales: buildSheetScales(sheet),
-      specialPriceRules: buildSheetSpecialRules(sheet),
-    }))
-    .filter((sheet) => sheet.name.length > 0 && sheet.basePrice > 0);
+  const basePrice = integerFromString(form.pricingBasePrice);
+  if (basePrice <= 0) return null;
 
   return {
     enabled: true,
+    basePrice,
     minimumPrice: integerFromString(form.pricingMinimumPrice),
-    sheetTypes,
+    quantityScales: buildPricingScales(form),
+    specialPriceRules: buildSpecialRules(form),
   };
-}
-
-function getSpecialRules(sheetType?: ProductPricingSheetType | null) {
-  return sheetType?.specialPriceRules ?? [];
 }
 
 export function applyPricingMode(form: ProductFormState, pricingMode: PricingMode) {
@@ -274,8 +231,10 @@ export const emptyProductFormState: ProductFormState = syncPriceFromMargin({
   hasTax: true,
   isActive: true,
   pricingEnabled: false,
+  pricingBasePrice: "300",
   pricingMinimumPrice: "0",
-  pricingSheetTypes: [],
+  pricingScales: [],
+  pricingSpecialRules: [],
 });
 
 export function productToFormState(product: Product): ProductFormState {
@@ -295,15 +254,12 @@ export function productToFormState(product: Product): ProductFormState {
     hasTax: product.hasTax,
     isActive: product.isActive,
     pricingEnabled: Boolean(pricingConfig?.enabled),
+    pricingBasePrice: String(pricingConfig?.basePrice ?? product.price ?? 0),
     pricingMinimumPrice: String(pricingConfig?.minimumPrice ?? 0),
-    pricingSheetTypes:
-      pricingConfig?.sheetTypes.map((sheetType) =>
-        createSheet(sheetType.name, sheetType.basePrice, {
-          minimumPrice: sheetType.minimumPrice ?? undefined,
-          quantityScales: sheetType.quantityScales,
-          specialRules: getSpecialRules(sheetType),
-        })
-      ) ?? [],
+    pricingScales:
+      pricingConfig?.quantityScales.map((scale) => createScale(scale.minQty, scale.unitPrice)) ?? [],
+    pricingSpecialRules:
+      pricingConfig?.specialPriceRules.map((rule) => createSpecialRule(rule.label, rule.unitPrice, rule.id)) ?? [],
   };
 }
 
@@ -343,70 +299,55 @@ export function validateProductForm(form: ProductFormState) {
     return null;
   }
 
-  if (form.pricingSheetTypes.length === 0) {
-    return "Debes agregar al menos un tipo de hoja.";
+  const basePrice = integerFromString(form.pricingBasePrice);
+  if (basePrice <= 0) {
+    return "El precio base debe ser mayor a 0.";
   }
 
-  const normalizedNames = new Set<string>();
-  for (const sheet of form.pricingSheetTypes) {
-    const name = sheet.name.trim().toLowerCase();
-    if (!name) return "Cada tipo de hoja debe tener nombre.";
-    if (normalizedNames.has(name)) return "No repitas tipos de hoja dentro del mismo producto.";
-    normalizedNames.add(name);
+  const minimumPrice = integerFromString(form.pricingMinimumPrice);
+  const usedScaleQuantities = new Set<number>();
 
-    if (integerFromString(sheet.basePrice) <= 0) {
-      return `El precio base de ${sheet.name.trim() || "la hoja"} debe ser mayor a 0.`;
+  for (const scale of form.pricingScales) {
+    const minQty = Math.max(1, integerFromString(scale.minQty));
+    const unitPrice = integerFromString(scale.unitPrice);
+
+    if (unitPrice <= 0) {
+      return "Cada escala debe tener un precio unitario valido.";
     }
 
-    const minimumPrice = sheet.minimumPrice.trim() ? integerFromString(sheet.minimumPrice) : null;
-    if (minimumPrice !== null && minimumPrice < 0) {
-      return `El minimo de ${sheet.name.trim() || "la hoja"} no puede ser negativo.`;
-    }
-    const minimumAllowed = minimumPrice ?? integerFromString(form.pricingMinimumPrice);
-
-    const usedScaleQuantities = new Set<number>();
-    for (const scale of sheet.quantityScales) {
-      const minQty = Math.max(1, integerFromString(scale.minQty));
-      const unitPrice = integerFromString(scale.unitPrice);
-
-      if (unitPrice <= 0) {
-        return `Cada escala de ${sheet.name.trim() || "la hoja"} debe tener un precio valido.`;
-      }
-
-      if (unitPrice < minimumAllowed) {
-        return `Las escalas de ${sheet.name.trim() || "la hoja"} no pueden quedar por debajo del minimo permitido.`;
-      }
-
-      if (usedScaleQuantities.has(minQty)) {
-        return `No repitas la misma cantidad minima en ${sheet.name.trim() || "la hoja"}.`;
-      }
-
-      usedScaleQuantities.add(minQty);
+    if (unitPrice < minimumPrice) {
+      return "Las escalas no pueden quedar por debajo del minimo permitido.";
     }
 
-    const usedRuleLabels = new Set<string>();
-    for (const rule of sheet.specialRules) {
-      const label = rule.label.trim().toLowerCase();
-      const unitPrice = integerFromString(rule.unitPrice);
-
-      if (!label) {
-        return `Cada tarifa especial de ${sheet.name.trim() || "la hoja"} debe tener un nombre.`;
-      }
-
-      if (unitPrice <= 0) {
-        return `Cada tarifa especial de ${sheet.name.trim() || "la hoja"} debe tener un precio valido.`;
-      }
-
-      if (unitPrice < minimumAllowed) {
-        return `Las tarifas especiales de ${sheet.name.trim() || "la hoja"} no pueden quedar por debajo del minimo permitido.`;
-      }
-
-      if (usedRuleLabels.has(label)) {
-        return `No repitas tarifas especiales en ${sheet.name.trim() || "la hoja"}.`;
-      }
-
-      usedRuleLabels.add(label);
+    if (usedScaleQuantities.has(minQty)) {
+      return "No repitas la misma cantidad minima en las escalas.";
     }
+
+    usedScaleQuantities.add(minQty);
+  }
+
+  const usedRuleLabels = new Set<string>();
+  for (const rule of form.pricingSpecialRules) {
+    const label = rule.label.trim().toLowerCase();
+    const unitPrice = integerFromString(rule.unitPrice);
+
+    if (!label) {
+      return "Cada tarifa especial debe tener un nombre.";
+    }
+
+    if (unitPrice <= 0) {
+      return "Cada tarifa especial debe tener un precio valido.";
+    }
+
+    if (unitPrice < minimumPrice) {
+      return "Las tarifas especiales no pueden quedar por debajo del minimo permitido.";
+    }
+
+    if (usedRuleLabels.has(label)) {
+      return "No repitas tarifas especiales dentro del mismo producto.";
+    }
+
+    usedRuleLabels.add(label);
   }
 
   return null;
@@ -440,11 +381,12 @@ export function ProductFormFields({
     () => getReferenceUnitPrice(numberFromString(form.price), pricingConfig),
     [form.price, pricingConfig]
   );
-  const specialRulePrices = form.pricingSheetTypes
-    .flatMap((sheet) => sheet.specialRules)
-    .map((rule) => integerFromString(rule.unitPrice))
-    .filter((price) => price > 0);
-  const lowestSpecialRulePrice = specialRulePrices.length > 0 ? Math.min(...specialRulePrices) : null;
+  const lowestSpecialRulePrice = useMemo(() => {
+    const prices = form.pricingSpecialRules
+      .map((rule) => integerFromString(rule.unitPrice))
+      .filter((price) => price > 0);
+    return prices.length > 0 ? Math.min(...prices) : null;
+  }, [form.pricingSpecialRules]);
 
   useEffect(() => {
     if (form.pricingEnabled) {
@@ -494,86 +436,64 @@ export function ProductFormFields({
     setForm,
   ]);
 
-  const addSheet = () => {
-    setForm((prev) => ({
-      ...prev,
-      pricingEnabled: true,
-      pricingSheetTypes: [...prev.pricingSheetTypes, createSheet(`Hoja ${prev.pricingSheetTypes.length + 1}`)],
-    }));
-  };
-
   const replaceWithPrintPreset = () => {
     setForm((prev) => ({
       ...prev,
       pricingEnabled: true,
-      pricingSheetTypes: buildPrintPresetSheets(),
-      pricingMinimumPrice: prev.pricingMinimumPrice || "0",
+      pricingBasePrice: "300",
+      pricingScales: buildQuantityScalePreset(),
+      pricingSpecialRules: buildSpecialRulePreset(),
     }));
   };
 
-  const updateSheet = (sheetId: string, updater: (sheet: ProductPricingSheetFormState) => ProductPricingSheetFormState) => {
+  const addScale = () => {
     setForm((prev) => ({
       ...prev,
-      pricingSheetTypes: prev.pricingSheetTypes.map((sheet) => (sheet.id === sheetId ? updater(sheet) : sheet)),
-    }));
-  };
-
-  const removeSheet = (sheetId: string) => {
-    setForm((prev) => ({
-      ...prev,
-      pricingSheetTypes: prev.pricingSheetTypes.filter((sheet) => sheet.id !== sheetId),
-    }));
-  };
-
-  const addScale = (sheetId: string) => {
-    updateSheet(sheetId, (sheet) => ({
-      ...sheet,
-      quantityScales: [...sheet.quantityScales, createScale(1, integerFromString(sheet.basePrice) || 0)],
+      pricingScales: [...prev.pricingScales, createScale(1, integerFromString(prev.pricingBasePrice) || 0)],
     }));
   };
 
   const updateScale = (
-    sheetId: string,
     scaleId: string,
     patch: Partial<Pick<ProductPricingScaleFormState, "minQty" | "unitPrice">>
   ) => {
-    updateSheet(sheetId, (sheet) => ({
-      ...sheet,
-      quantityScales: sheet.quantityScales.map((scale) =>
-        scale.id === scaleId ? { ...scale, ...patch } : scale
-      ),
+    setForm((prev) => ({
+      ...prev,
+      pricingScales: prev.pricingScales.map((scale) => (scale.id === scaleId ? { ...scale, ...patch } : scale)),
     }));
   };
 
-  const removeScale = (sheetId: string, scaleId: string) => {
-    updateSheet(sheetId, (sheet) => ({
-      ...sheet,
-      quantityScales: sheet.quantityScales.filter((scale) => scale.id !== scaleId),
+  const removeScale = (scaleId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      pricingScales: prev.pricingScales.filter((scale) => scale.id !== scaleId),
     }));
   };
 
-  const addSpecialRule = (sheetId: string) => {
-    updateSheet(sheetId, (sheet) => ({
-      ...sheet,
-      specialRules: [...sheet.specialRules, createSpecialRule("Tarifa especial", integerFromString(sheet.basePrice) || 0)],
+  const addSpecialRule = () => {
+    setForm((prev) => ({
+      ...prev,
+      pricingSpecialRules: [
+        ...prev.pricingSpecialRules,
+        createSpecialRule("Tarifa especial", integerFromString(prev.pricingBasePrice) || 0),
+      ],
     }));
   };
 
   const updateSpecialRule = (
-    sheetId: string,
     ruleId: string,
     patch: Partial<Pick<ProductPricingSpecialRuleFormState, "label" | "unitPrice">>
   ) => {
-    updateSheet(sheetId, (sheet) => ({
-      ...sheet,
-      specialRules: sheet.specialRules.map((rule) => (rule.id === ruleId ? { ...rule, ...patch } : rule)),
+    setForm((prev) => ({
+      ...prev,
+      pricingSpecialRules: prev.pricingSpecialRules.map((rule) => (rule.id === ruleId ? { ...rule, ...patch } : rule)),
     }));
   };
 
-  const removeSpecialRule = (sheetId: string, ruleId: string) => {
-    updateSheet(sheetId, (sheet) => ({
-      ...sheet,
-      specialRules: sheet.specialRules.filter((rule) => rule.id !== ruleId),
+  const removeSpecialRule = (ruleId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      pricingSpecialRules: prev.pricingSpecialRules.filter((rule) => rule.id !== ruleId),
     }));
   };
 
@@ -615,9 +535,7 @@ export function ProductFormFields({
               }))
             }
           >
-            <MenuItem value="">
-              <em>Sin categoria</em>
-            </MenuItem>
+            <MenuItem value="">Sin categoria</MenuItem>
             {categories.map((category) => (
               <MenuItem key={category.id} value={category.id}>
                 {category.name}
@@ -627,39 +545,36 @@ export function ProductFormFields({
         </FormControl>
       </Box>
 
-      <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "1fr 1fr" }} gap={2}>
+      <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(4, 1fr)" }} gap={2}>
         <FormControl fullWidth>
-          <InputLabel id="product-unit-measure-label">Unidad de medida</InputLabel>
-          <Select
-            labelId="product-unit-measure-label"
-            value={form.unitMeasure}
-            label="Unidad de medida"
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, unitMeasure: event.target.value as ProductUnitOption }))
-            }
-          >
-            {PRODUCT_UNIT_OPTIONS.map((option) => (
-              <MenuItem key={option.value} value={option.value}>
-                {option.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-
-        <FormControl fullWidth disabled={!form.categoryId}>
           <InputLabel id="product-subcategory-label">Subcategoria</InputLabel>
           <Select
             labelId="product-subcategory-label"
             value={form.subcategoryId}
             label="Subcategoria"
+            disabled={!form.categoryId || availableSubcategories.length === 0}
             onChange={(event) => setForm((prev) => ({ ...prev, subcategoryId: event.target.value }))}
           >
-            <MenuItem value="">
-              <em>{form.categoryId ? "Sin subcategoria" : "Selecciona una categoria"}</em>
-            </MenuItem>
+            <MenuItem value="">Sin subcategoria</MenuItem>
             {availableSubcategories.map((subcategory) => (
               <MenuItem key={subcategory.id} value={subcategory.id}>
                 {subcategory.name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl fullWidth>
+          <InputLabel id="product-unit-label">Unidad</InputLabel>
+          <Select
+            labelId="product-unit-label"
+            value={form.unitMeasure}
+            label="Unidad"
+            onChange={(event) => setForm((prev) => ({ ...prev, unitMeasure: event.target.value as ProductUnitOption }))}
+          >
+            {PRODUCT_UNIT_OPTIONS.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                {option.label}
               </MenuItem>
             ))}
           </Select>
@@ -671,18 +586,18 @@ export function ProductFormFields({
           onChange={(event) => setForm((prev) => ({ ...prev, barcode: event.target.value }))}
           fullWidth
         />
-      </Box>
 
-      <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2}>
         <TextField
-          label="Cantidad inicial"
+          label="Stock inicial"
           type="number"
-          inputProps={{ min: 0, step: "1" }}
+          inputProps={{ min: 0, step: 1 }}
           value={form.stock}
           onChange={(event) => setForm((prev) => ({ ...prev, stock: event.target.value }))}
           fullWidth
         />
+      </Box>
 
+      <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2}>
         <TextField
           label="Costo inicial"
           type="number"
@@ -707,9 +622,17 @@ export function ProductFormFields({
           helperText={
             form.pricingEnabled
               ? "Se calcula automaticamente con la configuracion escalonada."
-              : "Precio unitario base del producto."
+              : "Precio unitario del producto."
           }
           InputProps={{ readOnly: form.pricingEnabled }}
+          fullWidth
+        />
+
+        <TextField
+          label="Ganancia estimada"
+          value={`${estimatedMargin}%`}
+          helperText="Se calcula automaticamente con costo, IVA y precio."
+          InputProps={{ readOnly: true }}
           fullWidth
         />
       </Box>
@@ -742,9 +665,12 @@ export function ProductFormFields({
         </FormControl>
 
         <TextField
-          label="Ganancia estimada"
-          value={`${estimatedMargin}%`}
-          helperText="Se calcula automaticamente con costo, IVA y precio de referencia."
+          label="Resumen rapido"
+          value={
+            form.pricingEnabled
+              ? `Desde ${currency(referenceDynamicPrice)} | ${form.pricingScales.length} escalas`
+              : `Costo ${currency(numberFromString(form.cost))} | Precio ${currency(numberFromString(form.price))}`
+          }
           InputProps={{ readOnly: true }}
           fullWidth
         />
@@ -759,7 +685,7 @@ export function ProductFormFields({
                   Configuracion de precio por cantidad
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Prioridad aplicada en venta: hoja, cantidad, tarifa especial y minimo permitido.
+                  El sistema calcula automaticamente por cantidad y puede activar una tarifa especial controlada.
                 </Typography>
               </Box>
               <FormControlLabel
@@ -770,10 +696,12 @@ export function ProductFormFields({
                       setForm((prev) => ({
                         ...prev,
                         pricingEnabled: event.target.checked,
-                        pricingSheetTypes:
-                          event.target.checked && prev.pricingSheetTypes.length === 0
-                            ? buildPrintPresetSheets()
-                            : prev.pricingSheetTypes,
+                        pricingScales:
+                          event.target.checked && prev.pricingScales.length === 0 ? buildQuantityScalePreset() : prev.pricingScales,
+                        pricingSpecialRules:
+                          event.target.checked && prev.pricingSpecialRules.length === 0
+                            ? buildSpecialRulePreset()
+                            : prev.pricingSpecialRules,
                       }))
                     }
                   />
@@ -785,35 +713,33 @@ export function ProductFormFields({
             {form.pricingEnabled ? (
               <>
                 <Alert severity="info">
-                  Orden aplicada en venta: primero se valida el tipo de hoja, luego la escala por cantidad, despues la
-                  tarifa especial activada en la venta y al final el minimo permitido. Si el resultado queda por debajo
-                  del minimo, el sistema lo ajusta automaticamente salvo autorizacion superior.
+                  Orden aplicada en venta: primero se evalua la cantidad ingresada, luego la tarifa especial si se activa
+                  en caja, y al final el minimo permitido. No hay descuento libre.
                 </Alert>
 
                 <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(4, 1fr)" }} gap={2}>
                   <TextField
-                    label="Precio minimo permitido"
+                    label="Precio base"
                     type="number"
-                    inputProps={{ min: 0, step: "1" }}
-                    value={form.pricingMinimumPrice}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, pricingMinimumPrice: event.target.value }))
-                    }
-                    helperText="Se usa si la hoja no define uno propio."
+                    inputProps={{ min: 0, step: 1 }}
+                    value={form.pricingBasePrice}
+                    onChange={(event) => setForm((prev) => ({ ...prev, pricingBasePrice: event.target.value }))}
                   />
                   <TextField
-                    label="Precio referencia actual"
-                    value={currency(referenceDynamicPrice)}
+                    label="Precio minimo permitido"
+                    type="number"
+                    inputProps={{ min: 0, step: 1 }}
+                    value={form.pricingMinimumPrice}
+                    onChange={(event) => setForm((prev) => ({ ...prev, pricingMinimumPrice: event.target.value }))}
+                  />
+                  <TextField
+                    label="Escalas configuradas"
+                    value={String(form.pricingScales.length)}
                     InputProps={{ readOnly: true }}
                   />
                   <TextField
                     label="Tarifa especial mas baja"
                     value={lowestSpecialRulePrice ? currency(lowestSpecialRulePrice) : "No configurada"}
-                    InputProps={{ readOnly: true }}
-                  />
-                  <TextField
-                    label="Tipos de hoja"
-                    value={String(form.pricingSheetTypes.length)}
                     InputProps={{ readOnly: true }}
                   />
                 </Box>
@@ -822,240 +748,146 @@ export function ProductFormFields({
                   <Button variant="outlined" onClick={replaceWithPrintPreset}>
                     Cargar ejemplo de impresiones
                   </Button>
-                  <Button variant="contained" onClick={addSheet}>
-                    Agregar tipo de hoja
-                  </Button>
                 </Stack>
 
                 <Stack spacing={2}>
-                  {form.pricingSheetTypes.map((sheet, sheetIndex) => (
-                    <Card key={sheet.id} variant="outlined">
-                      <CardContent>
-                        <Stack spacing={2}>
-                          <Box display="flex" justifyContent="space-between" alignItems="center" gap={2}>
-                            <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
-                              <Typography variant="subtitle1" fontWeight={800}>
-                                {sheet.name.trim() || `Tipo de hoja ${sheetIndex + 1}`}
-                              </Typography>
-                              <Chip
-                                size="small"
-                                label={`${sheet.quantityScales.length} escalas`}
-                                color="primary"
-                                variant="outlined"
-                              />
-                            </Box>
-
-                            <Tooltip title="Eliminar tipo de hoja">
-                              <span>
-                                <IconButton
-                                  color="error"
-                                  onClick={() => removeSheet(sheet.id)}
-                                  disabled={form.pricingSheetTypes.length === 1}
-                                >
-                                  <DeleteOutlineIcon />
-                                </IconButton>
-                              </span>
-                            </Tooltip>
+                  <Card variant="outlined">
+                    <CardContent>
+                      <Stack spacing={1.5}>
+                        <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
+                          <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                            <Typography variant="subtitle1" fontWeight={800}>
+                              Escalas por cantidad
+                            </Typography>
+                            <Chip size="small" label={`${form.pricingScales.length} escalas`} color="primary" variant="outlined" />
                           </Box>
+                          <Button variant="outlined" onClick={addScale}>
+                            Agregar escala
+                          </Button>
+                        </Box>
 
-                          <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(4, 1fr)" }} gap={2}>
-                            <TextField
-                              label="Tipo de hoja"
-                              value={sheet.name}
-                              onChange={(event) =>
-                                updateSheet(sheet.id, (current) => ({ ...current, name: event.target.value }))
-                              }
-                            />
-                            <TextField
-                              label="Precio base"
-                              type="number"
-                              inputProps={{ min: 0, step: "1" }}
-                              value={sheet.basePrice}
-                              onChange={(event) =>
-                                updateSheet(sheet.id, (current) => ({ ...current, basePrice: event.target.value }))
-                              }
-                            />
-                            <TextField
-                              label="Minimo por hoja"
-                              type="number"
-                              inputProps={{ min: 0, step: "1" }}
-                              value={sheet.minimumPrice}
-                              onChange={(event) =>
-                                updateSheet(sheet.id, (current) => ({ ...current, minimumPrice: event.target.value }))
-                              }
-                              helperText="Opcional"
-                            />
-                            <TextField
-                              label="Tarifas especiales"
-                              value={String(sheet.specialRules.length)}
-                              InputProps={{ readOnly: true }}
+                        <Typography variant="body2" color="text.secondary">
+                          El sistema toma la escala de mayor cantidad minima que cumpla con la cantidad vendida.
+                        </Typography>
+
+                        {form.pricingScales.length === 0 ? (
+                          <Alert severity="warning">
+                            Sin escalas configuradas. El producto usara solo el precio base.
+                          </Alert>
+                        ) : (
+                          <Stack spacing={1.25}>
+                            {form.pricingScales.map((scale) => (
+                              <Box
+                                key={scale.id}
+                                display="grid"
+                                gridTemplateColumns={{ xs: "1fr", md: "160px 1fr auto" }}
+                                gap={2}
+                                alignItems="center"
+                              >
+                                <TextField
+                                  label="Desde cantidad"
+                                  type="number"
+                                  inputProps={{ min: 1, step: 1 }}
+                                  value={scale.minQty}
+                                  onChange={(event) => updateScale(scale.id, { minQty: event.target.value })}
+                                />
+                                <TextField
+                                  label="Precio unitario"
+                                  type="number"
+                                  inputProps={{ min: 0, step: 1 }}
+                                  value={scale.unitPrice}
+                                  onChange={(event) => updateScale(scale.id, { unitPrice: event.target.value })}
+                                />
+                                <Tooltip title="Eliminar escala">
+                                  <span>
+                                    <IconButton color="error" onClick={() => removeScale(scale.id)}>
+                                      <DeleteOutlineIcon />
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                              </Box>
+                            ))}
+                          </Stack>
+                        )}
+                      </Stack>
+                    </CardContent>
+                  </Card>
+
+                  <Card variant="outlined">
+                    <CardContent>
+                      <Stack spacing={1.5}>
+                        <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
+                          <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                            <Typography variant="subtitle1" fontWeight={800}>
+                              Tarifas especiales
+                            </Typography>
+                            <Chip
+                              size="small"
+                              label={`${form.pricingSpecialRules.length} tarifas`}
+                              color="secondary"
+                              variant="outlined"
                             />
                           </Box>
+                          <Button variant="outlined" onClick={addSpecialRule}>
+                            Agregar tarifa especial
+                          </Button>
+                        </Box>
 
-                          <Divider />
+                        <Typography variant="body2" color="text.secondary">
+                          Son reglas opcionales que el cajero activa al agregar el producto a la venta.
+                        </Typography>
 
-                          <Stack spacing={1.5}>
-                            <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
-                              <Box>
-                                <Typography variant="subtitle2" fontWeight={800}>
-                                  Escalas por cantidad
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                  El sistema toma la mayor escala cuya cantidad minima sea menor o igual a la vendida.
-                                </Typography>
+                        {form.pricingSpecialRules.length === 0 ? (
+                          <Alert severity="info">
+                            Este producto no tiene tarifas especiales configuradas.
+                          </Alert>
+                        ) : (
+                          <Stack spacing={1.25}>
+                            {form.pricingSpecialRules.map((rule) => (
+                              <Box
+                                key={rule.id}
+                                display="grid"
+                                gridTemplateColumns={{ xs: "1fr", md: "1.2fr 180px auto" }}
+                                gap={2}
+                                alignItems="center"
+                              >
+                                <TextField
+                                  label="Nombre de tarifa"
+                                  value={rule.label}
+                                  onChange={(event) => updateSpecialRule(rule.id, { label: event.target.value })}
+                                />
+                                <TextField
+                                  label="Precio unitario"
+                                  type="number"
+                                  inputProps={{ min: 0, step: 1 }}
+                                  value={rule.unitPrice}
+                                  onChange={(event) => updateSpecialRule(rule.id, { unitPrice: event.target.value })}
+                                />
+                                <Tooltip title="Eliminar tarifa especial">
+                                  <span>
+                                    <IconButton color="error" onClick={() => removeSpecialRule(rule.id)}>
+                                      <DeleteOutlineIcon />
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
                               </Box>
-                              <Button variant="outlined" onClick={() => addScale(sheet.id)}>
-                                Agregar escala
-                              </Button>
-                            </Box>
-
-                            {sheet.quantityScales.length === 0 ? (
-                              <Alert severity="warning">
-                                Esta hoja solo usara precio base mientras no agregues escalas.
-                              </Alert>
-                            ) : (
-                              <Stack spacing={1.25}>
-                                {sheet.quantityScales.map((scale) => (
-                                  <Box
-                                    key={scale.id}
-                                    display="grid"
-                                    gridTemplateColumns={{ xs: "1fr", md: "160px 1fr auto" }}
-                                    gap={2}
-                                    alignItems="center"
-                                  >
-                                    <TextField
-                                      label="Desde cantidad"
-                                      type="number"
-                                      inputProps={{ min: 1, step: "1" }}
-                                      value={scale.minQty}
-                                      onChange={(event) =>
-                                        updateScale(sheet.id, scale.id, { minQty: event.target.value })
-                                      }
-                                    />
-                                    <TextField
-                                      label="Precio unitario"
-                                      type="number"
-                                      inputProps={{ min: 0, step: "1" }}
-                                      value={scale.unitPrice}
-                                      onChange={(event) =>
-                                        updateScale(sheet.id, scale.id, { unitPrice: event.target.value })
-                                      }
-                                    />
-                                    <Button
-                                      color="error"
-                                      variant="text"
-                                      onClick={() => removeScale(sheet.id, scale.id)}
-                                    >
-                                      Quitar
-                                    </Button>
-                                  </Box>
-                                ))}
-                              </Stack>
-                            )}
+                            ))}
                           </Stack>
-
-                          <Divider />
-
-                          <Stack spacing={1.5}>
-                            <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
-                              <Box>
-                                <Typography variant="subtitle2" fontWeight={800}>
-                                  Tarifas especiales
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                  Regla opcional activable al agregar el producto a la venta. Sobrescribe el precio base
-                                  o la escala, pero nunca baja del minimo salvo permiso autorizado.
-                                </Typography>
-                              </Box>
-                              <Button variant="outlined" onClick={() => addSpecialRule(sheet.id)}>
-                                Agregar tarifa especial
-                              </Button>
-                            </Box>
-
-                            {sheet.specialRules.length === 0 ? (
-                              <Alert severity="info">
-                                Esta hoja no tiene tarifas especiales. El POS usara solo el precio base o la escala por cantidad.
-                              </Alert>
-                            ) : (
-                              <Stack spacing={1.25}>
-                                {sheet.specialRules.map((rule) => (
-                                  <Box
-                                    key={rule.id}
-                                    display="grid"
-                                    gridTemplateColumns={{ xs: "1fr", md: "1.2fr 180px auto" }}
-                                    gap={2}
-                                    alignItems="center"
-                                  >
-                                    <TextField
-                                      label="Nombre de tarifa"
-                                      value={rule.label}
-                                      onChange={(event) =>
-                                        updateSpecialRule(sheet.id, rule.id, { label: event.target.value })
-                                      }
-                                    />
-                                    <TextField
-                                      label="Precio unitario"
-                                      type="number"
-                                      inputProps={{ min: 0, step: "1" }}
-                                      value={rule.unitPrice}
-                                      onChange={(event) =>
-                                        updateSpecialRule(sheet.id, rule.id, { unitPrice: event.target.value })
-                                      }
-                                    />
-                                    <Button
-                                      color="error"
-                                      variant="text"
-                                      onClick={() => removeSpecialRule(sheet.id, rule.id)}
-                                    >
-                                      Quitar
-                                    </Button>
-                                  </Box>
-                                ))}
-                              </Stack>
-                            )}
-                          </Stack>
-                        </Stack>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        )}
+                      </Stack>
+                    </CardContent>
+                  </Card>
                 </Stack>
               </>
             ) : (
               <Alert severity="info">
-                Usa esta opcion solo si el producto vende siempre al mismo precio. Para impresiones, copias y
-                servicios similares conviene dejar las reglas activas para evitar descuentos manuales fuera de control.
+                Usa esta opcion solo si el producto vende siempre al mismo precio. Para impresiones, copias y servicios
+                similares conviene activar las reglas escalonadas.
               </Alert>
             )}
           </Stack>
         </CardContent>
       </Card>
-
-      <Box
-        sx={{
-          border: "1px solid",
-          borderColor: "divider",
-          borderRadius: 2,
-          px: 2,
-          py: 1.5,
-          bgcolor: "grey.50",
-        }}
-      >
-        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1}>
-          <TextField
-            label="Resumen rapido"
-            value={
-              form.pricingEnabled
-                ? `Desde ${currency(referenceDynamicPrice)} | Hojas ${form.pricingSheetTypes.length}`
-                : `Costo ${currency(numberFromString(form.cost))} | Precio ${currency(numberFromString(form.price))}`
-            }
-            InputProps={{ readOnly: true }}
-            sx={{ flex: 1 }}
-          />
-          <Typography variant="body2" color="text.secondary">
-            {getTaxConfig(selectedTaxOption).label}
-          </Typography>
-        </Stack>
-      </Box>
 
       {showStatus ? (
         <FormControlLabel
@@ -1108,7 +940,7 @@ export default function ProductCreateView({
       <DialogTitle>Formulario rapido de producto</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          Completa los datos del producto y, si aplica, define las reglas automaticas por hoja, cantidad y tarifa especial.
+          Completa los datos del producto y, si aplica, define las escalas por cantidad y las tarifas especiales.
         </Typography>
         {error ? <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert> : null}
         <ProductFormFields

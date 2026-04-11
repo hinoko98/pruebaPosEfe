@@ -300,9 +300,9 @@ export default function InvoicePanel({
                       <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>
                         {fmt(item.price)} c/u
                       </div>
-                      {item.sheetTypeName || item.specialRuleLabel || item.pricingSourceLabel ? (
+                      {item.specialRuleLabel || item.pricingSourceLabel ? (
                         <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>
-                          {[item.sheetTypeName, item.specialRuleLabel, item.pricingSourceLabel].filter(Boolean).join(" | ")}
+                          {[item.specialRuleLabel, item.pricingSourceLabel].filter(Boolean).join(" | ")}
                         </div>
                       ) : null}
                     </div>

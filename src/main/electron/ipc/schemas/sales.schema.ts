@@ -3,7 +3,6 @@ import { z } from "zod";
 export const paymentMethodSchema = z.enum(["CASH", "CARD", "TRANSFER"]);
 
 const saleItemPricingContextSchema = z.object({
-  sheetTypeId: z.string().trim().min(1, "Debes seleccionar el tipo de hoja"),
   specialRuleId: z.string().trim().min(1, "La tarifa especial seleccionada no es valida").optional().nullable(),
   manualUnitPrice: z.number().positive("El precio manual debe ser mayor a 0").optional().nullable(),
 });

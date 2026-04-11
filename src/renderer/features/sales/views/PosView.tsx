@@ -145,7 +145,7 @@ export default function PosView() {
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [customers, setCustomers] = useState<
-    Array<{ id: string; name: string; document?: string | null; phone?: string | null; segment: "GENERAL" | "DOCENTE" }>
+    Array<{ id: string; name: string; document?: string | null; phone?: string | null }>
   >([]);
   const [tabs, setTabs] = useState<SaleTab[]>([newTab(1)]);
   const [activeId, setActiveId] = useState<string>(() => tabs[0].id);
@@ -175,7 +175,6 @@ export default function PosView() {
                 name: customer.name,
                 document: customer.document,
                 phone: customer.phone,
-                segment: customer.segment,
               }))
           );
         }
@@ -209,13 +208,12 @@ export default function PosView() {
   const resolveLinePricing = (
     product: Product,
     qty: number,
-    pricingContext: { sheetTypeId: string; specialRuleId?: string | null; manualUnitPrice?: number | null }
+    pricingContext: { specialRuleId?: string | null; manualUnitPrice?: number | null }
   ) => {
     return resolveProductPricingQuote({
       fallbackPrice: product.price,
       pricingConfig: product.pricingConfig,
       qty,
-      sheetTypeId: pricingContext.sheetTypeId,
       specialRuleId: pricingContext.specialRuleId ?? null,
       manualUnitPrice: pricingContext.manualUnitPrice ?? null,
       canOverrideMinimum: canEditSaleItemPrices,
@@ -224,7 +222,7 @@ export default function PosView() {
 
   const recalculateConfiguredCart = (cart: CartItem[]) => {
     return cart.map((line) => {
-      if (!line.pricingEnabled || !line.sheetTypeId) {
+      if (!line.pricingEnabled) {
         return line;
       }
 
@@ -234,7 +232,6 @@ export default function PosView() {
       }
 
       const pricingResult = resolveLinePricing(product, line.qty, {
-        sheetTypeId: line.sheetTypeId,
         specialRuleId: line.specialRuleId,
         manualUnitPrice: line.manualUnitPrice ?? null,
       });
@@ -245,9 +242,8 @@ export default function PosView() {
 
       return {
         ...line,
-        name: pricingResult.quote.sheetTypeName ? `${product.name} - ${pricingResult.quote.sheetTypeName}` : product.name,
+        name: product.name,
         price: pricingResult.quote.unitPrice,
-        sheetTypeName: pricingResult.quote.sheetTypeName,
         specialRuleId: pricingResult.quote.specialRuleId,
         specialRuleLabel: pricingResult.quote.specialRuleLabel,
         pricingSourceLabel: pricingResult.quote.sourceLabel,
@@ -309,20 +305,17 @@ export default function PosView() {
   const addConfiguredProductToCart = (payload: {
     product: Product;
     qty: number;
-    sheetTypeId: string;
     specialRuleId?: string | null;
     manualUnitPrice?: number | null;
   }) => {
     const currentLine = activeTab.cart.find(
       (item) =>
         item.productId === payload.product.id &&
-        item.sheetTypeId === payload.sheetTypeId &&
         (item.specialRuleId ?? null) === (payload.specialRuleId ?? null) &&
         (item.manualUnitPrice ?? null) === (payload.manualUnitPrice ?? null)
     );
     const mergedQty = (currentLine?.qty ?? 0) + payload.qty;
     const pricingResult = resolveLinePricing(payload.product, mergedQty, {
-      sheetTypeId: payload.sheetTypeId,
       specialRuleId: payload.specialRuleId ?? null,
       manualUnitPrice: payload.manualUnitPrice ?? null,
     });
@@ -339,10 +332,7 @@ export default function PosView() {
                 ...item,
                 qty: mergedQty,
                 price: pricingResult.quote.unitPrice,
-                name: pricingResult.quote.sheetTypeName
-                  ? `${payload.product.name} - ${pricingResult.quote.sheetTypeName}`
-                  : payload.product.name,
-                sheetTypeName: pricingResult.quote.sheetTypeName,
+                name: payload.product.name,
                 specialRuleId: pricingResult.quote.specialRuleId,
                 specialRuleLabel: pricingResult.quote.specialRuleLabel,
                 pricingSourceLabel: pricingResult.quote.sourceLabel,
@@ -356,15 +346,11 @@ export default function PosView() {
           {
             lineId: crypto.randomUUID(),
             productId: payload.product.id,
-            name: pricingResult.quote.sheetTypeName
-              ? `${payload.product.name} - ${pricingResult.quote.sheetTypeName}`
-              : payload.product.name,
+            name: payload.product.name,
             sku: payload.product.sku,
             price: pricingResult.quote.unitPrice,
             qty: payload.qty,
             taxRate: payload.product.taxRate ?? 0,
-            sheetTypeId: payload.sheetTypeId,
-            sheetTypeName: pricingResult.quote.sheetTypeName,
             specialRuleId: pricingResult.quote.specialRuleId,
             specialRuleLabel: pricingResult.quote.specialRuleLabel,
             pricingSourceLabel: pricingResult.quote.sourceLabel,
@@ -386,9 +372,8 @@ export default function PosView() {
     const maxStock = product?.stock ?? Number.MAX_SAFE_INTEGER;
     const nextQty = Math.max(1, qty || 1);
 
-    if (line.pricingEnabled && line.sheetTypeId && product) {
+    if (line.pricingEnabled && product) {
       const pricingResult = resolveLinePricing(product, nextQty, {
-        sheetTypeId: line.sheetTypeId,
         specialRuleId: line.specialRuleId,
         manualUnitPrice: line.manualUnitPrice ?? null,
       });
@@ -402,10 +387,9 @@ export default function PosView() {
           item.lineId === lineId
             ? {
                 ...item,
-                name: pricingResult.quote.sheetTypeName ? `${product.name} - ${pricingResult.quote.sheetTypeName}` : product.name,
+                name: product.name,
                 qty: nextQty,
                 price: pricingResult.quote.unitPrice,
-                sheetTypeName: pricingResult.quote.sheetTypeName,
                 specialRuleId: pricingResult.quote.specialRuleId,
                 specialRuleLabel: pricingResult.quote.specialRuleLabel,
                 pricingSourceLabel: pricingResult.quote.sourceLabel,
@@ -494,9 +478,8 @@ export default function PosView() {
           productId: item.productId,
           qty: item.qty,
           pricingContext:
-            item.pricingEnabled && item.sheetTypeId
+            item.pricingEnabled
               ? {
-                  sheetTypeId: item.sheetTypeId,
                   specialRuleId: item.specialRuleId ?? null,
                   manualUnitPrice: item.manualUnitPrice ?? null,
                 }

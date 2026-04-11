@@ -30,75 +30,65 @@ const productPricingSpecialRuleSchema = z.object({
   unitPrice: z.number().min(0, "El precio unitario no puede ser negativo"),
 });
 
-const productPricingSheetTypeSchema = z.object({
-  id: z.string().trim().min(1).max(80),
-  name: z.string().trim().min(1).max(60),
-  basePrice: z.number().positive("El precio base por hoja debe ser mayor a 0"),
-  minimumPrice: z.number().min(0).nullable().optional(),
-  quantityScales: z.array(productPricingScaleSchema).optional().default([]),
-  specialPriceRules: z.array(productPricingSpecialRuleSchema).optional().default([]),
-});
-
 export const productPricingConfigSchema = z
   .object({
     enabled: z.boolean().optional().default(false),
+    basePrice: z.number().positive("El precio base debe ser mayor a 0").optional().default(0),
     minimumPrice: z.number().min(0, "El precio minimo no puede ser negativo").optional().default(0),
-    sheetTypes: z.array(productPricingSheetTypeSchema).optional().default([]),
+    quantityScales: z.array(productPricingScaleSchema).optional().default([]),
+    specialPriceRules: z.array(productPricingSpecialRuleSchema).optional().default([]),
   })
   .superRefine((data, ctx) => {
     if (!data.enabled) return;
 
-    if (data.sheetTypes.length === 0) {
+    if (data.basePrice <= 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Debes configurar al menos un tipo de hoja",
-        path: ["sheetTypes"],
+        message: "Debes configurar un precio base valido",
+        path: ["basePrice"],
       });
     }
 
-    const seenIds = new Set<string>();
-    for (const [sheetIndex, sheetType] of data.sheetTypes.entries()) {
-      if (seenIds.has(sheetType.id)) {
+    const seenScaleQuantities = new Set<number>();
+    for (const [scaleIndex, scale] of data.quantityScales.entries()) {
+      if (scale.unitPrice < data.minimumPrice) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "Cada tipo de hoja debe tener un identificador unico",
-          path: ["sheetTypes", sheetIndex, "id"],
+          message: "La escala no puede quedar por debajo del precio minimo permitido",
+          path: ["quantityScales", scaleIndex, "unitPrice"],
         });
       }
-      seenIds.add(sheetType.id);
 
-      const minimumAllowed = sheetType.minimumPrice ?? data.minimumPrice;
-
-      for (const scale of sheetType.quantityScales) {
-        if (scale.unitPrice < minimumAllowed) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "La escala no puede quedar por debajo del precio minimo permitido",
-            path: ["sheetTypes", sheetIndex, "quantityScales"],
-          });
-          break;
-        }
+      if (seenScaleQuantities.has(scale.minQty)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "No repitas la misma cantidad minima en las escalas",
+          path: ["quantityScales", scaleIndex, "minQty"],
+        });
       }
 
-      const seenRuleIds = new Set<string>();
-      for (const [ruleIndex, rule] of sheetType.specialPriceRules.entries()) {
-        if (rule.unitPrice < minimumAllowed) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "La tarifa especial no puede quedar por debajo del precio minimo permitido",
-            path: ["sheetTypes", sheetIndex, "specialPriceRules", ruleIndex, "unitPrice"],
-          });
-        }
+      seenScaleQuantities.add(scale.minQty);
+    }
 
-        if (seenRuleIds.has(rule.id)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "Cada tarifa especial debe tener un identificador unico dentro del tipo de hoja",
-            path: ["sheetTypes", sheetIndex, "specialPriceRules", ruleIndex, "id"],
-          });
-        }
-        seenRuleIds.add(rule.id);
+    const seenRuleIds = new Set<string>();
+    for (const [ruleIndex, rule] of data.specialPriceRules.entries()) {
+      if (rule.unitPrice < data.minimumPrice) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "La tarifa especial no puede quedar por debajo del precio minimo permitido",
+          path: ["specialPriceRules", ruleIndex, "unitPrice"],
+        });
       }
+
+      if (seenRuleIds.has(rule.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Cada tarifa especial debe tener un identificador unico",
+          path: ["specialPriceRules", ruleIndex, "id"],
+        });
+      }
+
+      seenRuleIds.add(rule.id);
     }
   });
 

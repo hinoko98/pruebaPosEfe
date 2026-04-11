@@ -70,11 +70,6 @@ enum CreditStatus {
   CANCELLED
 }
 
-enum CustomerSegment {
-  GENERAL
-  DOCENTE
-}
-
 enum CorrespondentDirection {
   IN
   OUT
@@ -347,7 +342,6 @@ model Customer {
   internalCode String? @unique
   name        String
   document    String?  @unique
-  segment     CustomerSegment @default(GENERAL)
   phone       String?
   email       String?
   address     String?

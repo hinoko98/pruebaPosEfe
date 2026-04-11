@@ -39,7 +39,6 @@ import { estadoVentaLabel } from "@/lib/display";
 type CustomerRow = Awaited<ReturnType<typeof window.api.listCustomers>>["customers"][number];
 type CustomerSalesRow = Awaited<ReturnType<typeof window.api.listCustomerSalesHistory>>["sales"][number];
 type CustomerDocumentType = NonNullable<Parameters<typeof window.api.createCustomer>[0]["documentType"]>;
-type CustomerSegment = NonNullable<Parameters<typeof window.api.createCustomer>[0]["segment"]>;
 type DialogMode = "create" | "view" | "edit";
 
 type CustomerFormState = {
@@ -48,7 +47,6 @@ type CustomerFormState = {
   lastName: string;
   documentType: CustomerDocumentType;
   documentNumber: string;
-  segment: CustomerSegment;
   phone: string;
   email: string;
   address: string;
@@ -86,7 +84,6 @@ function emptyForm(): CustomerFormState {
     lastName: "",
     documentType: "Cédula",
     documentNumber: "",
-    segment: "GENERAL",
     phone: "",
     email: "",
     address: "",
@@ -133,7 +130,6 @@ function customerToForm(customer: CustomerRow): CustomerFormState {
     lastName: nameParts.lastName,
     documentType: documentParts.documentType,
     documentNumber: documentParts.documentNumber,
-    segment: customer.segment,
     phone: customer.phone || "",
     email: customer.email || "",
     address: customer.address || "",
@@ -189,7 +185,6 @@ export default function CustomersView() {
         customer.name,
         customer.internalCode || "",
         customer.document || "",
-        customer.segment,
         customer.phone || "",
         customer.email || "",
         customer.address || "",
@@ -303,7 +298,6 @@ export default function CustomersView() {
       lastName: form.lastName.trim() || undefined,
       documentType: form.documentType,
       documentNumber: form.documentNumber.trim() || undefined,
-      segment: form.segment,
       phone: form.phone.trim() || undefined,
       email: form.email.trim() || undefined,
       address: form.address.trim() || undefined,
@@ -401,7 +395,6 @@ export default function CustomersView() {
                   <TableRow>
                     <TableCell>Cliente</TableCell>
                     <TableCell>Documento</TableCell>
-                    <TableCell>Tipo</TableCell>
                     <TableCell>Telefono</TableCell>
                     <TableCell>Correo</TableCell>
                     <TableCell>Estado</TableCell>
@@ -433,14 +426,6 @@ export default function CustomersView() {
                         </Stack>
                       </TableCell>
                       <TableCell>{customer.document || "-"}</TableCell>
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          label={customer.segment === "DOCENTE" ? "Docente" : "General"}
-                          color={customer.segment === "DOCENTE" ? "primary" : "default"}
-                        />
-                      </TableCell>
                       <TableCell>{customer.phone || "-"}</TableCell>
                       <TableCell>{customer.email || "-"}</TableCell>
                       <TableCell>
@@ -478,7 +463,7 @@ export default function CustomersView() {
                   ))}
                   {filteredCustomers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} align="center">
+                      <TableCell colSpan={7} align="center">
                         No hay clientes para mostrar.
                       </TableCell>
                     </TableRow>
@@ -549,16 +534,6 @@ export default function CustomersView() {
                 onChange={(event) => setForm((prev) => ({ ...prev, documentNumber: event.target.value }))}
                 disabled={isViewMode}
               />
-              <TextField
-                select
-                label="Tipo de cliente"
-                value={form.segment}
-                onChange={(event) => setForm((prev) => ({ ...prev, segment: event.target.value as CustomerSegment }))}
-                disabled={isViewMode}
-              >
-                <MenuItem value="GENERAL">General</MenuItem>
-                <MenuItem value="DOCENTE">Docente</MenuItem>
-              </TextField>
               <TextField
                 label="Telefono"
                 value={form.phone}

@@ -3,11 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -23,7 +23,6 @@ type ProductPricingDialogProps = {
   onClose: () => void;
   onConfirm: (payload: {
     qty: number;
-    sheetTypeId: string;
     specialRuleId?: string | null;
     manualUnitPrice?: number | null;
   }) => void;
@@ -41,14 +40,12 @@ export default function ProductPricingDialog({
   onClose,
   onConfirm,
 }: ProductPricingDialogProps) {
-  const [sheetTypeId, setSheetTypeId] = useState("");
   const [specialRuleId, setSpecialRuleId] = useState("");
   const [qty, setQty] = useState("1");
   const [manualUnitPrice, setManualUnitPrice] = useState("");
 
   useEffect(() => {
     if (!open || !product?.pricingConfig?.enabled) return;
-    setSheetTypeId(product.pricingConfig.sheetTypes[0]?.id ?? "");
     setSpecialRuleId("");
     setQty("1");
     setManualUnitPrice("");
@@ -57,15 +54,6 @@ export default function ProductPricingDialog({
   const normalizedQty = Math.max(1, Math.round(Number(qty || 1)));
   const normalizedManualUnitPrice = normalizeManualValue(manualUnitPrice);
 
-  const selectedSheetType = product?.pricingConfig?.sheetTypes.find((sheet) => sheet.id === sheetTypeId) ?? null;
-
-  useEffect(() => {
-    if (!selectedSheetType) return;
-    if (!selectedSheetType.specialPriceRules.some((rule) => rule.id === specialRuleId)) {
-      setSpecialRuleId("");
-    }
-  }, [selectedSheetType, specialRuleId]);
-
   const pricingResult = useMemo(() => {
     if (!product) return null;
 
@@ -73,19 +61,23 @@ export default function ProductPricingDialog({
       fallbackPrice: product.price,
       pricingConfig: product.pricingConfig,
       qty: normalizedQty,
-      sheetTypeId,
       specialRuleId: specialRuleId || null,
       manualUnitPrice: normalizedManualUnitPrice,
       canOverrideMinimum: canEditManualPrice,
     });
-  }, [canEditManualPrice, normalizedManualUnitPrice, normalizedQty, product, sheetTypeId, specialRuleId]);
+  }, [canEditManualPrice, normalizedManualUnitPrice, normalizedQty, product, specialRuleId]);
+
+  const quantityButtons = useMemo(() => {
+    const config = product?.pricingConfig;
+    if (!config?.enabled) return [];
+    return config.quantityScales.map((scale) => scale.minQty);
+  }, [product]);
 
   const handleConfirm = () => {
-    if (!pricingResult?.ok || !pricingResult.quote.sheetTypeId) return;
+    if (!pricingResult?.ok) return;
 
     onConfirm({
       qty: normalizedQty,
-      sheetTypeId: pricingResult.quote.sheetTypeId,
       specialRuleId: pricingResult.quote.specialRuleId,
       manualUnitPrice: normalizedManualUnitPrice,
     });
@@ -102,7 +94,7 @@ export default function ProductPricingDialog({
                 {product.name}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Selecciona hoja, cantidad y, si corresponde, activa una tarifa especial controlada por el sistema.
+                Define la cantidad, usa un atajo de escala si te sirve y activa una tarifa especial solo si aplica.
               </Typography>
             </Box>
           ) : null}
@@ -111,20 +103,7 @@ export default function ProductPricingDialog({
             <Alert severity="warning">Este producto no tiene reglas de precio por cantidad activas.</Alert>
           ) : (
             <>
-              <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "1fr 150px" }} gap={2}>
-                <TextField
-                  select
-                  label="Tipo de hoja"
-                  value={sheetTypeId}
-                  onChange={(event) => setSheetTypeId(event.target.value)}
-                >
-                  {product.pricingConfig.sheetTypes.map((sheet) => (
-                    <MenuItem key={sheet.id} value={sheet.id}>
-                      {sheet.name}
-                    </MenuItem>
-                  ))}
-                </TextField>
-
+              <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "160px 1fr" }} gap={2}>
                 <TextField
                   label="Cantidad"
                   type="number"
@@ -132,39 +111,72 @@ export default function ProductPricingDialog({
                   value={qty}
                   onChange={(event) => setQty(event.target.value)}
                 />
+                <Stack spacing={1}>
+                  <Typography variant="body2" color="text.secondary">
+                    Atajos por escala
+                  </Typography>
+                  <Box display="flex" gap={1} flexWrap="wrap">
+                    {[1, ...quantityButtons].filter((value, index, values) => values.indexOf(value) === index).map((value) => (
+                      <Chip
+                        key={value}
+                        label={`${value} und`}
+                        color={normalizedQty === value ? "primary" : "default"}
+                        variant={normalizedQty === value ? "filled" : "outlined"}
+                        onClick={() => setQty(String(value))}
+                        clickable
+                      />
+                    ))}
+                  </Box>
+                </Stack>
               </Box>
 
-              {selectedSheetType ? (
-                <>
-                  <TextField
-                    select
-                    label="Tarifa especial"
-                    value={specialRuleId}
-                    onChange={(event) => setSpecialRuleId(event.target.value)}
-                    helperText={
-                      selectedSheetType.specialPriceRules.length > 0
-                        ? "Opcional. Si la activas, esta tarifa sobrescribe el precio base o la escala."
-                        : "Esta hoja no tiene tarifas especiales configuradas."
-                    }
-                    disabled={selectedSheetType.specialPriceRules.length === 0}
-                  >
-                    <MenuItem value="">Sin tarifa especial</MenuItem>
-                    {selectedSheetType.specialPriceRules.map((rule) => (
-                      <MenuItem key={rule.id} value={rule.id}>
-                        {rule.label} - {fmt(rule.unitPrice)}
-                      </MenuItem>
-                    ))}
-                  </TextField>
+              <Box
+                sx={{
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderRadius: 2,
+                  p: 1.5,
+                }}
+              >
+                <Stack spacing={1}>
+                  <Typography variant="subtitle2" fontWeight={800}>
+                    Tarifas especiales
+                  </Typography>
+                  {product.pricingConfig.specialPriceRules.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      Este producto no tiene tarifas especiales configuradas.
+                    </Typography>
+                  ) : (
+                    <Box display="flex" gap={1} flexWrap="wrap">
+                      <Chip
+                        label="Sin tarifa especial"
+                        color={!specialRuleId ? "primary" : "default"}
+                        variant={!specialRuleId ? "filled" : "outlined"}
+                        onClick={() => setSpecialRuleId("")}
+                        clickable
+                      />
+                      {product.pricingConfig.specialPriceRules.map((rule) => (
+                        <Chip
+                          key={rule.id}
+                          label={`${rule.label} · ${fmt(rule.unitPrice)}`}
+                          color={specialRuleId === rule.id ? "primary" : "default"}
+                          variant={specialRuleId === rule.id ? "filled" : "outlined"}
+                          onClick={() => setSpecialRuleId(rule.id)}
+                          clickable
+                        />
+                      ))}
+                    </Box>
+                  )}
+                </Stack>
+              </Box>
 
-                  <Alert severity="info">
-                    Base {fmt(selectedSheetType.basePrice)}
-                    {selectedSheetType.minimumPrice !== null ? ` | Minimo ${fmt(selectedSheetType.minimumPrice)}` : ""}
-                    {selectedSheetType.quantityScales.length > 0
-                      ? ` | ${selectedSheetType.quantityScales.length} escalas configuradas`
-                      : " | Sin escalas adicionales"}
-                  </Alert>
-                </>
-              ) : null}
+              <Alert severity="info">
+                Base {fmt(product.pricingConfig.basePrice)}
+                {product.pricingConfig.minimumPrice > 0 ? ` | Minimo ${fmt(product.pricingConfig.minimumPrice)}` : ""}
+                {product.pricingConfig.quantityScales.length > 0
+                  ? ` | ${product.pricingConfig.quantityScales.length} escalas configuradas`
+                  : " | Sin escalas adicionales"}
+              </Alert>
 
               {canEditManualPrice ? (
                 <TextField
@@ -173,7 +185,7 @@ export default function ProductPricingDialog({
                   inputProps={{ min: 0, step: 1 }}
                   value={manualUnitPrice}
                   onChange={(event) => setManualUnitPrice(event.target.value)}
-                  helperText="Opcional. Solo para roles autorizados; nunca quedara por debajo del minimo sin permiso."
+                  helperText="Opcional. Solo para roles autorizados."
                 />
               ) : null}
 
@@ -205,11 +217,7 @@ export default function ProductPricingDialog({
         <Button onClick={onClose} color="inherit">
           Cancelar
         </Button>
-        <Button
-          variant="contained"
-          onClick={handleConfirm}
-          disabled={!pricingResult?.ok || !pricingResult.quote.sheetTypeId}
-        >
+        <Button variant="contained" onClick={handleConfirm} disabled={!pricingResult?.ok}>
           Agregar
         </Button>
       </DialogActions>

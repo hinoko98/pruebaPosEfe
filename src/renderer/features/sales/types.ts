@@ -1,7 +1,5 @@
 export type Money = number;
 
-export type CustomerSegment = "GENERAL" | "DOCENTE";
-
 export type ProductPricingScale = {
   minQty: number;
   unitPrice: number;
@@ -13,19 +11,12 @@ export type ProductPricingSpecialRule = {
   unitPrice: number;
 };
 
-export type ProductPricingSheetType = {
-  id: string;
-  name: string;
-  basePrice: number;
-  minimumPrice: number | null;
-  quantityScales: ProductPricingScale[];
-  specialPriceRules: ProductPricingSpecialRule[];
-};
-
 export type ProductPricingConfig = {
   enabled: boolean;
+  basePrice: number;
   minimumPrice: number;
-  sheetTypes: ProductPricingSheetType[];
+  quantityScales: ProductPricingScale[];
+  specialPriceRules: ProductPricingSpecialRule[];
 };
 
 export type Product = {
@@ -50,8 +41,6 @@ export type CartItem = {
   price: Money;
   qty: number;
   taxRate?: number;
-  sheetTypeId?: string | null;
-  sheetTypeName?: string | null;
   specialRuleId?: string | null;
   specialRuleLabel?: string | null;
   pricingSourceLabel?: string | null;

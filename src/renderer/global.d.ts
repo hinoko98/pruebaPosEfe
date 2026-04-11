@@ -34,21 +34,16 @@ import type { CreateSaleInput, CreateSaleResult } from "~/main/electron/ipc/sche
 
 type ProductPricingConfigShape = {
   enabled: boolean;
+  basePrice: number;
   minimumPrice: number;
-  sheetTypes: Array<{
+  quantityScales: Array<{
+    minQty: number;
+    unitPrice: number;
+  }>;
+  specialPriceRules: Array<{
     id: string;
-    name: string;
-    basePrice: number;
-    minimumPrice: number | null;
-    quantityScales: Array<{
-      minQty: number;
-      unitPrice: number;
-    }>;
-    specialPriceRules: Array<{
-      id: string;
-      label: string;
-      unitPrice: number;
-    }>;
+    label: string;
+    unitPrice: number;
   }>;
 };
 
@@ -331,7 +326,6 @@ type AccountingSummaryResponse = {
     internalCode: string | null;
     name: string;
     document: string | null;
-    segment: "GENERAL" | "DOCENTE";
     phone: string | null;
   }>;
   sales: Array<{
@@ -649,7 +643,6 @@ type CustomersListResponse = {
     internalCode: string | null;
     name: string;
     document: string | null;
-    segment: "GENERAL" | "DOCENTE";
     phone: string | null;
     email: string | null;
     address: string | null;
@@ -936,7 +929,6 @@ declare global {
         lastName?: string;
         documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
         documentNumber?: string | null;
-        segment?: "GENERAL" | "DOCENTE";
         phone?: string | null;
         email?: string | null;
         address?: string | null;
@@ -949,7 +941,6 @@ declare global {
         lastName?: string;
         documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
         documentNumber?: string | null;
-        segment?: "GENERAL" | "DOCENTE";
         phone?: string | null;
         email?: string | null;
         address?: string | null;

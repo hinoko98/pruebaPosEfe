@@ -74,7 +74,6 @@ const createCustomerSchema = z.object({
   lastName: z.string().trim().max(80).optional().default(""),
   documentType: documentTypeSchema.optional().default("Cédula"),
   documentNumber: z.string().trim().max(40).optional().nullable(),
-  segment: z.enum(["GENERAL", "DOCENTE"]).optional().default("GENERAL"),
   phone: z.string().trim().regex(/^\d{10}$/).optional().nullable(),
   email: z.string().trim().email().max(120).optional().nullable(),
   address: z.string().trim().max(180).optional().nullable(),
@@ -841,6 +840,67 @@ export async function ensureBackofficeSchemaIfNeeded(prismaClient: PrismaClient)
   const supplierColumns = await prismaClient.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Supplier");`);
   const customerColumnSet = new Set(customerColumns.map((column) => column.name));
   const supplierColumnSet = new Set(supplierColumns.map((column) => column.name));
+
+  if (customerColumnSet.has("segment")) {
+    await prismaClient.$executeRawUnsafe(`PRAGMA foreign_keys=OFF;`);
+    await prismaClient.$executeRawUnsafe(`
+      CREATE TABLE "new_Customer" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "internalCode" TEXT,
+        "name" TEXT NOT NULL,
+        "document" TEXT,
+        "phone" TEXT,
+        "email" TEXT,
+        "address" TEXT,
+        "creditLimit" INTEGER NOT NULL DEFAULT 0,
+        "notes" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL
+      );
+    `);
+    await prismaClient.$executeRawUnsafe(`
+      INSERT INTO "new_Customer" (
+        "id",
+        "internalCode",
+        "name",
+        "document",
+        "phone",
+        "email",
+        "address",
+        "creditLimit",
+        "notes",
+        "isActive",
+        "createdAt",
+        "updatedAt"
+      )
+      SELECT
+        "id",
+        "internalCode",
+        "name",
+        "document",
+        "phone",
+        "email",
+        "address",
+        "creditLimit",
+        "notes",
+        "isActive",
+        "createdAt",
+        "updatedAt"
+      FROM "Customer";
+    `);
+    await prismaClient.$executeRawUnsafe(`DROP TABLE "Customer";`);
+    await prismaClient.$executeRawUnsafe(`ALTER TABLE "new_Customer" RENAME TO "Customer";`);
+    await prismaClient.$executeRawUnsafe(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "Customer_document_key" ON "Customer"("document");`
+    );
+    await prismaClient.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS "Customer_name_idx" ON "Customer"("name");`
+    );
+    await prismaClient.$executeRawUnsafe(`PRAGMA foreign_keys=ON;`);
+    customerColumnSet.delete("segment");
+    customerColumnSet.add("internalCode");
+  }
 
   if (!customerColumnSet.has("internalCode")) {
     await prismaClient.$executeRawUnsafe(`ALTER TABLE "Customer" ADD COLUMN "internalCode" TEXT;`);
@@ -1940,7 +2000,6 @@ export function registerBackofficeIpcHandlers({
         internalCode: customer.internalCode,
         name: customer.name,
         document: customer.document,
-        segment: customer.segment,
         phone: customer.phone,
         email: customer.email,
         address: customer.address,
@@ -2021,7 +2080,6 @@ export function registerBackofficeIpcHandlers({
           internalCode,
           name: buildFullName(parsed.data.firstName, parsed.data.lastName),
           document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
-          segment: parsed.data.segment,
           phone: parsed.data.phone || null,
           email: parsed.data.email || null,
           address: parsed.data.address || null,
@@ -2077,7 +2135,6 @@ export function registerBackofficeIpcHandlers({
         internalCode,
         name: buildFullName(parsed.data.firstName, parsed.data.lastName),
         document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
-        segment: parsed.data.segment ?? current.segment,
         phone: parsed.data.phone || null,
         email: parsed.data.email || null,
         address: parsed.data.address || null,
