@@ -26,6 +26,11 @@ const ACTION_PERMISSION_KEYS = {
   salesManagePayments: buildPermissionKey("POS", "Operacion POS", "Gestionar pagos en efectivo, transferencia y combinado"),
   salesHistory: buildPermissionKey("POS", "Operacion POS", "Ver historial de ventas"),
   salesPrint: buildPermissionKey("POS", "Operacion POS", "Imprimir factura"),
+  salesEditItemPrices: buildPermissionKey(
+    "Contabilidad",
+    "Facturas de venta",
+    "Editar precios de los items de venta en facturas"
+  ),
   cashOpen: buildPermissionKey("POS", "Caja y control diario", "Abrir caja"),
   cashClose: buildPermissionKey("POS", "Caja y control diario", "Cerrar caja"),
   cashView: buildPermissionKey("POS", "Caja y control diario", "Consultar resumen de caja"),

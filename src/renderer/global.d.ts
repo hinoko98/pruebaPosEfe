@@ -44,8 +44,9 @@ type ProductPricingConfigShape = {
       minQty: number;
       unitPrice: number;
     }>;
-    customerSegmentRules: Array<{
-      customerSegment: "GENERAL" | "DOCENTE";
+    specialPriceRules: Array<{
+      id: string;
+      label: string;
       unitPrice: number;
     }>;
   }>;

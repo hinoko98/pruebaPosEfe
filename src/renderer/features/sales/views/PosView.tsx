@@ -14,7 +14,7 @@ import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
 import { alpha, useTheme } from "@mui/material/styles";
 
-import type { CartItem, CustomerSegment, Payment, PaymentMethod, Product } from "../types";
+import type { CartItem, Payment, PaymentMethod, Product } from "../types";
 import { resolveProductPricingQuote } from "../../../../shared/productPricing";
 
 export type SaleTab = {
@@ -145,7 +145,7 @@ export default function PosView() {
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [customers, setCustomers] = useState<
-    Array<{ id: string; name: string; document?: string | null; phone?: string | null; segment: CustomerSegment }>
+    Array<{ id: string; name: string; document?: string | null; phone?: string | null; segment: "GENERAL" | "DOCENTE" }>
   >([]);
   const [tabs, setTabs] = useState<SaleTab[]>([newTab(1)]);
   const [activeId, setActiveId] = useState<string>(() => tabs[0].id);
@@ -194,31 +194,35 @@ export default function PosView() {
   const currentPayments = activeTab.payments.length ? activeTab.payments : [{ method: "CASH" as PaymentMethod, amount: 0 }];
   const selectedCustomer =
     customers.find((customer) => customer.name === activeTab.customer) ?? null;
-  const selectedCustomerSegment: CustomerSegment = selectedCustomer?.segment ?? "GENERAL";
   const cartCount = activeTab.cart.reduce((sum, item) => sum + item.qty, 0);
   const canCreateSales = hasPermission(user, APP_PERMISSION_KEYS.salesCreate);
   const canChangeCustomer = hasPermission(user, APP_PERMISSION_KEYS.salesChangeCustomer);
   const canManagePayments = hasPermission(user, APP_PERMISSION_KEYS.salesManagePayments);
   const canPrintSales = hasPermission(user, APP_PERMISSION_KEYS.salesPrint);
+  const canEditSaleItemPrices = hasPermission(user, APP_PERMISSION_KEYS.salesEditItemPrices);
   const canCheckout = canCreateSales && canManagePayments;
 
   const updateTab = (patch: Partial<SaleTab>) => {
     setTabs((prev) => prev.map((tab) => (tab.id === activeId ? { ...tab, ...patch } : tab)));
   };
 
-  const resolveLinePricing = (product: Product, qty: number, sheetTypeId: string, customerSegment: CustomerSegment) => {
+  const resolveLinePricing = (
+    product: Product,
+    qty: number,
+    pricingContext: { sheetTypeId: string; specialRuleId?: string | null; manualUnitPrice?: number | null }
+  ) => {
     return resolveProductPricingQuote({
       fallbackPrice: product.price,
       pricingConfig: product.pricingConfig,
       qty,
-      sheetTypeId,
-      customerSegment,
+      sheetTypeId: pricingContext.sheetTypeId,
+      specialRuleId: pricingContext.specialRuleId ?? null,
+      manualUnitPrice: pricingContext.manualUnitPrice ?? null,
+      canOverrideMinimum: canEditSaleItemPrices,
     });
   };
 
-  const recalculateCartForCustomer = (cart: CartItem[], customerName: string) => {
-    const customerSegment = customers.find((customer) => customer.name === customerName)?.segment ?? "GENERAL";
-
+  const recalculateConfiguredCart = (cart: CartItem[]) => {
     return cart.map((line) => {
       if (!line.pricingEnabled || !line.sheetTypeId) {
         return line;
@@ -229,7 +233,11 @@ export default function PosView() {
         return line;
       }
 
-      const pricingResult = resolveLinePricing(product, line.qty, line.sheetTypeId, customerSegment);
+      const pricingResult = resolveLinePricing(product, line.qty, {
+        sheetTypeId: line.sheetTypeId,
+        specialRuleId: line.specialRuleId,
+        manualUnitPrice: line.manualUnitPrice ?? null,
+      });
       if (!pricingResult.ok) {
         setFeedback(pricingResult.message);
         return line;
@@ -240,8 +248,11 @@ export default function PosView() {
         name: pricingResult.quote.sheetTypeName ? `${product.name} - ${pricingResult.quote.sheetTypeName}` : product.name,
         price: pricingResult.quote.unitPrice,
         sheetTypeName: pricingResult.quote.sheetTypeName,
+        specialRuleId: pricingResult.quote.specialRuleId,
+        specialRuleLabel: pricingResult.quote.specialRuleLabel,
         pricingSourceLabel: pricingResult.quote.sourceLabel,
         minimumPrice: pricingResult.quote.minimumPrice,
+        manualUnitPrice: line.manualUnitPrice ?? null,
       };
     });
   };
@@ -299,17 +310,22 @@ export default function PosView() {
     product: Product;
     qty: number;
     sheetTypeId: string;
+    specialRuleId?: string | null;
+    manualUnitPrice?: number | null;
   }) => {
     const currentLine = activeTab.cart.find(
-      (item) => item.productId === payload.product.id && item.sheetTypeId === payload.sheetTypeId
+      (item) =>
+        item.productId === payload.product.id &&
+        item.sheetTypeId === payload.sheetTypeId &&
+        (item.specialRuleId ?? null) === (payload.specialRuleId ?? null) &&
+        (item.manualUnitPrice ?? null) === (payload.manualUnitPrice ?? null)
     );
     const mergedQty = (currentLine?.qty ?? 0) + payload.qty;
-    const pricingResult = resolveLinePricing(
-      payload.product,
-      mergedQty,
-      payload.sheetTypeId,
-      selectedCustomerSegment
-    );
+    const pricingResult = resolveLinePricing(payload.product, mergedQty, {
+      sheetTypeId: payload.sheetTypeId,
+      specialRuleId: payload.specialRuleId ?? null,
+      manualUnitPrice: payload.manualUnitPrice ?? null,
+    });
 
     if (!pricingResult.ok) {
       setFeedback(pricingResult.message);
@@ -327,8 +343,11 @@ export default function PosView() {
                   ? `${payload.product.name} - ${pricingResult.quote.sheetTypeName}`
                   : payload.product.name,
                 sheetTypeName: pricingResult.quote.sheetTypeName,
+                specialRuleId: pricingResult.quote.specialRuleId,
+                specialRuleLabel: pricingResult.quote.specialRuleLabel,
                 pricingSourceLabel: pricingResult.quote.sourceLabel,
                 minimumPrice: pricingResult.quote.minimumPrice,
+                manualUnitPrice: payload.manualUnitPrice ?? null,
               }
             : item
         )
@@ -346,13 +365,16 @@ export default function PosView() {
             taxRate: payload.product.taxRate ?? 0,
             sheetTypeId: payload.sheetTypeId,
             sheetTypeName: pricingResult.quote.sheetTypeName,
+            specialRuleId: pricingResult.quote.specialRuleId,
+            specialRuleLabel: pricingResult.quote.specialRuleLabel,
             pricingSourceLabel: pricingResult.quote.sourceLabel,
             minimumPrice: pricingResult.quote.minimumPrice,
             pricingEnabled: true,
+            manualUnitPrice: payload.manualUnitPrice ?? null,
           },
         ];
 
-    updateTab({ cart: recalculateCartForCustomer(nextCart, activeTab.customer) });
+    updateTab({ cart: recalculateConfiguredCart(nextCart) });
     setPricingDialogProduct(null);
   };
 
@@ -365,7 +387,11 @@ export default function PosView() {
     const nextQty = Math.max(1, qty || 1);
 
     if (line.pricingEnabled && line.sheetTypeId && product) {
-      const pricingResult = resolveLinePricing(product, nextQty, line.sheetTypeId, selectedCustomerSegment);
+      const pricingResult = resolveLinePricing(product, nextQty, {
+        sheetTypeId: line.sheetTypeId,
+        specialRuleId: line.specialRuleId,
+        manualUnitPrice: line.manualUnitPrice ?? null,
+      });
       if (!pricingResult.ok) {
         setFeedback(pricingResult.message);
         return;
@@ -380,8 +406,11 @@ export default function PosView() {
                 qty: nextQty,
                 price: pricingResult.quote.unitPrice,
                 sheetTypeName: pricingResult.quote.sheetTypeName,
+                specialRuleId: pricingResult.quote.specialRuleId,
+                specialRuleLabel: pricingResult.quote.specialRuleLabel,
                 pricingSourceLabel: pricingResult.quote.sourceLabel,
                 minimumPrice: pricingResult.quote.minimumPrice,
+                manualUnitPrice: line.manualUnitPrice ?? null,
               }
             : item
         ),
@@ -468,6 +497,8 @@ export default function PosView() {
             item.pricingEnabled && item.sheetTypeId
               ? {
                   sheetTypeId: item.sheetTypeId,
+                  specialRuleId: item.specialRuleId ?? null,
+                  manualUnitPrice: item.manualUnitPrice ?? null,
                 }
               : undefined,
         })),
@@ -615,7 +646,6 @@ export default function PosView() {
               if (!canChangeCustomer) return;
               updateTab({
                 customer,
-                cart: recalculateCartForCustomer(activeTab.cart, customer),
               });
             }}
             onCheckout={() => {
@@ -667,7 +697,7 @@ export default function PosView() {
       <ProductPricingDialog
         open={Boolean(pricingDialogProduct)}
         product={pricingDialogProduct}
-        customerSegment={selectedCustomerSegment}
+        canEditManualPrice={canEditSaleItemPrices}
         onClose={() => setPricingDialogProduct(null)}
         onConfirm={(payload) => {
           if (!pricingDialogProduct) return;

@@ -1,6 +1,6 @@
-# POS Desktop - Electron + React + SQLite + Prisma
+# Mi Miscelanea POS
 
-Sistema POS de escritorio desarrollado con Electron, React (Vite), SQLite y Prisma ORM.  
+Sistema POS de escritorio para operacion comercial, desarrollado con Electron, React (Vite), SQLite y Prisma ORM.
 Permite gestión de ventas, productos, usuarios con roles y administración del sistema en entorno local.
 
 ---

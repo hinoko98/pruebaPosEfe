@@ -7,8 +7,9 @@ export type ProductPricingScale = {
   unitPrice: number;
 };
 
-export type ProductPricingCustomerRule = {
-  customerSegment: CustomerSegment;
+export type ProductPricingSpecialRule = {
+  id: string;
+  label: string;
   unitPrice: number;
 };
 
@@ -18,7 +19,7 @@ export type ProductPricingSheetType = {
   basePrice: number;
   minimumPrice: number | null;
   quantityScales: ProductPricingScale[];
-  customerSegmentRules: ProductPricingCustomerRule[];
+  specialPriceRules: ProductPricingSpecialRule[];
 };
 
 export type ProductPricingConfig = {

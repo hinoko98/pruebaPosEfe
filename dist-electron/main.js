@@ -1,200 +1,205 @@
-import { BrowserWindow as qe, app as te, ipcMain as X, Menu as Bt } from "electron";
-import ce from "bcryptjs";
+import { BrowserWindow as Ge, app as se, ipcMain as X, Menu as Zt } from "electron";
+import ue from "bcryptjs";
 import "dotenv/config";
-import Pe from "node:os";
-import H from "node:path";
-import { fileURLToPath as Ft } from "node:url";
-import { CorrespondentDirection as _, CommissionMode as Oe, CorrespondentTransactionStatus as ne, CorrespondentReconciliationStatus as $t, CorrespondentOcrStatus as Le, Role as F, CorrespondentClosureStatus as We, SaleStatus as me, CashSessionStatus as W, PaymentMethod as j, CashMovementType as B, InventoryMovementType as Te, PurchaseStatus as Qe, CreditStatus as fe, PrismaClient as kt } from "@prisma/client";
-import { z as o } from "zod";
-import { mkdir as Xt, writeFile as Vt } from "node:fs/promises";
-import { createHash as qt } from "node:crypto";
-const je = o.enum(["ADMIN", "EMPLOYEE"]), jt = o.object({
-  username: o.string().trim().min(1).max(50),
-  password: o.string().min(1).max(200)
+import Me from "node:os";
+import J from "node:path";
+import { fileURLToPath as ea } from "node:url";
+import { CorrespondentDirection as F, CommissionMode as Pe, CorrespondentTransactionStatus as ie, CorrespondentReconciliationStatus as ta, CorrespondentOcrStatus as _e, Role as $, CorrespondentClosureStatus as it, SaleStatus as fe, CashSessionStatus as Z, PaymentMethod as z, CashMovementType as k, InventoryMovementType as Ne, PurchaseStatus as ct, CreditStatus as Te, PrismaClient as aa } from "@prisma/client";
+import { z as n } from "zod";
+import { mkdir as sa, writeFile as ra } from "node:fs/promises";
+import { createHash as na } from "node:crypto";
+const Ke = n.enum(["ADMIN", "EMPLOYEE"]), oa = n.object({
+  username: n.string().trim().min(1).max(50),
+  password: n.string().min(1).max(200)
 });
-o.object({
-  success: o.boolean(),
-  message: o.string().optional(),
-  user: o.object({
-    id: o.string(),
-    username: o.string(),
-    role: je,
-    name: o.string().optional(),
-    roleProfileId: o.string().nullable().optional(),
-    roleProfileName: o.string().nullable().optional(),
-    permissions: o.array(o.string()).optional()
+n.object({
+  success: n.boolean(),
+  message: n.string().optional(),
+  user: n.object({
+    id: n.string(),
+    username: n.string(),
+    role: Ke,
+    name: n.string().optional(),
+    roleProfileId: n.string().nullable().optional(),
+    roleProfileName: n.string().nullable().optional(),
+    permissions: n.array(n.string()).optional()
   }).optional()
 });
-const ze = o.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(), Ge = o.string().trim().regex(/^\d{10}$/).optional().nullable(), ft = o.object({
-  internalCode: o.string().trim().max(30).optional().nullable(),
-  firstName: o.string().trim().min(2).max(80),
-  lastName: o.string().trim().min(2).max(80),
-  documentNumber: o.string().trim().regex(/^\d{6,20}$/),
-  email: o.string().trim().email().max(120).optional().nullable(),
-  phone: Ge,
-  address: o.string().trim().max(180).optional().nullable(),
-  birthDate: ze,
-  roleProfileId: o.string().uuid().optional().nullable(),
-  isActive: o.boolean().optional().default(!0)
-}), zt = ft.extend({
-  newPassword: o.string().min(6).max(200)
-}), Gt = ft.extend({
-  id: o.string().uuid(),
-  newPassword: o.string().min(6).max(200).optional().or(o.literal(""))
-}), Kt = o.object({
-  id: o.string(),
-  username: o.string(),
-  name: o.string().optional().nullable(),
-  firstName: o.string().optional().nullable(),
-  lastName: o.string().optional().nullable(),
-  email: o.string().trim().email().max(120).optional().nullable(),
-  phone: Ge,
-  birthDate: ze,
-  role: je
+const He = n.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(), Ye = n.string().trim().regex(/^\d{10}$/).optional().nullable(), St = n.object({
+  internalCode: n.string().trim().max(30).optional().nullable(),
+  firstName: n.string().trim().min(2).max(80),
+  lastName: n.string().trim().min(2).max(80),
+  documentNumber: n.string().trim().regex(/^\d{6,20}$/),
+  email: n.string().trim().email().max(120).optional().nullable(),
+  phone: Ye,
+  address: n.string().trim().max(180).optional().nullable(),
+  birthDate: He,
+  roleProfileId: n.string().uuid().optional().nullable(),
+  isActive: n.boolean().optional().default(!0)
+}), ia = St.extend({
+  newPassword: n.string().min(6).max(200)
+}), ca = St.extend({
+  id: n.string().uuid(),
+  newPassword: n.string().min(6).max(200).optional().or(n.literal(""))
+}), da = n.object({
+  id: n.string(),
+  username: n.string(),
+  name: n.string().optional().nullable(),
+  firstName: n.string().optional().nullable(),
+  lastName: n.string().optional().nullable(),
+  email: n.string().trim().email().max(120).optional().nullable(),
+  phone: Ye,
+  birthDate: He,
+  role: Ke
 });
-o.object({
-  success: o.boolean(),
-  message: o.string().optional(),
-  profile: Kt.optional()
+n.object({
+  success: n.boolean(),
+  message: n.string().optional(),
+  profile: da.optional()
 });
-const Ht = o.object({
-  firstName: o.string().trim().min(2).max(80),
-  lastName: o.string().trim().min(2).max(80),
-  email: o.string().trim().email().max(120).optional().nullable(),
-  phone: Ge,
-  birthDate: ze
-}), Yt = o.object({
-  currentPassword: o.string().min(1).max(200),
-  newPassword: o.string().min(6).max(200),
-  confirmPassword: o.string().min(6).max(200)
-}), Jt = o.object({
-  name: o.string().trim().min(3, "Minimo 3 caracteres").max(80, "Maximo 80 caracteres"),
-  description: o.string().trim().max(240).optional().nullable(),
-  baseRole: je.default("EMPLOYEE"),
-  permissionKeys: o.array(o.string().trim().min(1)).min(1, "Debes seleccionar al menos un permiso"),
-  isActive: o.boolean().optional().default(!0)
-}), Wt = o.object({
-  id: o.string().uuid("ID de rol invalido"),
-  name: o.string().trim().min(3, "Minimo 3 caracteres").max(80, "Maximo 80 caracteres"),
-  description: o.string().trim().max(240).optional().nullable(),
-  permissionKeys: o.array(o.string().trim().min(1)).min(1, "Debes seleccionar al menos un permiso"),
-  isActive: o.boolean().optional().default(!0)
-}), Qt = o.object({
-  id: o.string().uuid("ID de rol invalido")
-}), Ke = o.enum(["CASH", "CARD", "TRANSFER"]), Zt = o.object({
-  method: Ke,
-  amount: o.number().min(0, "El monto del pago no puede ser negativo")
-}), ea = o.object({
-  productId: o.string().uuid("productId invalido"),
-  qty: o.number().int("La cantidad debe ser entera").positive("La cantidad debe ser mayor a 0")
-}), ta = o.object({
-  customer: o.string().trim().max(120).optional().default("Consumidor final"),
-  customerId: o.string().uuid("customerId invalido").optional().nullable(),
-  paymentMethod: Ke.optional().default("CASH"),
-  amountPaid: o.number().min(0).optional(),
-  payments: o.array(Zt).min(1, "Debes registrar al menos un pago").optional(),
-  items: o.array(ea).min(1, "La venta debe tener al menos un item"),
-  clientTotal: o.number().min(0).optional(),
-  allowDebt: o.boolean().optional().default(!1)
+const ua = n.object({
+  firstName: n.string().trim().min(2).max(80),
+  lastName: n.string().trim().min(2).max(80),
+  email: n.string().trim().email().max(120).optional().nullable(),
+  phone: Ye,
+  birthDate: He
+}), la = n.object({
+  currentPassword: n.string().min(1).max(200),
+  newPassword: n.string().min(6).max(200),
+  confirmPassword: n.string().min(6).max(200)
+}), ma = n.object({
+  name: n.string().trim().min(3, "Minimo 3 caracteres").max(80, "Maximo 80 caracteres"),
+  description: n.string().trim().max(240).optional().nullable(),
+  baseRole: Ke.default("EMPLOYEE"),
+  permissionKeys: n.array(n.string().trim().min(1)).min(1, "Debes seleccionar al menos un permiso"),
+  isActive: n.boolean().optional().default(!0)
+}), pa = n.object({
+  id: n.string().uuid("ID de rol invalido"),
+  name: n.string().trim().min(3, "Minimo 3 caracteres").max(80, "Maximo 80 caracteres"),
+  description: n.string().trim().max(240).optional().nullable(),
+  permissionKeys: n.array(n.string().trim().min(1)).min(1, "Debes seleccionar al menos un permiso"),
+  isActive: n.boolean().optional().default(!0)
+}), fa = n.object({
+  id: n.string().uuid("ID de rol invalido")
+}), Je = n.enum(["CASH", "CARD", "TRANSFER"]), ga = n.object({
+  sheetTypeId: n.string().trim().min(1, "Debes seleccionar el tipo de hoja"),
+  specialRuleId: n.string().trim().min(1, "La tarifa especial seleccionada no es valida").optional().nullable(),
+  manualUnitPrice: n.number().positive("El precio manual debe ser mayor a 0").optional().nullable()
+}), Ea = n.object({
+  method: Je,
+  amount: n.number().min(0, "El monto del pago no puede ser negativo")
+}), Ta = n.object({
+  productId: n.string().uuid("productId invalido"),
+  qty: n.number().int("La cantidad debe ser entera").positive("La cantidad debe ser mayor a 0"),
+  pricingContext: ga.optional()
+}), Aa = n.object({
+  customer: n.string().trim().max(120).optional().default("Consumidor final"),
+  customerId: n.string().uuid("customerId invalido").optional().nullable(),
+  paymentMethod: Je.optional().default("CASH"),
+  amountPaid: n.number().min(0).optional(),
+  payments: n.array(Ea).min(1, "Debes registrar al menos un pago").optional(),
+  items: n.array(Ta).min(1, "La venta debe tener al menos un item"),
+  clientTotal: n.number().min(0).optional(),
+  allowDebt: n.boolean().optional().default(!1)
 });
-o.discriminatedUnion("success", [
-  o.object({
-    success: o.literal(!0),
-    saleId: o.string().uuid(),
-    invoiceNumber: o.string(),
-    total: o.number(),
-    amountPaid: o.number(),
-    changeAmount: o.number()
+n.discriminatedUnion("success", [
+  n.object({
+    success: n.literal(!0),
+    saleId: n.string().uuid(),
+    invoiceNumber: n.string(),
+    total: n.number(),
+    amountPaid: n.number(),
+    changeAmount: n.number()
   }),
-  o.object({
-    success: o.literal(!1),
-    message: o.string()
+  n.object({
+    success: n.literal(!1),
+    message: n.string()
   })
 ]);
-const aa = o.enum(["REGISTERED", "VOIDED"]), sa = o.enum(["MANUAL", "IMAGE", "FILE_IMPORT", "API"]), gt = o.enum(["IN", "OUT"]), ra = o.object({
-  fileName: o.string().trim().min(1).max(180),
-  mimeType: o.string().trim().max(120).optional(),
-  dataBase64: o.string().min(1),
-  ocrRawText: o.string().trim().max(1e4).optional()
-}), na = o.object({
-  platformId: o.string().uuid("platformId invalido"),
-  typeId: o.string().uuid("typeId invalido"),
-  approvalCode: o.string().trim().min(4, "Ingresa el numero de aprobacion o ID interno").max(40).optional().nullable(),
-  amount: o.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
-  commissionAmount: o.number().int("La comision debe ser entera").min(0).optional(),
-  externalReference: o.string().trim().max(120).optional().nullable(),
-  customerName: o.string().trim().max(120).optional().nullable(),
-  customerDocument: o.string().trim().max(40).optional().nullable(),
-  targetAccount: o.string().trim().max(60).optional().nullable(),
-  targetPhone: o.string().trim().max(30).optional().nullable(),
-  performedAt: o.string().datetime("Fecha de operacion invalida"),
-  note: o.string().trim().max(300).optional().nullable(),
-  rawExtractedText: o.string().trim().max(1e4).optional().nullable(),
-  source: sa.optional().default("MANUAL"),
-  evidence: ra.optional()
-}), oa = o.object({
-  transactionId: o.string().uuid("transactionId invalido"),
-  typeId: o.string().uuid("typeId invalido"),
-  approvalCode: o.string().trim().min(4, "Ingresa el numero de aprobacion o ID interno").max(40).optional().nullable(),
-  amount: o.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
-  performedAt: o.string().datetime("Fecha de operacion invalida")
-}), ia = o.object({
-  transactionId: o.string().uuid("transactionId invalido")
-}), ca = o.object({
-  dateFrom: o.string().datetime().optional(),
-  dateTo: o.string().datetime().optional(),
-  platformId: o.string().uuid().optional(),
-  userId: o.string().uuid().optional(),
-  status: aa.optional(),
-  search: o.string().trim().max(80).optional()
-}).optional().default({}), da = o.object({
-  businessDate: o.string().datetime().optional(),
-  dateFrom: o.string().datetime().optional(),
-  dateTo: o.string().datetime().optional()
+const ya = n.enum(["REGISTERED", "VOIDED"]), Ia = n.enum(["MANUAL", "IMAGE", "FILE_IMPORT", "API"]), wt = n.enum(["IN", "OUT"]), Na = n.object({
+  fileName: n.string().trim().min(1).max(180),
+  mimeType: n.string().trim().max(120).optional(),
+  dataBase64: n.string().min(1),
+  ocrRawText: n.string().trim().max(1e4).optional()
+}), ha = n.object({
+  platformId: n.string().uuid("platformId invalido"),
+  typeId: n.string().uuid("typeId invalido"),
+  approvalCode: n.string().trim().min(4, "Ingresa el numero de aprobacion o ID interno").max(40).optional().nullable(),
+  amount: n.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  commissionAmount: n.number().int("La comision debe ser entera").min(0).optional(),
+  externalReference: n.string().trim().max(120).optional().nullable(),
+  customerName: n.string().trim().max(120).optional().nullable(),
+  customerDocument: n.string().trim().max(40).optional().nullable(),
+  targetAccount: n.string().trim().max(60).optional().nullable(),
+  targetPhone: n.string().trim().max(30).optional().nullable(),
+  performedAt: n.string().datetime("Fecha de operacion invalida"),
+  note: n.string().trim().max(300).optional().nullable(),
+  rawExtractedText: n.string().trim().max(1e4).optional().nullable(),
+  source: Ia.optional().default("MANUAL"),
+  evidence: Na.optional()
+}), Ca = n.object({
+  transactionId: n.string().uuid("transactionId invalido"),
+  typeId: n.string().uuid("typeId invalido"),
+  approvalCode: n.string().trim().min(4, "Ingresa el numero de aprobacion o ID interno").max(40).optional().nullable(),
+  amount: n.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  performedAt: n.string().datetime("Fecha de operacion invalida")
+}), ba = n.object({
+  transactionId: n.string().uuid("transactionId invalido")
+}), va = n.object({
+  dateFrom: n.string().datetime().optional(),
+  dateTo: n.string().datetime().optional(),
+  platformId: n.string().uuid().optional(),
+  userId: n.string().uuid().optional(),
+  status: ya.optional(),
+  search: n.string().trim().max(80).optional()
+}).optional().default({}), Sa = n.object({
+  businessDate: n.string().datetime().optional(),
+  dateFrom: n.string().datetime().optional(),
+  dateTo: n.string().datetime().optional()
 }).refine(
   (e) => !e.dateFrom || !e.dateTo || new Date(e.dateFrom).getTime() <= new Date(e.dateTo).getTime(),
   {
     message: "El rango de fechas es invalido",
     path: ["dateTo"]
   }
-).optional().default({}), ua = o.object({
-  platformId: o.string().uuid("platformId invalido"),
-  businessDate: o.string().datetime("Fecha de cierre invalida"),
-  openingBalance: o.number().int("El saldo base debe ser entero").optional().default(0),
-  reportedBalance: o.number().int("El valor reportado debe ser entero"),
-  note: o.string().trim().max(300).optional().nullable()
-}), la = o.object({
-  name: o.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
-  requiresEvidence: o.boolean().optional().default(!1),
-  supportsOcr: o.boolean().optional().default(!1),
-  supportsFileImport: o.boolean().optional().default(!1)
-}), ma = o.object({
-  platformId: o.string().uuid("platformId invalido"),
-  name: o.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
-  direction: gt.default("IN")
-}), pa = o.object({
-  platformId: o.string().uuid("platformId invalido"),
-  name: o.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
-  requiresEvidence: o.boolean().optional().default(!1),
-  supportsOcr: o.boolean().optional().default(!1),
-  supportsFileImport: o.boolean().optional().default(!1)
-}), fa = o.object({
-  typeId: o.string().uuid("typeId invalido"),
-  name: o.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
-  direction: gt.default("IN")
-}), ga = o.object({
-  platformId: o.string().uuid("platformId invalido")
-}), Ea = o.object({
-  typeId: o.string().uuid("typeId invalido")
-}), Aa = /^[A-Z0-9]+(?:-[A-Z0-9]+)*$/;
-function Ta(e) {
+).optional().default({}), wa = n.object({
+  platformId: n.string().uuid("platformId invalido"),
+  businessDate: n.string().datetime("Fecha de cierre invalida"),
+  openingBalance: n.number().int("El saldo base debe ser entero").optional().default(0),
+  reportedBalance: n.number().int("El valor reportado debe ser entero"),
+  note: n.string().trim().max(300).optional().nullable()
+}), Ra = n.object({
+  name: n.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
+  requiresEvidence: n.boolean().optional().default(!1),
+  supportsOcr: n.boolean().optional().default(!1),
+  supportsFileImport: n.boolean().optional().default(!1)
+}), Oa = n.object({
+  platformId: n.string().uuid("platformId invalido"),
+  name: n.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
+  direction: wt.default("IN")
+}), Da = n.object({
+  platformId: n.string().uuid("platformId invalido"),
+  name: n.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
+  requiresEvidence: n.boolean().optional().default(!1),
+  supportsOcr: n.boolean().optional().default(!1),
+  supportsFileImport: n.boolean().optional().default(!1)
+}), Pa = n.object({
+  typeId: n.string().uuid("typeId invalido"),
+  name: n.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
+  direction: wt.default("IN")
+}), xa = n.object({
+  platformId: n.string().uuid("platformId invalido")
+}), La = n.object({
+  typeId: n.string().uuid("typeId invalido")
+}), Ua = /^[A-Z0-9]+(?:-[A-Z0-9]+)*$/;
+function Ma(e) {
   return e.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
-function re(e) {
-  return Ta(e).toUpperCase().replace(/[_\s]+/g, "-").replace(/[^A-Z0-9-]/g, "").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
+function oe(e) {
+  return Ma(e).toUpperCase().replace(/[_\s]+/g, "-").replace(/[^A-Z0-9-]/g, "").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
 }
-function Ia(e, a) {
-  const r = re(a), l = re(e);
+function _a(e, a) {
+  const r = oe(a), l = oe(e);
   if (!l)
     return `${r}-`;
   if (l === r)
@@ -204,58 +209,58 @@ function Ia(e, a) {
   const m = l.startsWith(r) ? l.slice(r.length).replace(/^-+/, "") : l;
   return `${r}-${m}`;
 }
-function He(e, a = 4, r = 40) {
-  return e.length >= a && e.length <= r && Aa.test(e);
+function Qe(e, a = 4, r = 40) {
+  return e.length >= a && e.length <= r && Ua.test(e);
 }
-function Et(e, a, r = 4) {
-  const l = re(a), m = new RegExp(`^${l}-(\\d+)$`);
+function Rt(e, a, r = 4) {
+  const l = oe(a), m = new RegExp(`^${l}-(\\d+)$`);
   let c = 0;
-  for (const n of e) {
-    const t = re(n || "").match(m);
+  for (const o of e) {
+    const t = oe(o || "").match(m);
     t && (c = Math.max(c, Number(t[1] || 0)));
   }
   return `${l}-${String(c + 1).padStart(r, "0")}`;
 }
-function Z(e) {
+function te(e) {
   var l;
-  const a = (l = e.desiredCode) != null && l.trim() ? Ia(e.desiredCode, e.prefix) : Et(e.existingCodes, e.prefix, e.digits);
-  if (!He(a, e.minLength, e.maxLength))
+  const a = (l = e.desiredCode) != null && l.trim() ? _a(e.desiredCode, e.prefix) : Rt(e.existingCodes, e.prefix, e.digits);
+  if (!Qe(a, e.minLength, e.maxLength))
     throw new Error("El codigo debe usar solo letras, numeros y guiones.");
   if (new Set(
-    e.existingCodes.map((m) => re(m || "")).filter(Boolean)
+    e.existingCodes.map((m) => oe(m || "")).filter(Boolean)
   ).has(a))
     throw new Error(`El codigo ${a} ya existe.`);
   return a;
 }
-function Fe(e) {
+function qe(e) {
   var l;
-  const a = (l = e.desiredCode) != null && l.trim() ? re(e.desiredCode) : Et(e.existingCodes, e.generatedPrefix, e.digits);
-  if (!He(a, e.minLength, e.maxLength))
+  const a = (l = e.desiredCode) != null && l.trim() ? oe(e.desiredCode) : Rt(e.existingCodes, e.generatedPrefix, e.digits);
+  if (!Qe(a, e.minLength, e.maxLength))
     throw new Error("El codigo debe usar solo letras, numeros y guiones.");
   if (new Set(
-    e.existingCodes.map((m) => re(m || "")).filter(Boolean)
+    e.existingCodes.map((m) => oe(m || "")).filter(Boolean)
   ).has(a))
     throw new Error(`El codigo ${a} ya existe.`);
   return a;
 }
-const ge = [
-  { code: "RETIRO", name: "Retiro", direction: _.OUT, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 10 },
-  { code: "DEPOSITO", name: "Deposito", direction: _.IN, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 20 },
-  { code: "CONSIGNACION", name: "Consignacion", direction: _.IN, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 30 },
-  { code: "RECAUDO", name: "Recaudo", direction: _.IN, requiresExternalReference: !0, sortOrder: 40 },
-  { code: "PAGO", name: "Pago", direction: _.IN, requiresExternalReference: !0, sortOrder: 50 },
-  { code: "RECARGA", name: "Recarga", direction: _.IN, sortOrder: 60 },
-  { code: "CONSULTA", name: "Consulta", direction: _.NEUTRAL, sortOrder: 70 },
-  { code: "GIRO_ENVIO", name: "Giro envio", direction: _.IN, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 80 },
-  { code: "GIRO_PAGO", name: "Giro pago", direction: _.OUT, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 90 }
-], ya = [
+const Ae = [
+  { code: "RETIRO", name: "Retiro", direction: F.OUT, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 10 },
+  { code: "DEPOSITO", name: "Deposito", direction: F.IN, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 20 },
+  { code: "CONSIGNACION", name: "Consignacion", direction: F.IN, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 30 },
+  { code: "RECAUDO", name: "Recaudo", direction: F.IN, requiresExternalReference: !0, sortOrder: 40 },
+  { code: "PAGO", name: "Pago", direction: F.IN, requiresExternalReference: !0, sortOrder: 50 },
+  { code: "RECARGA", name: "Recarga", direction: F.IN, sortOrder: 60 },
+  { code: "CONSULTA", name: "Consulta", direction: F.NEUTRAL, sortOrder: 70 },
+  { code: "GIRO_ENVIO", name: "Giro envio", direction: F.IN, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 80 },
+  { code: "GIRO_PAGO", name: "Giro pago", direction: F.OUT, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 90 }
+], Ba = [
   {
     code: "PUNTORED",
     name: "Puntored",
     requiresEvidence: !0,
     supportsOcr: !0,
     supportsFileImport: !0,
-    types: ge
+    types: Ae
   },
   {
     code: "PTM",
@@ -263,14 +268,14 @@ const ge = [
     requiresEvidence: !0,
     supportsOcr: !0,
     supportsFileImport: !0,
-    types: ge
+    types: Ae
   },
   {
     code: "CBOGOTA",
     name: "Corresponsal Bogota",
     requiresEvidence: !0,
     supportsOcr: !0,
-    types: ge
+    types: Ae
   },
   {
     code: "BANCOLOMBIA",
@@ -278,9 +283,9 @@ const ge = [
     requiresEvidence: !0,
     supportsOcr: !0,
     types: [
-      ...ge,
-      { code: "NEQUI_RETIRO", name: "Nequi retiro", direction: _.OUT, requiresExternalReference: !0, sortOrder: 95 },
-      { code: "NEQUI_DEPOSITO", name: "Nequi deposito", direction: _.IN, requiresExternalReference: !0, sortOrder: 96 }
+      ...Ae,
+      { code: "NEQUI_RETIRO", name: "Nequi retiro", direction: F.OUT, requiresExternalReference: !0, sortOrder: 95 },
+      { code: "NEQUI_DEPOSITO", name: "Nequi deposito", direction: F.IN, requiresExternalReference: !0, sortOrder: 96 }
     ]
   },
   {
@@ -288,40 +293,40 @@ const ge = [
     name: "Coopenessa",
     requiresEvidence: !0,
     supportsOcr: !1,
-    types: ge
+    types: Ae
   }
 ];
-function Ze(e) {
+function dt(e) {
   return Math.round(e);
 }
-function ee(e = /* @__PURE__ */ new Date()) {
+function ae(e = /* @__PURE__ */ new Date()) {
   return new Date(e.getFullYear(), e.getMonth(), e.getDate());
 }
-function Re(e = /* @__PURE__ */ new Date()) {
-  const a = ee(e);
+function xe(e = /* @__PURE__ */ new Date()) {
+  const a = ae(e);
   return a.setDate(a.getDate() + 1), a;
 }
-function Ce(e) {
-  return ee(e ? new Date(e) : /* @__PURE__ */ new Date());
+function ve(e) {
+  return ae(e ? new Date(e) : /* @__PURE__ */ new Date());
 }
-function Na(e) {
+function Fa(e) {
   return e.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
-function he(e) {
+function Se(e) {
   return JSON.stringify(e ?? null);
 }
-function At(e) {
+function Ot(e) {
   return e.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
 }
-async function Ca(e, a) {
-  const r = At(a) || "CORRESPONSAL";
+async function ka(e, a) {
+  const r = Ot(a) || "CORRESPONSAL";
   let l = r, m = 2;
   for (; await e.correspondentPlatform.findUnique({ where: { code: l }, select: { id: !0 } }); )
     l = `${r}_${m}`, m += 1;
   return l;
 }
-async function ha(e, a, r) {
-  const l = At(r) || "TIPO";
+async function $a(e, a, r) {
+  const l = Ot(r) || "TIPO";
   let m = l, c = 2;
   for (; await e.correspondentTransactionType.findUnique({
     where: { platformId_code: { platformId: a, code: m } },
@@ -330,13 +335,13 @@ async function ha(e, a, r) {
     m = `${l}_${c}`, c += 1;
   return m;
 }
-function et(e, a) {
+function ut(e, a) {
   if (!e)
     return null;
   const r = e.match(new RegExp(`${a}:([^;]+)`));
   return (r == null ? void 0 : r[1]) ?? null;
 }
-async function va(e) {
+async function qa(e) {
   const a = await e.correspondentAuditLog.findMany({
     where: {
       action: {
@@ -353,12 +358,12 @@ async function va(e) {
     },
     orderBy: { createdAt: "asc" }
   }), r = /* @__PURE__ */ new Map(), l = /* @__PURE__ */ new Map(), m = /* @__PURE__ */ new Map(), c = /* @__PURE__ */ new Map();
-  for (const n of a) {
+  for (const o of a) {
     const s = {
-      user: n.user ? n.user.name ?? n.user.username : null,
-      at: n.createdAt.toISOString()
-    }, t = et(n.context, "platform"), i = et(n.context, "type");
-    n.action === "create_platform" && t && !r.has(t) && r.set(t, s), n.action === "update_platform" && t && l.set(t, s), n.action === "create_transaction_type" && i && !m.has(i) && m.set(i, s), n.action === "update_transaction_type" && i && c.set(i, s);
+      user: o.user ? o.user.name ?? o.user.username : null,
+      at: o.createdAt.toISOString()
+    }, t = ut(o.context, "platform"), i = ut(o.context, "type");
+    o.action === "create_platform" && t && !r.has(t) && r.set(t, s), o.action === "update_platform" && t && l.set(t, s), o.action === "create_transaction_type" && i && !m.has(i) && m.set(i, s), o.action === "update_transaction_type" && i && c.set(i, s);
   }
   return {
     platformCreatedBy: r,
@@ -367,7 +372,7 @@ async function va(e) {
     typeUpdatedBy: c
   };
 }
-async function ba(e) {
+async function Xa(e) {
   const a = [
     "PRAGMA foreign_keys = ON;",
     `CREATE TABLE IF NOT EXISTS "CorrespondentPlatform" (
@@ -536,25 +541,25 @@ async function ba(e) {
       approvalCode: !0
     },
     orderBy: [{ createdAt: "asc" }, { performedAt: "asc" }]
-  }), c = [], n = /* @__PURE__ */ new Set();
+  }), c = [], o = /* @__PURE__ */ new Set();
   for (const s of m) {
-    const t = re(s.approvalCode || ""), u = !!t && He(t, 4, 40) && !n.has(t) ? t : Fe({
+    const t = oe(s.approvalCode || ""), d = !!t && Qe(t, 4, 40) && !o.has(t) ? t : qe({
       existingCodes: c,
       generatedPrefix: "APR",
       digits: 6,
       maxLength: 40
     });
-    u !== s.approvalCode && await e.correspondentTransaction.update({
+    d !== s.approvalCode && await e.correspondentTransaction.update({
       where: { id: s.id },
-      data: { approvalCode: u }
-    }), c.push(u), n.add(u);
+      data: { approvalCode: d }
+    }), c.push(d), o.add(d);
   }
   await e.$executeRawUnsafe(
     'CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentTransaction_approvalCode_key" ON "CorrespondentTransaction"("approvalCode");'
   );
 }
-async function Sa(e) {
-  for (const a of ya) {
+async function Va(e) {
+  for (const a of Ba) {
     const r = await e.correspondentPlatform.upsert({
       where: { code: a.code },
       update: {
@@ -607,22 +612,22 @@ async function Sa(e) {
     }) === 0 && await e.correspondentCommissionRule.create({
       data: {
         platformId: r.id,
-        mode: Oe.NONE,
+        mode: Pe.NONE,
         value: 0,
         isActive: !0
       }
     });
   }
 }
-async function tt(e, a) {
+async function lt(e, a) {
   return e.cashSession.findFirst({
     where: { userId: a, status: "OPEN" },
     include: { register: !0 },
     orderBy: { openedAt: "desc" }
   });
 }
-async function at(e, a, r, l, m) {
-  const n = (await e.correspondentCommissionRule.findMany({
+async function mt(e, a, r, l, m) {
+  const o = (await e.correspondentCommissionRule.findMany({
     where: {
       platformId: a,
       isActive: !0,
@@ -635,14 +640,14 @@ async function at(e, a, r, l, m) {
       ]
     }
   })).sort((s, t) => {
-    var i, u;
-    return s.typeId === r && t.typeId !== r ? -1 : s.typeId !== r && t.typeId === r ? 1 : (((i = t.validFrom) == null ? void 0 : i.getTime()) ?? 0) - (((u = s.validFrom) == null ? void 0 : u.getTime()) ?? 0);
+    var i, d;
+    return s.typeId === r && t.typeId !== r ? -1 : s.typeId !== r && t.typeId === r ? 1 : (((i = t.validFrom) == null ? void 0 : i.getTime()) ?? 0) - (((d = s.validFrom) == null ? void 0 : d.getTime()) ?? 0);
   })[0] ?? null;
-  return n ? n.mode === Oe.FIXED ? Ze(n.value) : n.mode === Oe.PERCENTAGE ? Ze(l * n.value / 100) : 0 : 0;
+  return o ? o.mode === Pe.FIXED ? dt(o.value) : o.mode === Pe.PERCENTAGE ? dt(l * o.value / 100) : 0 : 0;
 }
-function ve(e) {
+function we(e) {
   return e.reduce(
-    (a, r) => r.status === ne.VOIDED ? (a.voidedCount += 1, a) : (a.transactionsCount += 1, a.totalCommission += r.commissionAmount, a.withEvidenceCount += r.evidences.length > 0 ? 1 : 0, a.pendingClosureCount += r.dailyClosureId ? 0 : 1, r.type.direction === _.IN && (a.totalIn += r.amount), r.type.direction === _.OUT && (a.totalOut += r.amount), r.type.direction === _.NEUTRAL && (a.neutralCount += 1), a),
+    (a, r) => r.status === ie.VOIDED ? (a.voidedCount += 1, a) : (a.transactionsCount += 1, a.totalCommission += r.commissionAmount, a.withEvidenceCount += r.evidences.length > 0 ? 1 : 0, a.pendingClosureCount += r.dailyClosureId ? 0 : 1, r.type.direction === F.IN && (a.totalIn += r.amount), r.type.direction === F.OUT && (a.totalOut += r.amount), r.type.direction === F.NEUTRAL && (a.neutralCount += 1), a),
     {
       totalIn: 0,
       totalOut: 0,
@@ -655,8 +660,8 @@ function ve(e) {
     }
   );
 }
-async function wa(e) {
-  const a = /* @__PURE__ */ new Date(), r = H.join(
+async function ja(e) {
+  const a = /* @__PURE__ */ new Date(), r = J.join(
     e.app.getPath("userData"),
     "correspondent-evidence",
     String(a.getFullYear()),
@@ -664,18 +669,18 @@ async function wa(e) {
     String(a.getDate()).padStart(2, "0"),
     e.platformCode.toLowerCase()
   );
-  await Xt(r, { recursive: !0 });
-  const l = Na(e.evidence.fileName), m = H.join(r, `${Date.now()}-${l}`), c = e.evidence.dataBase64.includes(",") ? e.evidence.dataBase64.split(",").pop() ?? "" : e.evidence.dataBase64, n = Buffer.from(c, "base64");
-  return await Vt(m, n), {
+  await sa(r, { recursive: !0 });
+  const l = Fa(e.evidence.fileName), m = J.join(r, `${Date.now()}-${l}`), c = e.evidence.dataBase64.includes(",") ? e.evidence.dataBase64.split(",").pop() ?? "" : e.evidence.dataBase64, o = Buffer.from(c, "base64");
+  return await ra(m, o), {
     fileName: e.evidence.fileName,
     filePath: m,
     mimeType: e.evidence.mimeType ?? null,
-    fileSize: n.byteLength,
-    fileHash: qt("sha256").update(n).digest("hex"),
+    fileSize: o.byteLength,
+    fileHash: na("sha256").update(o).digest("hex"),
     ocrRawText: e.evidence.ocrRawText ?? null
   };
 }
-async function Q(e) {
+async function ee(e) {
   var a, r;
   await e.prisma.correspondentAuditLog.create({
     data: {
@@ -683,8 +688,8 @@ async function Q(e) {
       userId: ((a = e.currentSessionUser) == null ? void 0 : a.id) ?? null,
       action: e.action,
       context: e.context ?? null,
-      beforeJson: e.beforeJson === void 0 ? null : he(e.beforeJson),
-      afterJson: e.afterJson === void 0 ? null : he(e.afterJson)
+      beforeJson: e.beforeJson === void 0 ? null : Se(e.beforeJson),
+      afterJson: e.afterJson === void 0 ? null : Se(e.afterJson)
     }
   }), await e.prisma.auditLog.create({
     data: {
@@ -693,18 +698,18 @@ async function Q(e) {
       action: e.action,
       entity: e.transactionId ? "CorrespondentTransaction" : "CorrespondentDailyClosure",
       entityId: e.transactionId ?? null,
-      beforeJson: e.beforeJson === void 0 ? null : he(e.beforeJson),
-      afterJson: e.afterJson === void 0 ? null : he(e.afterJson)
+      beforeJson: e.beforeJson === void 0 ? null : Se(e.beforeJson),
+      afterJson: e.afterJson === void 0 ? null : Se(e.afterJson)
     }
   });
 }
-async function Ue(e, a, r) {
+async function Be(e, a, r) {
   return e.correspondentTransaction.findMany({
     where: {
       platformId: r,
       performedAt: {
-        gte: ee(a),
-        lt: Re(a)
+        gte: ae(a),
+        lt: xe(a)
       }
     },
     include: {
@@ -717,13 +722,13 @@ async function Ue(e, a, r) {
     orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }]
   });
 }
-async function Oa(e, a, r, l) {
+async function za(e, a, r, l) {
   return e.correspondentTransaction.findMany({
     where: {
       platformId: l,
       performedAt: {
-        gte: ee(a),
-        lt: Re(r)
+        gte: ae(a),
+        lt: xe(r)
       }
     },
     include: {
@@ -736,7 +741,7 @@ async function Oa(e, a, r, l) {
     orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }]
   });
 }
-async function Ra(e, a) {
+async function Ga(e, a) {
   return e.correspondentTransaction.findUnique({
     where: { id: a },
     include: {
@@ -760,7 +765,7 @@ async function Ra(e, a) {
     }
   });
 }
-function Da({
+function Ka({
   app: e,
   ipcMain: a,
   prisma: r,
@@ -769,7 +774,7 @@ function Da({
   a.handle("correspondent:catalog", async () => {
     if (!l())
       return { success: !1, message: "Debes iniciar sesion", platforms: [] };
-    const [c, n] = await Promise.all([
+    const [c, o] = await Promise.all([
       r.correspondentPlatform.findMany({
         where: { isActive: !0 },
         include: {
@@ -784,12 +789,12 @@ function Da({
         },
         orderBy: [{ createdAt: "asc" }, { name: "asc" }]
       }),
-      va(r)
+      qa(r)
     ]);
     return {
       success: !0,
       platforms: c.map((s) => {
-        var t, i, u;
+        var t, i, d;
         return {
           id: s.id,
           code: s.code,
@@ -799,30 +804,30 @@ function Da({
           supportsFileImport: s.supportsFileImport,
           createdAt: s.createdAt.toISOString(),
           updatedAt: s.updatedAt.toISOString(),
-          createdBy: ((t = n.platformCreatedBy.get(s.id)) == null ? void 0 : t.user) ?? null,
-          updatedBy: ((i = n.platformUpdatedBy.get(s.id)) == null ? void 0 : i.user) ?? ((u = n.platformCreatedBy.get(s.id)) == null ? void 0 : u.user) ?? null,
-          types: s.transactionTypes.map((f) => {
-            var g, T, I;
+          createdBy: ((t = o.platformCreatedBy.get(s.id)) == null ? void 0 : t.user) ?? null,
+          updatedBy: ((i = o.platformUpdatedBy.get(s.id)) == null ? void 0 : i.user) ?? ((d = o.platformCreatedBy.get(s.id)) == null ? void 0 : d.user) ?? null,
+          types: s.transactionTypes.map((g) => {
+            var p, T, I;
             return {
-              id: f.id,
-              code: f.code,
-              name: f.name,
-              direction: f.direction,
-              requiresCustomerDocument: f.requiresCustomerDocument,
-              requiresExternalReference: f.requiresExternalReference,
-              createdAt: f.createdAt.toISOString(),
-              updatedAt: f.updatedAt.toISOString(),
-              createdBy: ((g = n.typeCreatedBy.get(f.id)) == null ? void 0 : g.user) ?? null,
-              updatedBy: ((T = n.typeUpdatedBy.get(f.id)) == null ? void 0 : T.user) ?? ((I = n.typeCreatedBy.get(f.id)) == null ? void 0 : I.user) ?? null
+              id: g.id,
+              code: g.code,
+              name: g.name,
+              direction: g.direction,
+              requiresCustomerDocument: g.requiresCustomerDocument,
+              requiresExternalReference: g.requiresExternalReference,
+              createdAt: g.createdAt.toISOString(),
+              updatedAt: g.updatedAt.toISOString(),
+              createdBy: ((p = o.typeCreatedBy.get(g.id)) == null ? void 0 : p.user) ?? null,
+              updatedBy: ((T = o.typeUpdatedBy.get(g.id)) == null ? void 0 : T.user) ?? ((I = o.typeCreatedBy.get(g.id)) == null ? void 0 : I.user) ?? null
             };
           }),
-          commissionRules: s.commissionRules.map((f) => ({
-            id: f.id,
-            typeId: f.typeId,
-            mode: f.mode,
-            value: f.value,
-            minAmount: f.minAmount,
-            maxAmount: f.maxAmount
+          commissionRules: s.commissionRules.map((g) => ({
+            id: g.id,
+            typeId: g.typeId,
+            mode: g.mode,
+            value: g.value,
+            minAmount: g.minAmount,
+            maxAmount: g.maxAmount
           }))
         };
       })
@@ -830,17 +835,17 @@ function Da({
   }), a.handle("correspondent:dashboard", async () => {
     if (!l())
       return { success: !1, message: "Debes iniciar sesion" };
-    const c = ee(/* @__PURE__ */ new Date()), n = await Ue(r, c), s = ve(n), t = n.reduce((i, u) => {
-      const f = i[u.platformId] ?? {
-        platformId: u.platformId,
-        platform: u.platform.name,
+    const c = ae(/* @__PURE__ */ new Date()), o = await Be(r, c), s = we(o), t = o.reduce((i, d) => {
+      const g = i[d.platformId] ?? {
+        platformId: d.platformId,
+        platform: d.platform.name,
         totalIn: 0,
         totalOut: 0,
         totalCommission: 0,
         count: 0,
         pendingClosureCount: 0
       };
-      return u.status !== ne.VOIDED && (f.count += 1, f.totalCommission += u.commissionAmount, f.pendingClosureCount += u.dailyClosureId ? 0 : 1, u.type.direction === _.IN && (f.totalIn += u.amount), u.type.direction === _.OUT && (f.totalOut += u.amount)), i[u.platformId] = f, i;
+      return d.status !== ie.VOIDED && (g.count += 1, g.totalCommission += d.commissionAmount, g.pendingClosureCount += d.dailyClosureId ? 0 : 1, d.type.direction === F.IN && (g.totalIn += d.amount), d.type.direction === F.OUT && (g.totalOut += d.amount)), i[d.platformId] = g, i;
     }, {});
     return {
       success: !0,
@@ -854,8 +859,8 @@ function Da({
         pendingClosureCount: s.pendingClosureCount,
         voidedCount: s.voidedCount
       },
-      perPlatform: Object.values(t).sort((i, u) => i.platform.localeCompare(u.platform, "es")),
-      recentTransactions: n.slice(0, 10).map((i) => ({
+      perPlatform: Object.values(t).sort((i, d) => i.platform.localeCompare(d.platform, "es")),
+      recentTransactions: o.slice(0, 10).map((i) => ({
         id: i.id,
         approvalCode: i.approvalCode,
         platform: i.platform.name,
@@ -871,13 +876,13 @@ function Da({
       }))
     };
   }), a.handle("correspondent:transactions:list", async (m, c) => {
-    var f;
+    var g;
     if (!l())
       return { success: !1, message: "Debes iniciar sesion", transactions: [] };
-    const s = ca.safeParse(c);
+    const s = va.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Filtros invalidos", transactions: [] };
-    const t = s.data, i = (f = t.search) == null ? void 0 : f.trim();
+    const t = s.data, i = (g = t.search) == null ? void 0 : g.trim();
     return {
       success: !0,
       transactions: (await r.correspondentTransaction.findMany({
@@ -887,7 +892,7 @@ function Da({
           status: t.status,
           performedAt: t.dateFrom || t.dateTo ? {
             ...t.dateFrom ? { gte: new Date(t.dateFrom) } : {},
-            ...t.dateTo ? { lt: Re(new Date(t.dateTo)) } : {}
+            ...t.dateTo ? { lt: xe(new Date(t.dateTo)) } : {}
           } : void 0,
           OR: i ? [
             { approvalCode: { contains: i } },
@@ -920,43 +925,43 @@ function Da({
         },
         orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }],
         take: 150
-      })).map((g) => {
+      })).map((p) => {
         var T, I;
         return {
-          id: g.id,
-          approvalCode: g.approvalCode,
-          platformId: g.platformId,
-          platform: g.platform.name,
-          typeId: g.typeId,
-          type: g.type.name,
-          direction: g.type.direction,
-          amount: g.amount,
-          commissionAmount: g.commissionAmount,
-          netAmount: g.netAmount,
-          externalReference: g.externalReference,
-          customerName: g.customerName,
-          customerDocument: g.customerDocument,
-          targetAccount: g.targetAccount,
-          targetPhone: g.targetPhone,
-          performedAt: g.performedAt.toISOString(),
-          status: g.status,
-          source: g.source,
-          registeredBy: g.registeredBy.name ?? g.registeredBy.username,
-          note: g.note,
-          hasEvidence: g.evidences.length > 0,
-          evidenceCount: g.evidences.length,
-          closureId: ((T = g.dailyClosure) == null ? void 0 : T.id) ?? null,
-          closureStatus: ((I = g.dailyClosure) == null ? void 0 : I.status) ?? null
+          id: p.id,
+          approvalCode: p.approvalCode,
+          platformId: p.platformId,
+          platform: p.platform.name,
+          typeId: p.typeId,
+          type: p.type.name,
+          direction: p.type.direction,
+          amount: p.amount,
+          commissionAmount: p.commissionAmount,
+          netAmount: p.netAmount,
+          externalReference: p.externalReference,
+          customerName: p.customerName,
+          customerDocument: p.customerDocument,
+          targetAccount: p.targetAccount,
+          targetPhone: p.targetPhone,
+          performedAt: p.performedAt.toISOString(),
+          status: p.status,
+          source: p.source,
+          registeredBy: p.registeredBy.name ?? p.registeredBy.username,
+          note: p.note,
+          hasEvidence: p.evidences.length > 0,
+          evidenceCount: p.evidences.length,
+          closureId: ((T = p.dailyClosure) == null ? void 0 : T.id) ?? null,
+          closureStatus: ((I = p.dailyClosure) == null ? void 0 : I.status) ?? null
         };
       })
     };
   }), a.handle("correspondent:transaction:detail", async (m, c) => {
     if (!l())
       return { success: !1, message: "Debes iniciar sesion" };
-    const s = ia.safeParse(c);
+    const s = ba.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Transaccion invalida" };
-    const t = await Ra(r, s.data.transactionId);
+    const t = await Ga(r, s.data.transactionId);
     return t ? {
       success: !0,
       transaction: {
@@ -987,73 +992,73 @@ function Da({
       }
     } : { success: !1, message: "La transaccion ya no existe" };
   }), a.handle("correspondent:transaction:create", async (m, c) => {
-    var C, h, v, D, P, b, d, A, S, y;
-    const n = l();
-    if (!n)
+    var N, C, b, D, x, v, u, A, S, L;
+    const o = l();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion para registrar movimientos" };
-    const s = na.safeParse(c);
+    const s = ha.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para el corresponsal" };
-    const t = s.data, i = new Date(t.performedAt), [u, f, g] = await Promise.all([
+    const t = s.data, i = new Date(t.performedAt), [d, g, p] = await Promise.all([
       r.correspondentPlatform.findUnique({ where: { id: t.platformId } }),
       r.correspondentTransactionType.findUnique({ where: { id: t.typeId } }),
-      tt(r, n.id)
+      lt(r, o.id)
     ]);
-    if (!u || !u.isActive)
+    if (!d || !d.isActive)
       return { success: !1, message: "La plataforma seleccionada no esta disponible" };
-    if (!f || !f.isActive || f.platformId !== u.id)
+    if (!g || !g.isActive || g.platformId !== d.id)
       return { success: !1, message: "El tipo de transaccion no corresponde a la plataforma" };
     if (await r.correspondentTransaction.findFirst({
       where: {
-        platformId: u.id,
-        typeId: f.id,
+        platformId: d.id,
+        typeId: g.id,
         amount: t.amount,
-        externalReference: ((C = t.externalReference) == null ? void 0 : C.trim()) || null,
+        externalReference: ((N = t.externalReference) == null ? void 0 : N.trim()) || null,
         performedAt: {
           gte: new Date(i.getTime() - 10 * 60 * 1e3),
           lte: new Date(i.getTime() + 10 * 60 * 1e3)
         },
-        status: ne.REGISTERED
+        status: ie.REGISTERED
       }
     }))
       return { success: !1, message: "Parece un duplicado reciente. Verifica antes de registrar." };
-    const I = t.commissionAmount ?? await at(r, u.id, f.id, t.amount, i), p = f.direction === _.OUT ? t.amount - I : t.amount + I, N = t.evidence ? await wa({ app: e, platformCode: u.code, evidence: t.evidence }) : null;
+    const I = t.commissionAmount ?? await mt(r, d.id, g.id, t.amount, i), f = g.direction === F.OUT ? t.amount - I : t.amount + I, y = t.evidence ? await ja({ app: e, platformCode: d.code, evidence: t.evidence }) : null;
     try {
-      const w = (await r.correspondentTransaction.findMany({
+      const h = (await r.correspondentTransaction.findMany({
         select: { approvalCode: !0 }
-      })).map((Y) => Y.approvalCode), $ = Fe({
+      })).map((j) => j.approvalCode), R = qe({
         desiredCode: t.approvalCode,
-        existingCodes: w,
+        existingCodes: h,
         generatedPrefix: "APR",
         digits: 6,
         maxLength: 40
-      }), U = await r.correspondentTransaction.create({
+      }), M = await r.correspondentTransaction.create({
         data: {
-          approvalCode: $,
-          platformId: u.id,
-          typeId: f.id,
-          cashSessionId: (g == null ? void 0 : g.id) ?? null,
-          cashRegisterId: (g == null ? void 0 : g.registerId) ?? null,
-          registeredByUserId: n.id,
-          status: ne.REGISTERED,
+          approvalCode: R,
+          platformId: d.id,
+          typeId: g.id,
+          cashSessionId: (p == null ? void 0 : p.id) ?? null,
+          cashRegisterId: (p == null ? void 0 : p.registerId) ?? null,
+          registeredByUserId: o.id,
+          status: ie.REGISTERED,
           source: t.source,
-          ocrStatus: (h = t.evidence) != null && h.ocrRawText ? Le.PROCESSED : u.supportsOcr ? Le.NEEDS_REVIEW : Le.NOT_REQUESTED,
-          reconciliationStatus: $t.PENDING,
-          externalReference: ((v = t.externalReference) == null ? void 0 : v.trim()) || null,
+          ocrStatus: (C = t.evidence) != null && C.ocrRawText ? _e.PROCESSED : d.supportsOcr ? _e.NEEDS_REVIEW : _e.NOT_REQUESTED,
+          reconciliationStatus: ta.PENDING,
+          externalReference: ((b = t.externalReference) == null ? void 0 : b.trim()) || null,
           customerName: ((D = t.customerName) == null ? void 0 : D.trim()) || null,
-          customerDocument: ((P = t.customerDocument) == null ? void 0 : P.trim()) || null,
-          targetAccount: ((b = t.targetAccount) == null ? void 0 : b.trim()) || null,
-          targetPhone: ((d = t.targetPhone) == null ? void 0 : d.trim()) || null,
+          customerDocument: ((x = t.customerDocument) == null ? void 0 : x.trim()) || null,
+          targetAccount: ((v = t.targetAccount) == null ? void 0 : v.trim()) || null,
+          targetPhone: ((u = t.targetPhone) == null ? void 0 : u.trim()) || null,
           amount: t.amount,
           commissionAmount: I,
-          netAmount: p,
+          netAmount: f,
           performedAt: i,
           note: ((A = t.note) == null ? void 0 : A.trim()) || null,
-          rawExtractedText: ((S = t.rawExtractedText) == null ? void 0 : S.trim()) || ((y = t.evidence) == null ? void 0 : y.ocrRawText) || null,
-          evidences: N ? {
+          rawExtractedText: ((S = t.rawExtractedText) == null ? void 0 : S.trim()) || ((L = t.evidence) == null ? void 0 : L.ocrRawText) || null,
+          evidences: y ? {
             create: {
-              ...N,
-              capturedByUserId: n.id
+              ...y,
+              capturedByUserId: o.id
             }
           } : void 0
         },
@@ -1063,40 +1068,40 @@ function Da({
           evidences: { select: { id: !0 } }
         }
       });
-      return await Q({
+      return await ee({
         prisma: r,
-        currentSessionUser: n,
-        transactionId: U.id,
+        currentSessionUser: o,
+        transactionId: M.id,
         action: "create_transaction",
         afterJson: {
-          approvalCode: U.approvalCode,
-          platform: U.platform.name,
-          type: U.type.name,
-          amount: U.amount,
-          commissionAmount: U.commissionAmount,
-          hasEvidence: U.evidences.length > 0
+          approvalCode: M.approvalCode,
+          platform: M.platform.name,
+          type: M.type.name,
+          amount: M.amount,
+          commissionAmount: M.commissionAmount,
+          hasEvidence: M.evidences.length > 0
         }
       }), {
         success: !0,
         transaction: {
-          id: U.id,
-          approvalCode: U.approvalCode,
-          platform: U.platform.name,
-          type: U.type.name,
-          amount: U.amount,
-          commissionAmount: U.commissionAmount,
-          netAmount: U.netAmount,
-          hasEvidence: U.evidences.length > 0
+          id: M.id,
+          approvalCode: M.approvalCode,
+          platform: M.platform.name,
+          type: M.type.name,
+          amount: M.amount,
+          commissionAmount: M.commissionAmount,
+          netAmount: M.netAmount,
+          hasEvidence: M.evidences.length > 0
         }
       };
-    } catch (w) {
-      return { success: !1, message: w instanceof Error ? w.message : "No se pudo registrar la transaccion" };
+    } catch (h) {
+      return { success: !1, message: h instanceof Error ? h.message : "No se pudo registrar la transaccion" };
     }
   }), a.handle("correspondent:transaction:update", async (m, c) => {
-    const n = l();
-    if (!n)
+    const o = l();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion para editar movimientos" };
-    const s = oa.safeParse(c);
+    const s = Ca.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para actualizar la transaccion" };
     const t = await r.correspondentTransaction.findUnique({
@@ -1110,40 +1115,40 @@ function Da({
       return { success: !1, message: "La transaccion ya no existe" };
     if (t.dailyClosureId)
       return { success: !1, message: "No puedes editar una transaccion que ya hace parte de un cuadre" };
-    if (t.status === ne.VOIDED)
+    if (t.status === ie.VOIDED)
       return { success: !1, message: "No puedes editar una transaccion anulada" };
     const i = await r.correspondentTransactionType.findUnique({
       where: { id: s.data.typeId }
     });
     if (!i || !i.isActive || i.platformId !== t.platformId)
       return { success: !1, message: "El nuevo tipo no pertenece al mismo corresponsal" };
-    const u = new Date(s.data.performedAt), f = await at(
+    const d = new Date(s.data.performedAt), g = await mt(
       r,
       t.platformId,
       i.id,
       s.data.amount,
-      u
-    ), g = i.direction === _.OUT ? s.data.amount - f : s.data.amount + f;
+      d
+    ), p = i.direction === F.OUT ? s.data.amount - g : s.data.amount + g;
     try {
       const T = (await r.correspondentTransaction.findMany({
         where: { NOT: { id: t.id } },
         select: { approvalCode: !0 }
-      })).map((N) => N.approvalCode), I = Fe({
+      })).map((y) => y.approvalCode), I = qe({
         desiredCode: s.data.approvalCode ?? t.approvalCode,
         existingCodes: T,
         generatedPrefix: "APR",
         digits: 6,
         maxLength: 40
-      }), p = await r.correspondentTransaction.update({
+      }), f = await r.correspondentTransaction.update({
         where: { id: t.id },
         data: {
           approvalCode: I,
           typeId: i.id,
           amount: s.data.amount,
-          commissionAmount: f,
-          netAmount: g,
-          performedAt: u,
-          reviewedByUserId: n.id
+          commissionAmount: g,
+          netAmount: p,
+          performedAt: d,
+          reviewedByUserId: o.id
         },
         include: {
           platform: !0,
@@ -1151,10 +1156,10 @@ function Da({
           evidences: { select: { id: !0 } }
         }
       });
-      return await Q({
+      return await ee({
         prisma: r,
-        currentSessionUser: n,
-        transactionId: p.id,
+        currentSessionUser: o,
+        transactionId: f.id,
         action: "update_transaction",
         beforeJson: {
           approvalCode: t.approvalCode,
@@ -1164,33 +1169,33 @@ function Da({
           commissionAmount: t.commissionAmount
         },
         afterJson: {
-          approvalCode: p.approvalCode,
-          type: p.type.name,
-          amount: p.amount,
-          performedAt: p.performedAt.toISOString(),
-          commissionAmount: p.commissionAmount
+          approvalCode: f.approvalCode,
+          type: f.type.name,
+          amount: f.amount,
+          performedAt: f.performedAt.toISOString(),
+          commissionAmount: f.commissionAmount
         }
       }), {
         success: !0,
         transaction: {
-          id: p.id,
-          approvalCode: p.approvalCode,
-          platform: p.platform.name,
-          type: p.type.name,
-          amount: p.amount,
-          commissionAmount: p.commissionAmount,
-          netAmount: p.netAmount,
-          hasEvidence: p.evidences.length > 0
+          id: f.id,
+          approvalCode: f.approvalCode,
+          platform: f.platform.name,
+          type: f.type.name,
+          amount: f.amount,
+          commissionAmount: f.commissionAmount,
+          netAmount: f.netAmount,
+          hasEvidence: f.evidences.length > 0
         }
       };
     } catch (T) {
       return { success: !1, message: T instanceof Error ? T.message : "No se pudo actualizar la transaccion" };
     }
   }), a.handle("correspondent:platform:create", async (m, c) => {
-    const n = l();
-    if (!n || n.role !== F.ADMIN)
+    const o = l();
+    if (!o || o.role !== $.ADMIN)
       return { success: !1, message: "Solo el administrador puede crear corresponsales" };
-    const s = la.safeParse(c);
+    const s = Ra.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para el corresponsal" };
     const t = s.data.name.trim();
@@ -1200,9 +1205,9 @@ function Da({
     }))
       return { success: !1, message: "Ya existe un corresponsal con ese nombre" };
     try {
-      const u = await r.correspondentPlatform.create({
+      const d = await r.correspondentPlatform.create({
         data: {
-          code: await Ca(r, t),
+          code: await ka(r, t),
           name: t,
           isActive: !0,
           requiresEvidence: s.data.requiresEvidence,
@@ -1212,29 +1217,29 @@ function Da({
       });
       return await r.correspondentCommissionRule.create({
         data: {
-          platformId: u.id,
-          mode: Oe.NONE,
+          platformId: d.id,
+          mode: Pe.NONE,
           value: 0,
           isActive: !0
         }
-      }), await Q({
+      }), await ee({
         prisma: r,
-        currentSessionUser: n,
+        currentSessionUser: o,
         action: "create_platform",
-        context: `platform:${u.id}`,
+        context: `platform:${d.id}`,
         afterJson: {
-          platform: u.name,
-          code: u.code
+          platform: d.name,
+          code: d.code
         }
-      }), { success: !0, platformId: u.id };
-    } catch (u) {
-      return { success: !1, message: u instanceof Error ? u.message : "No se pudo crear el corresponsal" };
+      }), { success: !0, platformId: d.id };
+    } catch (d) {
+      return { success: !1, message: d instanceof Error ? d.message : "No se pudo crear el corresponsal" };
     }
   }), a.handle("correspondent:platform:update", async (m, c) => {
-    const n = l();
-    if (!n || n.role !== F.ADMIN)
+    const o = l();
+    if (!o || o.role !== $.ADMIN)
       return { success: !1, message: "Solo el administrador puede editar corresponsales" };
-    const s = pa.safeParse(c);
+    const s = Da.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para actualizar el corresponsal" };
     const t = await r.correspondentPlatform.findUnique({
@@ -1251,7 +1256,7 @@ function Da({
     }))
       return { success: !1, message: "Ya existe otro corresponsal con ese nombre" };
     try {
-      const u = await r.correspondentPlatform.update({
+      const d = await r.correspondentPlatform.update({
         where: { id: t.id },
         data: {
           name: s.data.name.trim(),
@@ -1260,11 +1265,11 @@ function Da({
           supportsFileImport: s.data.supportsFileImport
         }
       });
-      return await Q({
+      return await ee({
         prisma: r,
-        currentSessionUser: n,
+        currentSessionUser: o,
         action: "update_platform",
-        context: `platform:${u.id}`,
+        context: `platform:${d.id}`,
         beforeJson: {
           name: t.name,
           requiresEvidence: t.requiresEvidence,
@@ -1272,20 +1277,20 @@ function Da({
           supportsFileImport: t.supportsFileImport
         },
         afterJson: {
-          name: u.name,
-          requiresEvidence: u.requiresEvidence,
-          supportsOcr: u.supportsOcr,
-          supportsFileImport: u.supportsFileImport
+          name: d.name,
+          requiresEvidence: d.requiresEvidence,
+          supportsOcr: d.supportsOcr,
+          supportsFileImport: d.supportsFileImport
         }
-      }), { success: !0, platformId: u.id };
-    } catch (u) {
-      return { success: !1, message: u instanceof Error ? u.message : "No se pudo actualizar el corresponsal" };
+      }), { success: !0, platformId: d.id };
+    } catch (d) {
+      return { success: !1, message: d instanceof Error ? d.message : "No se pudo actualizar el corresponsal" };
     }
   }), a.handle("correspondent:platform:delete", async (m, c) => {
-    const n = l();
-    if (!n || n.role !== F.ADMIN)
+    const o = l();
+    if (!o || o.role !== $.ADMIN)
       return { success: !1, message: "Solo el administrador puede eliminar corresponsales" };
-    const s = ga.safeParse(c);
+    const s = xa.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Corresponsal invalido" };
     const t = await r.correspondentPlatform.findUnique({
@@ -1307,9 +1312,9 @@ function Da({
           where: { platformId: t.id },
           data: { isActive: !1 }
         });
-      }), await Q({
+      }), await ee({
         prisma: r,
-        currentSessionUser: n,
+        currentSessionUser: o,
         action: "delete_platform",
         context: `platform:${t.id}`,
         beforeJson: {
@@ -1320,11 +1325,11 @@ function Da({
       return { success: !1, message: i instanceof Error ? i.message : "No se pudo eliminar el corresponsal" };
     }
   }), a.handle("correspondent:type:create", async (m, c) => {
-    var f;
-    const n = l();
-    if (!n || n.role !== F.ADMIN)
+    var g;
+    const o = l();
+    if (!o || o.role !== $.ADMIN)
       return { success: !1, message: "Solo el administrador puede crear tipos" };
-    const s = ma.safeParse(c);
+    const s = Oa.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para el tipo" };
     const t = await r.correspondentPlatform.findUnique({
@@ -1349,35 +1354,35 @@ function Da({
     }))
       return { success: !1, message: "Ese corresponsal ya tiene un tipo con ese nombre" };
     try {
-      const g = await r.correspondentTransactionType.create({
+      const p = await r.correspondentTransactionType.create({
         data: {
           platformId: t.id,
-          code: await ha(r, t.id, i),
+          code: await $a(r, t.id, i),
           name: i,
           direction: s.data.direction,
           isActive: !0,
-          sortOrder: (((f = t.transactionTypes[0]) == null ? void 0 : f.sortOrder) ?? 0) + 10
+          sortOrder: (((g = t.transactionTypes[0]) == null ? void 0 : g.sortOrder) ?? 0) + 10
         }
       });
-      return await Q({
+      return await ee({
         prisma: r,
-        currentSessionUser: n,
+        currentSessionUser: o,
         action: "create_transaction_type",
-        context: `platform:${t.id};type:${g.id}`,
+        context: `platform:${t.id};type:${p.id}`,
         afterJson: {
           platform: t.name,
-          type: g.name,
-          direction: g.direction
+          type: p.name,
+          direction: p.direction
         }
-      }), { success: !0, typeId: g.id };
-    } catch (g) {
-      return { success: !1, message: g instanceof Error ? g.message : "No se pudo crear el tipo" };
+      }), { success: !0, typeId: p.id };
+    } catch (p) {
+      return { success: !1, message: p instanceof Error ? p.message : "No se pudo crear el tipo" };
     }
   }), a.handle("correspondent:type:update", async (m, c) => {
-    const n = l();
-    if (!n || n.role !== F.ADMIN)
+    const o = l();
+    if (!o || o.role !== $.ADMIN)
       return { success: !1, message: "Solo el administrador puede editar tipos" };
-    const s = fa.safeParse(c);
+    const s = Pa.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para actualizar el tipo" };
     const t = await r.correspondentTransactionType.findUnique({
@@ -1395,35 +1400,35 @@ function Da({
     }))
       return { success: !1, message: "Ya existe otro tipo con ese nombre en el corresponsal" };
     try {
-      const u = await r.correspondentTransactionType.update({
+      const d = await r.correspondentTransactionType.update({
         where: { id: t.id },
         data: {
           name: s.data.name.trim(),
           direction: s.data.direction
         }
       });
-      return await Q({
+      return await ee({
         prisma: r,
-        currentSessionUser: n,
+        currentSessionUser: o,
         action: "update_transaction_type",
-        context: `platform:${t.platformId};type:${u.id}`,
+        context: `platform:${t.platformId};type:${d.id}`,
         beforeJson: {
           name: t.name,
           direction: t.direction
         },
         afterJson: {
-          name: u.name,
-          direction: u.direction
+          name: d.name,
+          direction: d.direction
         }
-      }), { success: !0, typeId: u.id };
-    } catch (u) {
-      return { success: !1, message: u instanceof Error ? u.message : "No se pudo actualizar el tipo" };
+      }), { success: !0, typeId: d.id };
+    } catch (d) {
+      return { success: !1, message: d instanceof Error ? d.message : "No se pudo actualizar el tipo" };
     }
   }), a.handle("correspondent:type:delete", async (m, c) => {
-    const n = l();
-    if (!n || n.role !== F.ADMIN)
+    const o = l();
+    if (!o || o.role !== $.ADMIN)
       return { success: !1, message: "Solo el administrador puede eliminar tipos" };
-    const s = Ea.safeParse(c);
+    const s = La.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Tipo invalido" };
     const t = await r.correspondentTransactionType.findUnique({
@@ -1435,9 +1440,9 @@ function Da({
       return await r.correspondentTransactionType.update({
         where: { id: t.id },
         data: { isActive: !1 }
-      }), await Q({
+      }), await ee({
         prisma: r,
-        currentSessionUser: n,
+        currentSessionUser: o,
         action: "delete_transaction_type",
         context: `platform:${t.platformId};type:${t.id}`,
         beforeJson: {
@@ -1451,10 +1456,10 @@ function Da({
   }), a.handle("correspondent:closures:list", async (m, c) => {
     if (!l())
       return { success: !1, message: "Debes iniciar sesion", closures: [] };
-    const s = da.safeParse(c);
+    const s = Sa.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Fecha de cierre invalida", closures: [] };
-    const t = !!(s.data.dateFrom || s.data.dateTo), i = Ce(s.data.dateFrom ?? s.data.businessDate), u = Ce(s.data.dateTo ?? s.data.dateFrom ?? s.data.businessDate), f = Ce(s.data.businessDate ?? s.data.dateFrom), [g, T, I] = await Promise.all([
+    const t = !!(s.data.dateFrom || s.data.dateTo), i = ve(s.data.dateFrom ?? s.data.businessDate), d = ve(s.data.dateTo ?? s.data.dateFrom ?? s.data.businessDate), g = ve(s.data.businessDate ?? s.data.dateFrom), [p, T, I] = await Promise.all([
       r.correspondentPlatform.findMany({
         where: { isActive: !0 },
         orderBy: [{ createdAt: "asc" }, { name: "asc" }]
@@ -1462,77 +1467,77 @@ function Da({
       r.correspondentDailyClosure.findMany({
         where: t ? {
           businessDate: {
-            gte: ee(i),
-            lt: Re(u)
+            gte: ae(i),
+            lt: xe(d)
           }
-        } : { businessDate: f },
+        } : { businessDate: g },
         include: {
           platform: !0,
           closedBy: { select: { username: !0, name: !0 } }
         },
         orderBy: { closedAt: "desc" }
       }),
-      t ? Oa(r, i, u) : Ue(r, f)
-    ]), p = new Map(
-      T.map((v) => [v.platformId, v])
-    ), N = T.reduce((v, D) => (v[D.platformId] = (v[D.platformId] ?? 0) + 1, v), {}), C = I.reduce((v, D) => (v[D.platformId] = [...v[D.platformId] ?? [], D], v), {}), h = ve(I);
+      t ? za(r, i, d) : Be(r, g)
+    ]), f = new Map(
+      T.map((b) => [b.platformId, b])
+    ), y = T.reduce((b, D) => (b[D.platformId] = (b[D.platformId] ?? 0) + 1, b), {}), N = I.reduce((b, D) => (b[D.platformId] = [...b[D.platformId] ?? [], D], b), {}), C = we(I);
     return {
       success: !0,
       mode: t ? "range" : "day",
-      businessDate: f.toISOString(),
-      dateFrom: ee(i).toISOString(),
-      dateTo: ee(u).toISOString(),
+      businessDate: g.toISOString(),
+      dateFrom: ae(i).toISOString(),
+      dateTo: ae(d).toISOString(),
       totals: {
-        totalIn: h.totalIn,
-        totalOut: h.totalOut,
-        netTotal: h.totalIn - h.totalOut,
-        transactionsCount: h.transactionsCount
+        totalIn: C.totalIn,
+        totalOut: C.totalOut,
+        netTotal: C.totalIn - C.totalOut,
+        transactionsCount: C.transactionsCount
       },
-      closures: g.map((v) => {
-        const D = C[v.id] ?? [], P = ve(D), b = p.get(v.id) ?? null, d = D.reduce((A, S) => {
-          if (S.status === ne.VOIDED)
+      closures: p.map((b) => {
+        const D = N[b.id] ?? [], x = we(D), v = f.get(b.id) ?? null, u = D.reduce((A, S) => {
+          if (S.status === ie.VOIDED)
             return A;
-          const y = A[S.typeId] ?? {
+          const L = A[S.typeId] ?? {
             typeId: S.typeId,
             type: S.type.name,
             direction: S.type.direction,
             total: 0,
             count: 0
           };
-          return y.total += S.amount, y.count += 1, A[S.typeId] = y, A;
+          return L.total += S.amount, L.count += 1, A[S.typeId] = L, A;
         }, {});
         return {
-          platformId: v.id,
-          platform: v.name,
-          totalIn: P.totalIn,
-          totalOut: P.totalOut,
-          totalCommission: P.totalCommission,
-          expectedBalance: P.totalIn - P.totalOut + P.totalCommission,
-          transactionsCount: P.transactionsCount,
-          pendingTransactions: P.pendingClosureCount,
-          closuresCount: N[v.id] ?? 0,
-          breakdown: Object.values(d).sort((A, S) => A.type.localeCompare(S.type, "es")),
-          closure: !t && b ? {
-            id: b.id,
-            expectedBalance: b.expectedBalance,
-            reportedBalance: b.reportedBalance,
-            differenceAmount: b.differenceAmount,
-            status: b.status,
-            closedAt: b.closedAt.toISOString(),
-            closedBy: b.closedBy.name ?? b.closedBy.username,
-            note: b.note
+          platformId: b.id,
+          platform: b.name,
+          totalIn: x.totalIn,
+          totalOut: x.totalOut,
+          totalCommission: x.totalCommission,
+          expectedBalance: x.totalIn - x.totalOut + x.totalCommission,
+          transactionsCount: x.transactionsCount,
+          pendingTransactions: x.pendingClosureCount,
+          closuresCount: y[b.id] ?? 0,
+          breakdown: Object.values(u).sort((A, S) => A.type.localeCompare(S.type, "es")),
+          closure: !t && v ? {
+            id: v.id,
+            expectedBalance: v.expectedBalance,
+            reportedBalance: v.reportedBalance,
+            differenceAmount: v.differenceAmount,
+            status: v.status,
+            closedAt: v.closedAt.toISOString(),
+            closedBy: v.closedBy.name ?? v.closedBy.username,
+            note: v.note
           } : null
         };
       })
     };
   }), a.handle("correspondent:closure:create", async (m, c) => {
-    const n = l();
-    if (!n)
+    const o = l();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion para cerrar" };
-    const s = ua.safeParse(c);
+    const s = wa.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para el cierre" };
-    const t = s.data, i = Ce(t.businessDate);
+    const t = s.data, i = ve(t.businessDate);
     if (await r.correspondentDailyClosure.findFirst({
       where: {
         platformId: t.platformId,
@@ -1540,96 +1545,96 @@ function Da({
       }
     }))
       return { success: !1, message: "La plataforma ya fue cerrada para esa fecha" };
-    const [f, g, T] = await Promise.all([
+    const [g, p, T] = await Promise.all([
       r.correspondentPlatform.findUnique({ where: { id: t.platformId } }),
-      Ue(r, i, t.platformId),
-      tt(r, n.id)
+      Be(r, i, t.platformId),
+      lt(r, o.id)
     ]);
-    if (!f)
+    if (!g)
       return { success: !1, message: "Plataforma no encontrada" };
-    const I = g.filter(
-      (h) => h.status === ne.REGISTERED && !h.dailyClosureId
-    ), p = ve(I), N = t.openingBalance + p.totalIn - p.totalOut + p.totalCommission, C = t.reportedBalance - N;
+    const I = p.filter(
+      (C) => C.status === ie.REGISTERED && !C.dailyClosureId
+    ), f = we(I), y = t.openingBalance + f.totalIn - f.totalOut + f.totalCommission, N = t.reportedBalance - y;
     try {
-      const h = await r.$transaction(async (v) => {
-        var P;
-        const D = await v.correspondentDailyClosure.create({
+      const C = await r.$transaction(async (b) => {
+        var x;
+        const D = await b.correspondentDailyClosure.create({
           data: {
-            platformId: f.id,
+            platformId: g.id,
             cashSessionId: (T == null ? void 0 : T.id) ?? null,
             businessDate: i,
-            totalIn: p.totalIn,
-            totalOut: p.totalOut,
-            totalCommission: p.totalCommission,
-            transactionsCount: p.transactionsCount,
-            expectedBalance: N,
+            totalIn: f.totalIn,
+            totalOut: f.totalOut,
+            totalCommission: f.totalCommission,
+            transactionsCount: f.transactionsCount,
+            expectedBalance: y,
             reportedBalance: t.reportedBalance,
-            differenceAmount: C,
-            status: C === 0 ? We.CLOSED : We.WITH_DIFFERENCE,
-            note: ((P = t.note) == null ? void 0 : P.trim()) || null,
-            closedByUserId: n.id
+            differenceAmount: N,
+            status: N === 0 ? it.CLOSED : it.WITH_DIFFERENCE,
+            note: ((x = t.note) == null ? void 0 : x.trim()) || null,
+            closedByUserId: o.id
           }
         });
-        return I.length > 0 && await v.correspondentTransaction.updateMany({
+        return I.length > 0 && await b.correspondentTransaction.updateMany({
           where: {
-            id: { in: I.map((b) => b.id) }
+            id: { in: I.map((v) => v.id) }
           },
           data: {
             dailyClosureId: D.id
           }
         }), D;
       });
-      return await Q({
+      return await ee({
         prisma: r,
-        currentSessionUser: n,
+        currentSessionUser: o,
         action: "create_closure",
-        context: `platform:${f.id};closure:${h.id}`,
+        context: `platform:${g.id};closure:${C.id}`,
         afterJson: {
-          platform: f.name,
+          platform: g.name,
           businessDate: i.toISOString(),
-          expectedBalance: N,
+          expectedBalance: y,
           reportedBalance: t.reportedBalance,
-          differenceAmount: C
+          differenceAmount: N
         }
       }), {
         success: !0,
         closure: {
-          id: h.id,
-          expectedBalance: N,
-          reportedBalance: h.reportedBalance,
-          differenceAmount: h.differenceAmount,
-          status: h.status
+          id: C.id,
+          expectedBalance: y,
+          reportedBalance: C.reportedBalance,
+          differenceAmount: C.differenceAmount,
+          status: C.status
         }
       };
-    } catch (h) {
-      return { success: !1, message: h instanceof Error ? h.message : "No se pudo cerrar la plataforma" };
+    } catch (C) {
+      return { success: !1, message: C instanceof Error ? C.message : "No se pudo cerrar la plataforma" };
     }
   });
 }
-const xa = o.enum(["CASH", "TRANSFER", "CORRESPONDENT"]), Pa = o.object({
-  dateFrom: o.string().datetime().optional(),
-  dateTo: o.string().datetime().optional()
-}).optional().default({}), La = o.object({
-  saleId: o.string().uuid("saleId invalido"),
-  customerId: o.string().uuid("customerId invalido"),
-  total: o.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0").optional(),
-  dueDate: o.string().datetime("Fecha de vencimiento invalida").optional().nullable()
-}), Ua = o.object({
-  creditId: o.string().uuid("creditId invalido"),
-  amount: o.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
-  method: Ke.optional().default("CASH"),
-  note: o.string().trim().max(250).optional().nullable()
-}), Ma = o.object({
-  saleId: o.string().uuid("saleId invalido"),
-  amount: o.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
-  reason: o.string().trim().max(250).optional().nullable()
-}), _a = o.object({
-  amount: o.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
-  note: o.string().trim().min(2, "La descripcion es obligatoria").max(250),
-  type: o.enum(["EXPENSE_OUT", "WITHDRAWAL_OUT"]).optional().default("EXPENSE_OUT"),
-  sourceMedium: xa.optional().default("CASH"),
-  sourcePlatformId: o.string().uuid("Plataforma invalida").optional().nullable()
-}), Tt = o.enum([
+const Ha = n.enum(["CASH", "TRANSFER", "CORRESPONDENT"]), Ya = n.object({
+  dateFrom: n.string().datetime().optional(),
+  dateTo: n.string().datetime().optional()
+}).optional().default({}), Ja = n.object({
+  saleId: n.string().uuid("saleId invalido"),
+  customerId: n.string().uuid("customerId invalido"),
+  total: n.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0").optional(),
+  dueDate: n.string().datetime("Fecha de vencimiento invalida").optional().nullable()
+}), Qa = n.object({
+  creditId: n.string().uuid("creditId invalido"),
+  amount: n.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  method: Je.optional().default("CASH"),
+  note: n.string().trim().max(250).optional().nullable()
+}), Wa = n.object({
+  saleId: n.string().uuid("saleId invalido"),
+  amount: n.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  reason: n.string().trim().max(250).optional().nullable()
+}), Za = n.object({
+  amount: n.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  note: n.string().trim().min(2, "La descripcion es obligatoria").max(250),
+  type: n.enum(["EXPENSE_OUT", "WITHDRAWAL_OUT"]).optional().default("EXPENSE_OUT"),
+  sourceMedium: Ha.optional().default("CASH"),
+  sourcePlatformId: n.string().uuid("Plataforma invalida").optional().nullable()
+}), Dt = n.enum([
   "UNIDAD",
   "PAR",
   "METRO",
@@ -1644,57 +1649,114 @@ const xa = o.enum(["CASH", "TRANSFER", "CORRESPONDENT"]), Pa = o.object({
   "LIBRA",
   "KILO",
   "LITRO"
-]), Ba = [0, 0.05, 0.19];
-function It(e, a) {
-  e !== void 0 && (Ba.includes(e) || a.addIssue({
-    code: o.ZodIssueCode.custom,
+]), es = [0, 0.05, 0.19], ts = n.object({
+  minQty: n.number().int().min(1, "La cantidad minima debe ser mayor a 0"),
+  unitPrice: n.number().min(0, "El precio unitario no puede ser negativo")
+}), as = n.object({
+  id: n.string().trim().min(1).max(80),
+  label: n.string().trim().min(1).max(80),
+  unitPrice: n.number().min(0, "El precio unitario no puede ser negativo")
+}), ss = n.object({
+  id: n.string().trim().min(1).max(80),
+  name: n.string().trim().min(1).max(60),
+  basePrice: n.number().positive("El precio base por hoja debe ser mayor a 0"),
+  minimumPrice: n.number().min(0).nullable().optional(),
+  quantityScales: n.array(ts).optional().default([]),
+  specialPriceRules: n.array(as).optional().default([])
+}), Pt = n.object({
+  enabled: n.boolean().optional().default(!1),
+  minimumPrice: n.number().min(0, "El precio minimo no puede ser negativo").optional().default(0),
+  sheetTypes: n.array(ss).optional().default([])
+}).superRefine((e, a) => {
+  if (!e.enabled)
+    return;
+  e.sheetTypes.length === 0 && a.addIssue({
+    code: n.ZodIssueCode.custom,
+    message: "Debes configurar al menos un tipo de hoja",
+    path: ["sheetTypes"]
+  });
+  const r = /* @__PURE__ */ new Set();
+  for (const [l, m] of e.sheetTypes.entries()) {
+    r.has(m.id) && a.addIssue({
+      code: n.ZodIssueCode.custom,
+      message: "Cada tipo de hoja debe tener un identificador unico",
+      path: ["sheetTypes", l, "id"]
+    }), r.add(m.id);
+    const c = m.minimumPrice ?? e.minimumPrice;
+    for (const s of m.quantityScales)
+      if (s.unitPrice < c) {
+        a.addIssue({
+          code: n.ZodIssueCode.custom,
+          message: "La escala no puede quedar por debajo del precio minimo permitido",
+          path: ["sheetTypes", l, "quantityScales"]
+        });
+        break;
+      }
+    const o = /* @__PURE__ */ new Set();
+    for (const [s, t] of m.specialPriceRules.entries())
+      t.unitPrice < c && a.addIssue({
+        code: n.ZodIssueCode.custom,
+        message: "La tarifa especial no puede quedar por debajo del precio minimo permitido",
+        path: ["sheetTypes", l, "specialPriceRules", s, "unitPrice"]
+      }), o.has(t.id) && a.addIssue({
+        code: n.ZodIssueCode.custom,
+        message: "Cada tarifa especial debe tener un identificador unico dentro del tipo de hoja",
+        path: ["sheetTypes", l, "specialPriceRules", s, "id"]
+      }), o.add(t.id);
+  }
+});
+function xt(e, a) {
+  e !== void 0 && (es.includes(e) || a.addIssue({
+    code: n.ZodIssueCode.custom,
     message: "El IVA permitido es: no aplica, 0%, 5% o 19%",
     path: ["taxRate"]
   }));
 }
-const Fa = o.object({
-  name: o.string({ message: "El nombre es obligatorio" }).trim().min(2, "Minimo 2 caracteres").max(120, "Maximo 120 caracteres"),
-  barcode: o.string().trim().min(1).max(50).optional().nullable(),
-  sku: o.string().trim().min(1).max(50).optional().nullable(),
-  unitMeasure: Tt.optional().default("UNIDAD"),
-  price: o.number({ message: "El precio es obligatorio" }).positive("El precio debe ser mayor a 0"),
-  cost: o.number().min(0, "El costo no puede ser negativo").optional().default(0),
-  marginPercent: o.number().min(0, "La ganancia no puede ser negativa").optional().default(0),
-  hasTax: o.boolean().optional().default(!1),
-  taxRate: o.number().min(0).max(1).optional().default(0),
-  stock: o.number().int("El stock debe ser un numero entero").min(0, "El stock no puede ser negativo").optional().default(0),
-  categoryId: o.string().uuid().optional().nullable(),
-  subcategoryId: o.string().uuid().optional().nullable(),
-  isActive: o.boolean().optional().default(!0)
+const rs = n.object({
+  name: n.string({ message: "El nombre es obligatorio" }).trim().min(2, "Minimo 2 caracteres").max(120, "Maximo 120 caracteres"),
+  barcode: n.string().trim().min(1).max(50).optional().nullable(),
+  sku: n.string().trim().min(1).max(50).optional().nullable(),
+  unitMeasure: Dt.optional().default("UNIDAD"),
+  price: n.number({ message: "El precio es obligatorio" }).positive("El precio debe ser mayor a 0"),
+  cost: n.number().min(0, "El costo no puede ser negativo").optional().default(0),
+  marginPercent: n.number().min(0, "La ganancia no puede ser negativa").optional().default(0),
+  hasTax: n.boolean().optional().default(!1),
+  taxRate: n.number().min(0).max(1).optional().default(0),
+  stock: n.number().int("El stock debe ser un numero entero").min(0, "El stock no puede ser negativo").optional().default(0),
+  categoryId: n.string().uuid().optional().nullable(),
+  subcategoryId: n.string().uuid().optional().nullable(),
+  isActive: n.boolean().optional().default(!0),
+  pricingConfig: Pt.optional().nullable()
 }).superRefine((e, a) => {
-  It(e.taxRate, a);
-}), $a = o.object({
-  id: o.string().uuid("ID de producto invalido"),
-  name: o.string().trim().min(2, "Minimo 2 caracteres").max(120).optional(),
-  barcode: o.string().trim().min(1).max(50).optional().nullable(),
-  sku: o.string().trim().min(1).max(50).optional().nullable(),
-  unitMeasure: Tt.optional(),
-  price: o.number().positive("El precio debe ser mayor a 0").optional(),
-  cost: o.number().min(0).optional(),
-  marginPercent: o.number().min(0).optional(),
-  hasTax: o.boolean().optional(),
-  taxRate: o.number().min(0).max(1).optional(),
-  stock: o.number().int().min(0).optional(),
-  categoryId: o.string().uuid().optional().nullable(),
-  subcategoryId: o.string().uuid().optional().nullable(),
-  isActive: o.boolean().optional()
+  xt(e.taxRate, a);
+}), ns = n.object({
+  id: n.string().uuid("ID de producto invalido"),
+  name: n.string().trim().min(2, "Minimo 2 caracteres").max(120).optional(),
+  barcode: n.string().trim().min(1).max(50).optional().nullable(),
+  sku: n.string().trim().min(1).max(50).optional().nullable(),
+  unitMeasure: Dt.optional(),
+  price: n.number().positive("El precio debe ser mayor a 0").optional(),
+  cost: n.number().min(0).optional(),
+  marginPercent: n.number().min(0).optional(),
+  hasTax: n.boolean().optional(),
+  taxRate: n.number().min(0).max(1).optional(),
+  stock: n.number().int().min(0).optional(),
+  categoryId: n.string().uuid().optional().nullable(),
+  subcategoryId: n.string().uuid().optional().nullable(),
+  isActive: n.boolean().optional(),
+  pricingConfig: Pt.optional().nullable()
 }).superRefine((e, a) => {
-  It(e.taxRate, a);
+  xt(e.taxRate, a);
 });
-o.object({
-  productId: o.string().uuid("ID de producto invalido"),
-  delta: o.number().int("El ajuste debe ser un numero entero").refine((e) => e !== 0, "El ajuste no puede ser 0"),
-  reason: o.string().trim().max(200).optional()
+n.object({
+  productId: n.string().uuid("ID de producto invalido"),
+  delta: n.number().int("El ajuste debe ser un numero entero").refine((e) => e !== 0, "El ajuste no puede ser 0"),
+  reason: n.string().trim().max(200).optional()
 });
-o.object({
-  barcode: o.string().trim().min(1, "Barcode no puede estar vacio")
+n.object({
+  barcode: n.string().trim().min(1, "Barcode no puede estar vacio")
 });
-const yt = {
+const Lt = {
   title: "Acceso a interfaces",
   groups: [
     {
@@ -1740,8 +1802,8 @@ const yt = {
       ]
     }
   ]
-}, ka = [
-  yt,
+}, os = [
+  Lt,
   {
     title: "Contabilidad",
     groups: [
@@ -2162,8 +2224,8 @@ const yt = {
       }
     ]
   }
-], Xa = [
-  yt,
+], is = [
+  Lt,
   {
     title: "POS",
     groups: [
@@ -2229,34 +2291,34 @@ const yt = {
       }
     ]
   }
-], De = [
+], Le = [
   {
     key: "ADMIN",
     name: "Administrador",
     description: "Acceso completo a todas las secciones del sistema, puede agregar o eliminar usuarios y administrar la configuracion general.",
-    sections: ka
+    sections: os
   },
   {
     key: "EMPLOYEE",
     name: "Empleado",
     description: "Acceso operativo para ventas y caja, con permisos limitados sobre configuracion, usuarios y reportes sensibles.",
-    sections: Xa
+    sections: is
   }
 ];
-function Va(e) {
-  return De.find((a) => a.key === e) ?? De[0];
+function cs(e) {
+  return Le.find((a) => a.key === e) ?? Le[0];
 }
-function Me(e) {
+function Fe(e) {
   return e.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
-function O(e, a, r) {
-  return [Me(e), Me(a), Me(r)].filter(Boolean).join(".");
+function w(e, a, r) {
+  return [Fe(e), Fe(a), Fe(r)].filter(Boolean).join(".");
 }
-function Nt(e) {
+function Ut(e) {
   return e.sections.flatMap(
     (a) => a.groups.flatMap(
       (r) => r.permissions.map((l) => ({
-        key: O(a.title, r.title, l),
+        key: w(a.title, r.title, l),
         label: l,
         sectionTitle: a.title,
         groupTitle: r.title
@@ -2264,66 +2326,71 @@ function Nt(e) {
     )
   );
 }
-function Ct(e, a) {
-  return Nt(Va(e)).find((r) => r.key === a) ?? null;
+function Mt(e, a) {
+  return Ut(cs(e)).find((r) => r.key === a) ?? null;
 }
-const qa = {
-  posAccess: O("Acceso a interfaces", "Operacion comercial", "Acceder a Facturar"),
-  salesAccess: O("Acceso a interfaces", "Operacion comercial", "Acceder a Historial ventas"),
-  customersAccess: O("Acceso a interfaces", "Operacion comercial", "Acceder a Clientes"),
-  purchasesAccess: O("Acceso a interfaces", "Operacion comercial", "Acceder a Compras"),
-  suppliersAccess: O("Acceso a interfaces", "Operacion comercial", "Acceder a Proveedores"),
-  cashAccess: O("Acceso a interfaces", "Caja y corresponsal", "Acceder a Caja general"),
-  correspondentAccess: O("Acceso a interfaces", "Caja y corresponsal", "Acceder a Corresponsal transacciones"),
-  correspondentHistoryAccess: O("Acceso a interfaces", "Caja y corresponsal", "Acceder a Corresponsal historial"),
-  correspondentClosuresAccess: O("Acceso a interfaces", "Caja y corresponsal", "Acceder a Corresponsal resumen diario"),
-  correspondentSettingsAccess: O("Acceso a interfaces", "Caja y corresponsal", "Acceder a Corresponsal configuracion"),
-  productsAccess: O("Acceso a interfaces", "Inventario", "Acceder a Productos"),
-  stockMovesAccess: O("Acceso a interfaces", "Inventario", "Acceder a Movimientos de inventario"),
-  accountingAccess: O("Acceso a interfaces", "Control financiero", "Acceder a Centro contable"),
-  reportsAccess: O("Acceso a interfaces", "Control financiero", "Acceder a Reportes"),
-  usersAccess: O("Acceso a interfaces", "Gestion y sistema", "Acceder a Usuarios"),
-  rolesAccess: O("Acceso a interfaces", "Gestion y sistema", "Acceder a Roles y permisos"),
-  settingsAccess: O("Acceso a interfaces", "Gestion y sistema", "Acceder a Configuracion")
-}, ja = {
-  salesCreate: O("POS", "Operacion POS", "Crear ventas desde POS"),
-  salesChangeCustomer: O("POS", "Operacion POS", "Cambiar cliente en la factura"),
-  salesManagePayments: O("POS", "Operacion POS", "Gestionar pagos en efectivo, transferencia y combinado"),
-  salesHistory: O("POS", "Operacion POS", "Ver historial de ventas"),
-  salesPrint: O("POS", "Operacion POS", "Imprimir factura"),
-  cashOpen: O("POS", "Caja y control diario", "Abrir caja"),
-  cashClose: O("POS", "Caja y control diario", "Cerrar caja"),
-  cashView: O("POS", "Caja y control diario", "Consultar resumen de caja"),
-  productsView: O("Contabilidad", "Items, inventario y contactos", "Ver listado de items"),
-  productsCreate: O("Contabilidad", "Items, inventario y contactos", "Crear nuevos items de venta"),
-  productsEdit: O("Contabilidad", "Items, inventario y contactos", "Editar items"),
-  productsDelete: O("Contabilidad", "Items, inventario y contactos", "Eliminar items"),
-  stockMovesView: O("Contabilidad", "Items, inventario y contactos", "Ver listado de ajustes de inventario"),
-  purchasesView: O("Contabilidad", "Compras y proveedores", "Ver listado de facturas de proveedores"),
-  purchasesDetails: O("Contabilidad", "Compras y proveedores", "Ver detalles de facturas de proveedores"),
-  purchasesCreate: O("Contabilidad", "Compras y proveedores", "Crear nuevas facturas de proveedores"),
-  suppliersView: O("Contabilidad", "Items, inventario y contactos", "Ver listado de proveedores"),
-  suppliersCreate: O("Contabilidad", "Items, inventario y contactos", "Agregar nuevos contactos"),
-  suppliersEdit: O("Contabilidad", "Items, inventario y contactos", "Editar contactos"),
-  usersView: O("Configuraciones generales", "Usuarios y seguridad", "Ver usuarios"),
-  usersCreate: O("Configuraciones generales", "Usuarios y seguridad", "Crear usuarios"),
-  usersEdit: O("Configuraciones generales", "Usuarios y seguridad", "Editar usuarios"),
-  rolesView: O("Configuraciones generales", "Usuarios y seguridad", "Ver roles y permisos"),
-  rolesManage: O("Configuraciones generales", "Usuarios y seguridad", "Administrar el rol Administrador"),
-  customersView: O("Contabilidad", "Items, inventario y contactos", "Ver listado de clientes"),
-  customersCreate: O("Contabilidad", "Items, inventario y contactos", "Agregar nuevos contactos"),
-  customersEdit: O("Contabilidad", "Items, inventario y contactos", "Editar contactos"),
-  correspondentView: O("POS", "Operacion de tienda", "Gestionar corresponsal"),
-  reportsView: O("Contabilidad", "Reportes comerciales y financieros", "Ver reporte de ventas generales"),
-  settingsView: O("Configuraciones generales", "Negocio y sistema", "Editar configuracion general del negocio"),
-  settingsTheme: O("Configuraciones generales", "Interfaz del sistema", "Cambiar tema del sistema"),
-  settingsBusiness: O("Configuraciones generales", "Datos del negocio", "Editar datos del negocio"),
-  settingsBilling: O("Configuraciones generales", "Facturacion e impresion", "Configurar factura e impresion"),
-  settingsInventory: O("Configuraciones generales", "Inventario y operacion", "Configurar inventario y comportamiento de venta")
+const ds = {
+  posAccess: w("Acceso a interfaces", "Operacion comercial", "Acceder a Facturar"),
+  salesAccess: w("Acceso a interfaces", "Operacion comercial", "Acceder a Historial ventas"),
+  customersAccess: w("Acceso a interfaces", "Operacion comercial", "Acceder a Clientes"),
+  purchasesAccess: w("Acceso a interfaces", "Operacion comercial", "Acceder a Compras"),
+  suppliersAccess: w("Acceso a interfaces", "Operacion comercial", "Acceder a Proveedores"),
+  cashAccess: w("Acceso a interfaces", "Caja y corresponsal", "Acceder a Caja general"),
+  correspondentAccess: w("Acceso a interfaces", "Caja y corresponsal", "Acceder a Corresponsal transacciones"),
+  correspondentHistoryAccess: w("Acceso a interfaces", "Caja y corresponsal", "Acceder a Corresponsal historial"),
+  correspondentClosuresAccess: w("Acceso a interfaces", "Caja y corresponsal", "Acceder a Corresponsal resumen diario"),
+  correspondentSettingsAccess: w("Acceso a interfaces", "Caja y corresponsal", "Acceder a Corresponsal configuracion"),
+  productsAccess: w("Acceso a interfaces", "Inventario", "Acceder a Productos"),
+  stockMovesAccess: w("Acceso a interfaces", "Inventario", "Acceder a Movimientos de inventario"),
+  accountingAccess: w("Acceso a interfaces", "Control financiero", "Acceder a Centro contable"),
+  reportsAccess: w("Acceso a interfaces", "Control financiero", "Acceder a Reportes"),
+  usersAccess: w("Acceso a interfaces", "Gestion y sistema", "Acceder a Usuarios"),
+  rolesAccess: w("Acceso a interfaces", "Gestion y sistema", "Acceder a Roles y permisos"),
+  settingsAccess: w("Acceso a interfaces", "Gestion y sistema", "Acceder a Configuracion")
+}, us = {
+  salesCreate: w("POS", "Operacion POS", "Crear ventas desde POS"),
+  salesChangeCustomer: w("POS", "Operacion POS", "Cambiar cliente en la factura"),
+  salesManagePayments: w("POS", "Operacion POS", "Gestionar pagos en efectivo, transferencia y combinado"),
+  salesHistory: w("POS", "Operacion POS", "Ver historial de ventas"),
+  salesPrint: w("POS", "Operacion POS", "Imprimir factura"),
+  salesEditItemPrices: w(
+    "Contabilidad",
+    "Facturas de venta",
+    "Editar precios de los items de venta en facturas"
+  ),
+  cashOpen: w("POS", "Caja y control diario", "Abrir caja"),
+  cashClose: w("POS", "Caja y control diario", "Cerrar caja"),
+  cashView: w("POS", "Caja y control diario", "Consultar resumen de caja"),
+  productsView: w("Contabilidad", "Items, inventario y contactos", "Ver listado de items"),
+  productsCreate: w("Contabilidad", "Items, inventario y contactos", "Crear nuevos items de venta"),
+  productsEdit: w("Contabilidad", "Items, inventario y contactos", "Editar items"),
+  productsDelete: w("Contabilidad", "Items, inventario y contactos", "Eliminar items"),
+  stockMovesView: w("Contabilidad", "Items, inventario y contactos", "Ver listado de ajustes de inventario"),
+  purchasesView: w("Contabilidad", "Compras y proveedores", "Ver listado de facturas de proveedores"),
+  purchasesDetails: w("Contabilidad", "Compras y proveedores", "Ver detalles de facturas de proveedores"),
+  purchasesCreate: w("Contabilidad", "Compras y proveedores", "Crear nuevas facturas de proveedores"),
+  suppliersView: w("Contabilidad", "Items, inventario y contactos", "Ver listado de proveedores"),
+  suppliersCreate: w("Contabilidad", "Items, inventario y contactos", "Agregar nuevos contactos"),
+  suppliersEdit: w("Contabilidad", "Items, inventario y contactos", "Editar contactos"),
+  usersView: w("Configuraciones generales", "Usuarios y seguridad", "Ver usuarios"),
+  usersCreate: w("Configuraciones generales", "Usuarios y seguridad", "Crear usuarios"),
+  usersEdit: w("Configuraciones generales", "Usuarios y seguridad", "Editar usuarios"),
+  rolesView: w("Configuraciones generales", "Usuarios y seguridad", "Ver roles y permisos"),
+  rolesManage: w("Configuraciones generales", "Usuarios y seguridad", "Administrar el rol Administrador"),
+  customersView: w("Contabilidad", "Items, inventario y contactos", "Ver listado de clientes"),
+  customersCreate: w("Contabilidad", "Items, inventario y contactos", "Agregar nuevos contactos"),
+  customersEdit: w("Contabilidad", "Items, inventario y contactos", "Editar contactos"),
+  correspondentView: w("POS", "Operacion de tienda", "Gestionar corresponsal"),
+  reportsView: w("Contabilidad", "Reportes comerciales y financieros", "Ver reporte de ventas generales"),
+  settingsView: w("Configuraciones generales", "Negocio y sistema", "Editar configuracion general del negocio"),
+  settingsTheme: w("Configuraciones generales", "Interfaz del sistema", "Cambiar tema del sistema"),
+  settingsBusiness: w("Configuraciones generales", "Datos del negocio", "Editar datos del negocio"),
+  settingsBilling: w("Configuraciones generales", "Facturacion e impresion", "Configurar factura e impresion"),
+  settingsInventory: w("Configuraciones generales", "Inventario y operacion", "Configurar inventario y comportamiento de venta")
 }, E = {
-  ...qa,
-  ...ja
-}, ht = {
+  ...ds,
+  ...us
+}, _t = {
   [E.posAccess]: [
     E.salesCreate,
     E.salesChangeCustomer,
@@ -2387,12 +2454,12 @@ const qa = {
     E.settingsBilling,
     E.settingsInventory
   ]
-}, vt = {
+}, Bt = {
   [E.settingsTheme]: [E.settingsView],
   [E.settingsBusiness]: [E.settingsView],
   [E.settingsBilling]: [E.settingsView],
   [E.settingsInventory]: [E.settingsView]
-}, za = {
+}, ls = {
   [E.settingsView]: [
     E.settingsTheme,
     E.settingsBusiness,
@@ -2401,26 +2468,26 @@ const qa = {
   ]
 };
 [
-  ...Object.keys(ht),
-  ...Object.keys(vt)
+  ...Object.keys(_t),
+  ...Object.keys(Bt)
 ];
-function Ga(e) {
+function ms(e) {
   return e ? [
     e,
-    ...ht[e] ?? [],
-    ...vt[e] ?? []
+    ..._t[e] ?? [],
+    ...Bt[e] ?? []
   ] : [];
 }
-function bt(e, a) {
+function Ft(e, a) {
   if (!a)
     return !0;
   const r = e ?? [];
-  return Ga(a).some((l) => r.includes(l));
+  return ms(a).some((l) => r.includes(l));
 }
-function Ne(e) {
+function be(e) {
   const a = /* @__PURE__ */ new Set();
   for (const r of e ?? []) {
-    const l = za[r];
+    const l = ls[r];
     if (l) {
       for (const m of l)
         a.add(m);
@@ -2430,129 +2497,293 @@ function Ne(e) {
   }
   return Array.from(a);
 }
-const Ka = o.object({
-  name: o.string().trim().min(2).max(80)
-}), Ha = o.object({
-  categoryId: o.string().uuid(),
-  name: o.string().trim().min(2).max(80)
-}), Ee = o.object({
-  id: o.string().uuid()
-}), St = o.enum([
+function re(e) {
+  return Math.max(0, Math.round(Number(e || 0)));
+}
+function ps(e) {
+  return String(e || "").trim() || "Hoja";
+}
+function kt(e) {
+  return {
+    minQty: Math.max(1, Math.round(Number(e.minQty || 0))),
+    unitPrice: re(e.unitPrice)
+  };
+}
+function We(e) {
+  return {
+    id: String(e.id || "").trim() || crypto.randomUUID(),
+    label: String(e.label || "").trim() || "Tarifa especial",
+    unitPrice: re(e.unitPrice)
+  };
+}
+function fs(e) {
+  return We({
+    id: `legacy-${e.customerSegment.toLowerCase()}`,
+    label: e.customerSegment === "DOCENTE" ? "Tarifa docente" : "Tarifa especial",
+    unitPrice: e.unitPrice
+  });
+}
+function gs(e, a) {
+  return [...e.quantityScales].map(kt).filter((l) => l.minQty <= a && l.unitPrice > 0).sort((l, m) => m.minQty - l.minQty)[0] ?? null;
+}
+function Es(e, a) {
+  return a ? e.specialPriceRules.map(We).find((r) => r.id === a && r.unitPrice > 0) ?? null : null;
+}
+function Ee(e) {
+  if (!(e != null && e.enabled))
+    return null;
+  const a = (e.sheetTypes ?? []).map((r) => {
+    const l = "customerSegmentRules" in r ? r.customerSegmentRules ?? [] : [];
+    return {
+      id: String(r.id || "").trim() || crypto.randomUUID(),
+      name: ps(r.name),
+      basePrice: re(r.basePrice),
+      minimumPrice: r.minimumPrice === null || r.minimumPrice === void 0 ? null : re(r.minimumPrice),
+      quantityScales: (r.quantityScales ?? []).map(kt).filter((m) => m.unitPrice > 0).sort((m, c) => m.minQty - c.minQty).filter(
+        (m, c, o) => o.findIndex((s) => s.minQty === m.minQty) === c
+      ),
+      specialPriceRules: [...r.specialPriceRules ?? [], ...l.map(fs)].map(We).filter((m) => m.unitPrice > 0).filter(
+        (m, c, o) => o.findIndex(
+          (s) => s.id === m.id || s.label.toLowerCase() === m.label.toLowerCase()
+        ) === c
+      )
+    };
+  }).filter((r) => r.basePrice > 0);
+  return a.length === 0 ? null : {
+    enabled: !0,
+    minimumPrice: re(e.minimumPrice),
+    sheetTypes: a
+  };
+}
+function Ue(e) {
+  if (!e)
+    return null;
+  try {
+    const a = JSON.parse(e);
+    return Ee(a);
+  } catch {
+    return null;
+  }
+}
+function pt(e) {
+  const a = Ee(e);
+  return a ? JSON.stringify(a) : null;
+}
+function ft(e, a) {
+  const r = Ee(a);
+  if (!r)
+    return re(e);
+  const m = r.sheetTypes.flatMap((c) => [
+    c.basePrice,
+    ...c.quantityScales.map((o) => o.unitPrice)
+  ]).filter((c) => c > 0);
+  return m.length > 0 ? Math.min(...m) : re(e);
+}
+function Ts({
+  fallbackPrice: e,
+  pricingConfig: a,
+  qty: r,
+  sheetTypeId: l,
+  specialRuleId: m,
+  manualUnitPrice: c,
+  canOverrideMinimum: o = !1
+}) {
+  const s = Math.max(1, Math.round(Number(r || 1))), t = re(e), i = Ee(a);
+  if (!i)
+    return {
+      ok: !0,
+      quote: {
+        unitPrice: t,
+        subtotal: t * s,
+        minimumPrice: 0,
+        sheetTypeId: null,
+        sheetTypeName: null,
+        specialRuleId: null,
+        specialRuleLabel: null,
+        source: "FIXED_PRICE",
+        sourceLabel: "Precio fijo del producto",
+        priceBeforeMinimum: t,
+        minimumApplied: !1
+      }
+    };
+  const d = i.sheetTypes.find((N) => N.id === l) ?? (i.sheetTypes.length === 1 ? i.sheetTypes[0] : null);
+  if (!d)
+    return {
+      ok: !1,
+      message: "Debes seleccionar el tipo de hoja para este producto.",
+      requiresSheetSelection: !0
+    };
+  const g = d.minimumPrice ?? i.minimumPrice;
+  if (c != null) {
+    const N = re(c);
+    return N < g && !o ? {
+      ok: !1,
+      message: `El precio manual no puede quedar por debajo del minimo permitido de ${g}.`
+    } : {
+      ok: !0,
+      quote: {
+        unitPrice: N,
+        subtotal: N * s,
+        minimumPrice: g,
+        sheetTypeId: d.id,
+        sheetTypeName: d.name,
+        specialRuleId: null,
+        specialRuleLabel: null,
+        source: "MANUAL_OVERRIDE",
+        sourceLabel: "Ajuste manual autorizado",
+        priceBeforeMinimum: N,
+        minimumApplied: !1
+      }
+    };
+  }
+  const p = Es(d, m);
+  if (m && !p)
+    return {
+      ok: !1,
+      message: "La tarifa especial seleccionada ya no esta disponible para este producto."
+    };
+  const T = gs(d, s), I = (T == null ? void 0 : T.unitPrice) ?? d.basePrice, f = (p == null ? void 0 : p.unitPrice) ?? I, y = f < g && !o ? g : f;
+  return {
+    ok: !0,
+    quote: {
+      unitPrice: y,
+      subtotal: y * s,
+      minimumPrice: g,
+      sheetTypeId: d.id,
+      sheetTypeName: d.name,
+      specialRuleId: (p == null ? void 0 : p.id) ?? null,
+      specialRuleLabel: (p == null ? void 0 : p.label) ?? null,
+      source: p ? "SPECIAL_RULE" : T ? "QUANTITY_SCALE" : "FIXED_PRICE",
+      sourceLabel: p ? p.label : T ? `Escala desde ${T.minQty} unidades` : "Precio base por hoja",
+      priceBeforeMinimum: f,
+      minimumApplied: y !== f
+    }
+  };
+}
+const As = n.object({
+  name: n.string().trim().min(2).max(80)
+}), ys = n.object({
+  categoryId: n.string().uuid(),
+  name: n.string().trim().min(2).max(80)
+}), ye = n.object({
+  id: n.string().uuid()
+}), $t = n.enum([
   "Cédula",
   "NIT",
   "Cédula de extranjería",
   "Pasaporte",
   "Tarjeta de identidad"
-]), wt = o.object({
-  internalCode: o.string().trim().max(30).optional().nullable(),
-  firstName: o.string().trim().min(2).max(80),
-  lastName: o.string().trim().max(80).optional().default(""),
-  documentType: St.optional().default("Cédula"),
-  documentNumber: o.string().trim().max(40).optional().nullable(),
-  phone: o.string().trim().regex(/^\d{10}$/).optional().nullable(),
-  email: o.string().trim().email().max(120).optional().nullable(),
-  address: o.string().trim().max(180).optional().nullable(),
-  isActive: o.boolean().optional().default(!0)
-}), Ya = wt.extend({
-  id: o.string().uuid()
-}), Ot = o.object({
-  internalCode: o.string().trim().max(30).optional().nullable(),
-  name: o.string().trim().min(2).max(120),
-  contactName: o.string().trim().max(120).optional().nullable(),
-  documentType: St.optional().default("NIT"),
-  documentNumber: o.string().trim().max(40).optional().nullable(),
-  phone: o.string().trim().regex(/^\d{10}$/).optional().nullable(),
-  email: o.string().trim().email().max(120).optional().nullable(),
-  address: o.string().trim().max(180).optional().nullable(),
-  isActive: o.boolean().optional().default(!0)
-}), Ja = Ot.extend({
-  id: o.string().uuid()
-}), Wa = o.object({
-  supplierId: o.string().uuid(),
-  purchasedAt: o.string().datetime().optional(),
-  note: o.string().trim().max(300).optional().nullable(),
-  markAsPaid: o.boolean().optional().default(!1),
-  paymentMedium: o.enum(["CASH", "TRANSFER", "CORRESPONDENT"]).optional().default("CASH"),
-  paymentPlatformId: o.string().uuid().optional().nullable(),
-  items: o.array(
-    o.object({
-      productId: o.string().uuid(),
-      qty: o.number().int().positive(),
-      cost: o.number().positive(),
-      taxRate: o.number().min(0).max(1).optional().default(0.19)
+]), qt = n.object({
+  internalCode: n.string().trim().max(30).optional().nullable(),
+  firstName: n.string().trim().min(2).max(80),
+  lastName: n.string().trim().max(80).optional().default(""),
+  documentType: $t.optional().default("Cédula"),
+  documentNumber: n.string().trim().max(40).optional().nullable(),
+  segment: n.enum(["GENERAL", "DOCENTE"]).optional().default("GENERAL"),
+  phone: n.string().trim().regex(/^\d{10}$/).optional().nullable(),
+  email: n.string().trim().email().max(120).optional().nullable(),
+  address: n.string().trim().max(180).optional().nullable(),
+  isActive: n.boolean().optional().default(!0)
+}), Is = qt.extend({
+  id: n.string().uuid()
+}), Xt = n.object({
+  internalCode: n.string().trim().max(30).optional().nullable(),
+  name: n.string().trim().min(2).max(120),
+  contactName: n.string().trim().max(120).optional().nullable(),
+  documentType: $t.optional().default("NIT"),
+  documentNumber: n.string().trim().max(40).optional().nullable(),
+  phone: n.string().trim().regex(/^\d{10}$/).optional().nullable(),
+  email: n.string().trim().email().max(120).optional().nullable(),
+  address: n.string().trim().max(180).optional().nullable(),
+  isActive: n.boolean().optional().default(!0)
+}), Ns = Xt.extend({
+  id: n.string().uuid()
+}), hs = n.object({
+  supplierId: n.string().uuid(),
+  purchasedAt: n.string().datetime().optional(),
+  note: n.string().trim().max(300).optional().nullable(),
+  markAsPaid: n.boolean().optional().default(!1),
+  paymentMedium: n.enum(["CASH", "TRANSFER", "CORRESPONDENT"]).optional().default("CASH"),
+  paymentPlatformId: n.string().uuid().optional().nullable(),
+  items: n.array(
+    n.object({
+      productId: n.string().uuid(),
+      qty: n.number().int().positive(),
+      cost: n.number().positive(),
+      taxRate: n.number().min(0).max(1).optional().default(0.19)
     })
   ).min(1)
-}), Rt = o.object({
-  platformId: o.string().uuid(),
-  amount: o.number().min(0)
-}), Qa = o.object({
-  openingCashAmount: o.number().min(0),
-  openingTransferAmount: o.number().min(0).optional().default(0),
-  note: o.string().trim().max(300).optional().nullable(),
-  cashBreakdown: o.record(o.string(), o.number()).optional().default({}),
-  correspondentBalances: o.array(Rt).optional().default([])
-}), Za = o.object({
-  sessionId: o.string().uuid(),
-  countedCashAmount: o.number().min(0),
-  countedTransferAmount: o.number().min(0).optional().default(0),
-  note: o.string().trim().max(300).optional().nullable(),
-  cashBreakdown: o.record(o.string(), o.number()).optional().default({}),
-  correspondentBalances: o.array(Rt).optional().default([])
-}), es = o.enum(["LIGHT", "DARK"]), Dt = o.enum(["NORMAL", "THERMAL_80", "THERMAL_50"]), ts = o.object({
-  businessName: o.string().trim().max(120).optional().nullable(),
-  taxId: o.string().trim().max(40).optional().nullable(),
-  address: o.string().trim().max(180).optional().nullable(),
-  city: o.string().trim().max(80).optional().nullable()
-}), as = o.object({
-  themeMode: es
-}), ss = o.object({
-  invoicePrefix: o.string().trim().max(10).optional().nullable(),
-  defaultReceiptTemplate: Dt.optional().default("NORMAL"),
-  receiptFooter: o.string().trim().max(400).optional().nullable()
-}), rs = o.object({
-  defaultTaxRate: o.number().min(0).max(1).optional(),
-  allowNegativeStock: o.boolean().optional()
-}), ns = o.object({
-  dateFrom: o.string().datetime().optional(),
-  dateTo: o.string().datetime().optional(),
-  cashierId: o.string().uuid().optional(),
-  status: o.nativeEnum(me).optional(),
-  search: o.string().trim().max(80).optional()
-}).optional().default({}), os = o.object({
-  saleId: o.string().uuid()
-}), st = os.extend({
-  template: Dt.optional().default("NORMAL")
+}), Vt = n.object({
+  platformId: n.string().uuid(),
+  amount: n.number().min(0)
+}), Cs = n.object({
+  openingCashAmount: n.number().min(0),
+  openingTransferAmount: n.number().min(0).optional().default(0),
+  note: n.string().trim().max(300).optional().nullable(),
+  cashBreakdown: n.record(n.string(), n.number()).optional().default({}),
+  correspondentBalances: n.array(Vt).optional().default([])
+}), bs = n.object({
+  sessionId: n.string().uuid(),
+  countedCashAmount: n.number().min(0),
+  countedTransferAmount: n.number().min(0).optional().default(0),
+  note: n.string().trim().max(300).optional().nullable(),
+  cashBreakdown: n.record(n.string(), n.number()).optional().default({}),
+  correspondentBalances: n.array(Vt).optional().default([])
+}), vs = n.enum(["LIGHT", "DARK"]), jt = n.enum(["NORMAL", "THERMAL_80", "THERMAL_50"]), Ss = n.object({
+  businessName: n.string().trim().max(120).optional().nullable(),
+  taxId: n.string().trim().max(40).optional().nullable(),
+  address: n.string().trim().max(180).optional().nullable(),
+  city: n.string().trim().max(80).optional().nullable()
+}), ws = n.object({
+  themeMode: vs
+}), Rs = n.object({
+  invoicePrefix: n.string().trim().max(10).optional().nullable(),
+  defaultReceiptTemplate: jt.optional().default("NORMAL"),
+  receiptFooter: n.string().trim().max(400).optional().nullable()
+}), Os = n.object({
+  defaultTaxRate: n.number().min(0).max(1).optional(),
+  allowNegativeStock: n.boolean().optional()
+}), Ds = n.object({
+  dateFrom: n.string().datetime().optional(),
+  dateTo: n.string().datetime().optional(),
+  cashierId: n.string().uuid().optional(),
+  status: n.nativeEnum(fe).optional(),
+  search: n.string().trim().max(80).optional()
+}).optional().default({}), Ps = n.object({
+  saleId: n.string().uuid()
+}), gt = Ps.extend({
+  template: jt.optional().default("NORMAL")
 });
-function z(e) {
+function K(e) {
   return Math.round(e);
 }
-const xt = "|||CITY|||";
-function rt(e, a) {
+const zt = "|||CITY|||";
+function Et(e, a) {
   const r = (e == null ? void 0 : e.trim()) || "", l = (a == null ? void 0 : a.trim()) || "";
-  return l ? `${r}${xt}${l}` : r || null;
+  return l ? `${r}${zt}${l}` : r || null;
 }
-function nt(e) {
+function Tt(e) {
   var r, l;
   if (!e)
     return { address: "", city: "" };
-  const a = e.split(xt);
+  const a = e.split(zt);
   return {
     address: ((r = a[0]) == null ? void 0 : r.trim()) || "",
     city: ((l = a[1]) == null ? void 0 : l.trim()) || ""
   };
 }
-function is(e, a = 0, r = !1, l = 0) {
+function xs(e, a = 0, r = !1, l = 0) {
   const m = Number(e || 0) * (1 + Number(a || 0) / 100), c = r ? m * (1 + Number(l || 0)) : m;
-  return z(c);
+  return K(c);
 }
-function le(e) {
-  return e === j.CARD || e === j.TRANSFER ? "Transferencia" : "Efectivo";
+function pe(e) {
+  return e === z.CARD || e === z.TRANSFER ? "Transferencia" : "Efectivo";
 }
-function cs(e, a) {
-  return !e || e.length <= 1 ? le(a) : e.map((r) => `${le(r.method)} $${r.amount.toLocaleString("es-CO")}`).join(" + ");
+function Ls(e, a) {
+  return !e || e.length <= 1 ? pe(a) : e.map((r) => `${pe(r.method)} $${r.amount.toLocaleString("es-CO")}`).join(" + ");
 }
-function ds(e) {
-  const a = ye(e.cashier), r = Pt(e.receiptFooter), l = e.items.map(
+function Us(e) {
+  const a = Ce(e.cashier), r = Gt(e.receiptFooter), l = e.items.map(
     (c) => `
         <tr>
           <td>${c.name}</td>
@@ -2619,10 +2850,10 @@ function ds(e) {
     </html>
   `;
 }
-function us(e, a) {
+function Ms(e, a) {
   if (a === "NORMAL")
-    return ds(e);
-  const r = a === "THERMAL_50" ? 50 : 80, l = [e.address, e.city].filter(Boolean).join(" - "), m = ye(e.cashier), c = Pt(e.receiptFooter), n = e.items.map(
+    return Us(e);
+  const r = a === "THERMAL_50" ? 50 : 80, l = [e.address, e.city].filter(Boolean).join(" - "), m = Ce(e.cashier), c = Gt(e.receiptFooter), o = e.items.map(
     (s) => `
         <div class="item">
           <div class="item-name">${s.name}</div>
@@ -2690,7 +2921,7 @@ function us(e, a) {
 
           <div>
             <div class="section-title">Detalle</div>
-            <div class="items">${n}</div>
+            <div class="items">${o}</div>
           </div>
 
           <div class="totals">
@@ -2704,39 +2935,39 @@ function us(e, a) {
     </html>
   `;
 }
-async function ot(e) {
+async function At(e) {
   const a = e();
-  if (!a || a.role !== F.ADMIN)
+  if (!a || a.role !== $.ADMIN)
     throw new Error("Solo admins pueden ejecutar esta accion");
   return a;
 }
-function M(e, a) {
-  return a ? bt(e == null ? void 0 : e.permissions, a) : !0;
+function B(e, a) {
+  return a ? Ft(e == null ? void 0 : e.permissions, a) : !0;
 }
-function _e(e) {
+function ke(e) {
   var a;
   return ((a = e == null ? void 0 : e.name) == null ? void 0 : a.trim()) || (e == null ? void 0 : e.username) || "Sistema";
 }
-function ye(e) {
+function Ce(e) {
   var l;
   const a = ((l = e.name) == null ? void 0 : l.trim()) || e.username, [r] = a.split(/\s+/).filter(Boolean);
   return r || a;
 }
-function Pt(e) {
+function Gt(e) {
   const a = [
     "Esta factura de venta podra constituirse como titulo valor conforme a la legislacion comercial aplicable y cuando se cumplan los requisitos legales.",
     "En ventas a credito, la mora en el pago causara intereses a la tasa maxima legal vigente."
   ];
   return e != null && e.trim() && a.push(e.trim()), a;
 }
-function it(e, a) {
+function yt(e, a) {
   return [e.trim(), (a == null ? void 0 : a.trim()) || ""].filter(Boolean).join(" ");
 }
-function be(e, a) {
+function Re(e, a) {
   const r = a == null ? void 0 : a.trim();
   return r ? `${e || "Cédula"}: ${r}` : null;
 }
-async function de(e, a, r, l, m = !1) {
+async function le(e, a, r, l, m = !1) {
   var s, t, i;
   if (r.length === 0)
     return /* @__PURE__ */ new Map();
@@ -2755,12 +2986,12 @@ async function de(e, a, r, l, m = !1) {
       }
     },
     orderBy: { createdAt: m ? "desc" : "asc" }
-  }), n = /* @__PURE__ */ new Map();
-  for (const u of c)
-    !u.entityId || n.has(u.entityId) || n.set(u.entityId, ((t = (s = u.user) == null ? void 0 : s.name) == null ? void 0 : t.trim()) || ((i = u.user) == null ? void 0 : i.username) || "Sistema");
-  return n;
+  }), o = /* @__PURE__ */ new Map();
+  for (const d of c)
+    !d.entityId || o.has(d.entityId) || o.set(d.entityId, ((t = (s = d.user) == null ? void 0 : s.name) == null ? void 0 : t.trim()) || ((i = d.user) == null ? void 0 : i.username) || "Sistema");
+  return o;
 }
-function G(e) {
+function H(e) {
   if (!e)
     return {};
   try {
@@ -2769,164 +3000,164 @@ function G(e) {
     return {};
   }
 }
-function ct(e) {
+function It(e) {
   return JSON.stringify(e);
 }
-function $e(e) {
+function Xe(e) {
   return new Map((e ?? []).map((a) => [a.platformId, Number(a.amount || 0)]));
 }
-function ke(e) {
+function Ve(e) {
   return e === "TRANSFER" || e === "CORRESPONDENT" ? e : "CASH";
 }
-function se(e) {
+function ne(e) {
   if (!e)
     return null;
   try {
     const a = JSON.parse(e);
     return !a || typeof a != "object" || !a.medium && !a.label && !a.sourceType ? null : {
       ...a,
-      medium: ke(a.medium)
+      medium: Ve(a.medium)
     };
   } catch {
     return null;
   }
 }
-function Se(e) {
+function Oe(e) {
   return JSON.stringify(e);
 }
-function Be(e, a = "Movimiento de caja") {
-  const r = se(e);
+function $e(e, a = "Movimiento de caja") {
+  const r = ne(e);
   return (r == null ? void 0 : r.label) || (r == null ? void 0 : r.userNote) || e || a;
 }
-function ie(e) {
+function de(e) {
   var a;
-  return ((a = se(e)) == null ? void 0 : a.medium) ?? "CASH";
+  return ((a = ne(e)) == null ? void 0 : a.medium) ?? "CASH";
 }
-function ls(e) {
+function _s(e) {
   var a;
-  return ((a = se(e)) == null ? void 0 : a.platformId) ?? null;
+  return ((a = ne(e)) == null ? void 0 : a.platformId) ?? null;
 }
-function Xe(e) {
+function je(e) {
   var a;
-  return ((a = se(e)) == null ? void 0 : a.platformName) ?? null;
+  return ((a = ne(e)) == null ? void 0 : a.platformName) ?? null;
 }
-function ms(e, a) {
+function Bs(e, a) {
   return e || a ? {
     ...e ? { gte: new Date(e) } : {},
     ...a ? { lte: new Date(a) } : {}
   } : void 0;
 }
-function K(e, a) {
+function Y(e, a) {
   const r = e[a];
   return r && typeof r == "object" ? r : {};
 }
-function oe(e) {
+function ce(e) {
   return Number(e.transferAmount ?? 0);
 }
-function ps(e) {
+function Fs(e) {
   return e.reduce(
     (a, r) => {
       if (r.payments && r.payments.length > 0) {
         for (const l of r.payments)
-          l.method === j.CASH && (a.cash += l.amount), (l.method === j.TRANSFER || l.method === j.CARD) && (a.transfer += l.amount);
+          l.method === z.CASH && (a.cash += l.amount), (l.method === z.TRANSFER || l.method === z.CARD) && (a.transfer += l.amount);
         return a;
       }
-      return r.paymentMethod === j.CASH ? a.cash += r.total : a.transfer += r.total, a;
+      return r.paymentMethod === z.CASH ? a.cash += r.total : a.transfer += r.total, a;
     },
     { cash: 0, transfer: 0 }
   );
 }
-function fs(e) {
+function ks(e) {
   const a = /* @__PURE__ */ new Map();
   for (const r of e) {
-    if (ie(r.note) !== "CORRESPONDENT")
+    if (de(r.note) !== "CORRESPONDENT")
       continue;
-    const m = ls(r.note);
+    const m = _s(r.note);
     if (!m)
       continue;
-    const c = a.get(m) ?? { manualIncome: 0, manualExpense: 0, platformName: Xe(r.note) };
-    r.type === B.INCOME_IN && (c.manualIncome += r.amount), (r.type === B.EXPENSE_OUT || r.type === B.WITHDRAWAL_OUT) && (c.manualExpense += r.amount), c.platformName || (c.platformName = Xe(r.note)), a.set(m, c);
+    const c = a.get(m) ?? { manualIncome: 0, manualExpense: 0, platformName: je(r.note) };
+    r.type === k.INCOME_IN && (c.manualIncome += r.amount), (r.type === k.EXPENSE_OUT || r.type === k.WITHDRAWAL_OUT) && (c.manualExpense += r.amount), c.platformName || (c.platformName = je(r.note)), a.set(m, c);
   }
   return a;
 }
-function dt(e) {
-  const a = G(e.session.note), r = K(a, "opening"), l = K(a, "closing"), m = $e(
+function Nt(e) {
+  const a = H(e.session.note), r = Y(a, "opening"), l = Y(a, "closing"), m = Xe(
     r.correspondentBalances ?? []
-  ), c = $e(
+  ), c = Xe(
     l.correspondentBalances ?? []
-  ), n = oe(r), s = l.transferAmount === void 0 ? null : oe(l), t = ps(e.session.sales), i = e.session.movements.filter((d) => d.type === B.INCOME_IN && ie(d.note) === "CASH").reduce((d, A) => d + A.amount, 0), u = e.session.movements.filter((d) => d.type === B.INCOME_IN && ie(d.note) === "TRANSFER").reduce((d, A) => d + A.amount, 0), f = e.session.movements.filter(
-    (d) => (d.type === B.EXPENSE_OUT || d.type === B.WITHDRAWAL_OUT) && ie(d.note) === "CASH"
-  ).reduce((d, A) => d + A.amount, 0), g = e.session.movements.filter(
-    (d) => (d.type === B.EXPENSE_OUT || d.type === B.WITHDRAWAL_OUT) && ie(d.note) === "TRANSFER"
-  ).reduce((d, A) => d + A.amount, 0), T = fs(e.session.movements), I = e.session.openingAmount + t.cash + i - f, p = n + t.transfer + u - g, N = e.platforms.map((d) => {
+  ), o = ce(r), s = l.transferAmount === void 0 ? null : ce(l), t = Fs(e.session.sales), i = e.session.movements.filter((u) => u.type === k.INCOME_IN && de(u.note) === "CASH").reduce((u, A) => u + A.amount, 0), d = e.session.movements.filter((u) => u.type === k.INCOME_IN && de(u.note) === "TRANSFER").reduce((u, A) => u + A.amount, 0), g = e.session.movements.filter(
+    (u) => (u.type === k.EXPENSE_OUT || u.type === k.WITHDRAWAL_OUT) && de(u.note) === "CASH"
+  ).reduce((u, A) => u + A.amount, 0), p = e.session.movements.filter(
+    (u) => (u.type === k.EXPENSE_OUT || u.type === k.WITHDRAWAL_OUT) && de(u.note) === "TRANSFER"
+  ).reduce((u, A) => u + A.amount, 0), T = ks(e.session.movements), I = e.session.openingAmount + t.cash + i - g, f = o + t.transfer + d - p, y = e.platforms.map((u) => {
     const A = e.session.correspondentTransactions.filter(
-      (k) => k.platform.id === d.id
-    ), S = A.filter((k) => k.type.direction === _.IN).reduce((k, L) => k + L.amount, 0), y = A.filter((k) => k.type.direction === _.OUT).reduce((k, L) => k + L.amount, 0), w = A.reduce((k, L) => k + L.commissionAmount, 0), $ = T.get(d.id) ?? {
+      (_) => _.platform.id === u.id
+    ), S = A.filter((_) => _.type.direction === F.IN).reduce((_, q) => _ + q.amount, 0), L = A.filter((_) => _.type.direction === F.OUT).reduce((_, q) => _ + q.amount, 0), h = A.reduce((_, q) => _ + q.commissionAmount, 0), R = T.get(u.id) ?? {
       manualIncome: 0,
       manualExpense: 0,
-      platformName: d.name
-    }, U = m.get(d.id) ?? 0, Y = U + S - y + w + $.manualIncome - $.manualExpense, q = c.has(d.id) ? c.get(d.id) ?? 0 : null;
+      platformName: u.name
+    }, M = m.get(u.id) ?? 0, j = M + S - L + h + R.manualIncome - R.manualExpense, G = c.has(u.id) ? c.get(u.id) ?? 0 : null;
     return {
-      platformId: d.id,
-      platform: d.name,
-      openingAmount: U,
+      platformId: u.id,
+      platform: u.name,
+      openingAmount: M,
       totalIn: S,
-      totalOut: y,
-      totalCommission: w,
-      manualIncome: $.manualIncome,
-      manualExpense: $.manualExpense,
-      expectedAmount: Y,
-      countedAmount: q,
-      differenceAmount: q === null ? null : q - Y
+      totalOut: L,
+      totalCommission: h,
+      manualIncome: R.manualIncome,
+      manualExpense: R.manualExpense,
+      expectedAmount: j,
+      countedAmount: G,
+      differenceAmount: G === null ? null : G - j
     };
-  }), C = N.reduce((d, A) => d + A.openingAmount, 0), h = N.reduce((d, A) => d + A.expectedAmount, 0), v = N.reduce(
-    (d, A) => d + (A.countedAmount ?? A.expectedAmount),
+  }), N = y.reduce((u, A) => u + A.openingAmount, 0), C = y.reduce((u, A) => u + A.expectedAmount, 0), b = y.reduce(
+    (u, A) => u + (A.countedAmount ?? A.expectedAmount),
     0
-  ), D = l.cashBreakdown && typeof l.cashBreakdown == "object" ? null : e.session.countedAmount ?? null, P = I + p + h, b = (e.session.countedAmount ?? I) + (s ?? p) + v;
+  ), D = l.cashBreakdown && typeof l.cashBreakdown == "object" ? null : e.session.countedAmount ?? null, x = I + f + C, v = (e.session.countedAmount ?? I) + (s ?? f) + b;
   return {
     sessionMeta: a,
     opening: r,
     closing: l,
-    openingTransferAmount: n,
+    openingTransferAmount: o,
     countedTransferAmount: s,
     salesCash: t.cash,
     salesTransfer: t.transfer,
     cashManualIncome: i,
-    transferManualIncome: u,
-    cashManualExpense: f,
-    transferManualExpense: g,
+    transferManualIncome: d,
+    cashManualExpense: g,
+    transferManualExpense: p,
     expectedCash: I,
-    expectedTransferAmount: p,
-    openingCorrespondentTotal: C,
-    correspondentExpectedTotal: h,
-    countedCorrespondentTotal: v,
-    correspondentByPlatform: N,
-    expectedAvailableTotal: P,
-    countedAvailableTotal: b,
+    expectedTransferAmount: f,
+    openingCorrespondentTotal: N,
+    correspondentExpectedTotal: C,
+    countedCorrespondentTotal: b,
+    correspondentByPlatform: y,
+    expectedAvailableTotal: x,
+    countedAvailableTotal: v,
     countedCashAmount: D
   };
 }
-function gs() {
+function $s() {
   const e = /* @__PURE__ */ new Date();
   return e.setHours(0, 0, 0, 0), e;
 }
-function Ae(e, a, r) {
-  return a <= 0 ? fe.CANCELLED : e <= 0 ? fe.PAID : r && r.getTime() < gs().getTime() ? fe.OVERDUE : e < a ? fe.PARTIAL : fe.PENDING;
+function Ie(e, a, r) {
+  return a <= 0 ? Te.CANCELLED : e <= 0 ? Te.PAID : r && r.getTime() < $s().getTime() ? Te.OVERDUE : e < a ? Te.PARTIAL : Te.PENDING;
 }
-function ut(e, a) {
-  return a >= e ? me.RETURNED : a > 0 ? me.PARTIALLY_RETURNED : me.COMPLETED;
+function ht(e, a) {
+  return a >= e ? fe.RETURNED : a > 0 ? fe.PARTIALLY_RETURNED : fe.COMPLETED;
 }
-async function Es(e) {
+async function qs(e) {
   const a = await e.$queryRawUnsafe(
     'PRAGMA table_info("BusinessSettings");'
-  ), r = new Set(a.map((f) => f.name));
+  ), r = new Set(a.map((g) => g.name));
   r.has("themeMode") || await e.$executeRawUnsafe(
     `ALTER TABLE "BusinessSettings" ADD COLUMN "themeMode" TEXT NOT NULL DEFAULT 'LIGHT';`
   ), r.has("defaultReceiptTemplate") || await e.$executeRawUnsafe(
     `ALTER TABLE "BusinessSettings" ADD COLUMN "defaultReceiptTemplate" TEXT NOT NULL DEFAULT 'NORMAL';`
   );
-  const l = await e.$queryRawUnsafe('PRAGMA table_info("Customer");'), m = await e.$queryRawUnsafe('PRAGMA table_info("Supplier");'), c = new Set(l.map((f) => f.name)), n = new Set(m.map((f) => f.name));
-  c.has("internalCode") || await e.$executeRawUnsafe('ALTER TABLE "Customer" ADD COLUMN "internalCode" TEXT;'), n.has("internalCode") || await e.$executeRawUnsafe('ALTER TABLE "Supplier" ADD COLUMN "internalCode" TEXT;');
+  const l = await e.$queryRawUnsafe('PRAGMA table_info("Customer");'), m = await e.$queryRawUnsafe('PRAGMA table_info("Supplier");'), c = new Set(l.map((g) => g.name)), o = new Set(m.map((g) => g.name));
+  c.has("internalCode") || await e.$executeRawUnsafe('ALTER TABLE "Customer" ADD COLUMN "internalCode" TEXT;'), o.has("internalCode") || await e.$executeRawUnsafe('ALTER TABLE "Supplier" ADD COLUMN "internalCode" TEXT;');
   const s = await e.customer.findMany({
     select: {
       id: !0,
@@ -2934,18 +3165,18 @@ async function Es(e) {
     },
     orderBy: [{ createdAt: "asc" }, { name: "asc" }]
   }), t = [];
-  for (const f of s) {
-    const g = Z({
-      desiredCode: f.internalCode,
+  for (const g of s) {
+    const p = te({
+      desiredCode: g.internalCode,
       existingCodes: t,
       prefix: "CLI",
       digits: 4,
       maxLength: 30
     });
-    g !== f.internalCode && await e.customer.update({
-      where: { id: f.id },
-      data: { internalCode: g }
-    }), t.push(g);
+    p !== g.internalCode && await e.customer.update({
+      where: { id: g.id },
+      data: { internalCode: p }
+    }), t.push(p);
   }
   const i = await e.supplier.findMany({
     select: {
@@ -2953,19 +3184,19 @@ async function Es(e) {
       internalCode: !0
     },
     orderBy: [{ createdAt: "asc" }, { name: "asc" }]
-  }), u = [];
-  for (const f of i) {
-    const g = Z({
-      desiredCode: f.internalCode,
-      existingCodes: u,
+  }), d = [];
+  for (const g of i) {
+    const p = te({
+      desiredCode: g.internalCode,
+      existingCodes: d,
       prefix: "PRV",
       digits: 4,
       maxLength: 30
     });
-    g !== f.internalCode && await e.supplier.update({
-      where: { id: f.id },
-      data: { internalCode: g }
-    }), u.push(g);
+    p !== g.internalCode && await e.supplier.update({
+      where: { id: g.id },
+      data: { internalCode: p }
+    }), d.push(p);
   }
   await e.$executeRawUnsafe(
     'CREATE UNIQUE INDEX IF NOT EXISTS "Customer_internalCode_key" ON "Customer"("internalCode");'
@@ -2973,20 +3204,20 @@ async function Es(e) {
     'CREATE UNIQUE INDEX IF NOT EXISTS "Supplier_internalCode_key" ON "Supplier"("internalCode");'
   );
 }
-function As(e, a) {
+function Xs(e, a) {
   return ((a || e || "PRD").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 3) || "PRD").padEnd(3, "X");
 }
-async function Ts(e, a, r) {
-  const l = As(a, r), m = await e.product.count({
+async function Vs(e, a, r) {
+  const l = Xs(a, r), m = await e.product.count({
     where: { sku: { startsWith: l } }
   });
   return `${l}-${String(m + 1).padStart(3, "0")}`;
 }
-async function Is(e) {
+async function js(e) {
   const a = await e.purchase.count();
   return `CP-${String(a + 1).padStart(6, "0")}`;
 }
-async function V(e, a, r, l, m, c, n, s) {
+async function V(e, a, r, l, m, c, o, s) {
   await e.auditLog.create({
     data: {
       userId: (a == null ? void 0 : a.id) ?? null,
@@ -2994,12 +3225,12 @@ async function V(e, a, r, l, m, c, n, s) {
       action: l,
       entity: m,
       entityId: c ?? null,
-      beforeJson: n === void 0 ? null : JSON.stringify(n),
+      beforeJson: o === void 0 ? null : JSON.stringify(o),
       afterJson: s === void 0 ? null : JSON.stringify(s)
     }
   });
 }
-function ys({
+function zs({
   ipcMain: e,
   prisma: a,
   getCurrentSessionUser: r,
@@ -3014,14 +3245,14 @@ function ys({
       return { success: !1, message: "Debes iniciar sesion" };
     const c = await a.businessSettings.findUnique({
       where: { id: "default" }
-    }), n = nt(c == null ? void 0 : c.address);
+    }), o = Tt(c == null ? void 0 : c.address);
     return {
       success: !0,
       settings: {
         businessName: (c == null ? void 0 : c.businessName) || "",
         taxId: (c == null ? void 0 : c.taxId) || "",
-        address: n.address,
-        city: n.city,
+        address: o.address,
+        city: o.city,
         themeMode: (c == null ? void 0 : c.themeMode) === "DARK" ? "DARK" : "LIGHT",
         invoicePrefix: (c == null ? void 0 : c.invoicePrefix) || "FV",
         defaultTaxRate: (c == null ? void 0 : c.defaultTaxRate) ?? 0.19,
@@ -3031,12 +3262,12 @@ function ys({
       }
     };
   }), e.handle("settings:update-theme", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.settingsTheme))
+    if (!B(o, E.settingsTheme))
       return { success: !1, message: "Tu rol no puede cambiar el tema del sistema" };
-    const s = as.safeParse(c);
+    const s = ws.safeParse(c);
     return s.success ? (await a.businessSettings.upsert({
       where: { id: "default" },
       update: {
@@ -3046,14 +3277,14 @@ function ys({
         id: "default",
         themeMode: s.data.themeMode
       }
-    }), await V(a, n, "settings", "update_theme", "BusinessSettings", "default", void 0, s.data), { success: !0 }) : { success: !1, message: "Configuracion de tema invalida" };
+    }), await V(a, o, "settings", "update_theme", "BusinessSettings", "default", void 0, s.data), { success: !0 }) : { success: !1, message: "Configuracion de tema invalida" };
   }), e.handle("settings:update-business", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.settingsBusiness))
+    if (!B(o, E.settingsBusiness))
       return { success: !1, message: "Tu rol no puede editar los datos del negocio" };
-    const s = ts.safeParse(c);
+    const s = Ss.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos del negocio invalidos" };
     const t = s.data;
@@ -3062,22 +3293,22 @@ function ys({
       update: {
         businessName: t.businessName || null,
         taxId: t.taxId || null,
-        address: rt(t.address, t.city)
+        address: Et(t.address, t.city)
       },
       create: {
         id: "default",
         businessName: t.businessName || null,
         taxId: t.taxId || null,
-        address: rt(t.address, t.city)
+        address: Et(t.address, t.city)
       }
-    }), await V(a, n, "settings", "update_business", "BusinessSettings", "default", void 0, t), { success: !0 };
+    }), await V(a, o, "settings", "update_business", "BusinessSettings", "default", void 0, t), { success: !0 };
   }), e.handle("settings:update-billing", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.settingsBilling))
+    if (!B(o, E.settingsBilling))
       return { success: !1, message: "Tu rol no puede editar factura e impresion" };
-    const s = ss.safeParse(c);
+    const s = Rs.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Configuracion de factura invalida" };
     const t = s.data;
@@ -3094,14 +3325,14 @@ function ys({
         defaultReceiptTemplate: t.defaultReceiptTemplate,
         receiptFooter: t.receiptFooter || null
       }
-    }), await V(a, n, "settings", "update_billing", "BusinessSettings", "default", void 0, t), { success: !0 };
+    }), await V(a, o, "settings", "update_billing", "BusinessSettings", "default", void 0, t), { success: !0 };
   }), e.handle("settings:update-inventory", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.settingsInventory))
+    if (!B(o, E.settingsInventory))
       return { success: !1, message: "Tu rol no puede editar inventario y operacion" };
-    const s = rs.safeParse(c);
+    const s = Os.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Configuracion operativa invalida" };
     const t = s.data;
@@ -3116,13 +3347,13 @@ function ys({
         defaultTaxRate: t.defaultTaxRate ?? 0.19,
         allowNegativeStock: t.allowNegativeStock ?? !1
       }
-    }), await V(a, n, "settings", "update_inventory", "BusinessSettings", "default", void 0, t), { success: !0 };
+    }), await V(a, o, "settings", "update_inventory", "BusinessSettings", "default", void 0, t), { success: !0 };
   }), e.handle("cash:summary", async () => {
     if (!r())
       return { success: !1, message: "Debes iniciar sesion" };
-    const [c, n, s, t] = await Promise.all([
+    const [c, o, s, t] = await Promise.all([
       a.cashSession.findFirst({
-        where: { status: W.OPEN },
+        where: { status: Z.OPEN },
         include: {
           register: !0,
           user: { select: { username: !0, name: !0 } },
@@ -3158,7 +3389,7 @@ function ys({
         orderBy: { openedAt: "desc" }
       }),
       a.cashSession.findFirst({
-        where: { status: W.CLOSED },
+        where: { status: Z.CLOSED },
         include: {
           register: !0,
           user: { select: { username: !0, name: !0 } }
@@ -3176,25 +3407,25 @@ function ys({
       a.correspondentPlatform.findMany({
         orderBy: { name: "asc" }
       })
-    ]), i = n ? (() => {
+    ]), i = o ? (() => {
       var D;
-      const p = G(n.note), N = K(p, "closing"), C = $e(
-        N.correspondentBalances ?? []
-      ), h = t.map((P) => ({
-        platformId: P.id,
-        platform: P.name,
-        countedAmount: C.get(P.id) ?? 0
-      })).filter((P) => P.countedAmount > 0), v = oe(N);
+      const f = H(o.note), y = Y(f, "closing"), N = Xe(
+        y.correspondentBalances ?? []
+      ), C = t.map((x) => ({
+        platformId: x.id,
+        platform: x.name,
+        countedAmount: N.get(x.id) ?? 0
+      })).filter((x) => x.countedAmount > 0), b = ce(y);
       return {
-        sessionId: n.id,
-        registerName: n.register.name,
-        user: n.user.name ?? n.user.username,
-        closedAt: ((D = n.closedAt) == null ? void 0 : D.toISOString()) ?? null,
-        countedCashAmount: n.countedAmount ?? 0,
-        countedTransferAmount: v,
-        countedAvailableAmount: (n.countedAmount ?? 0) + v + h.reduce((P, b) => P + b.countedAmount, 0),
-        closingBreakdown: N.cashBreakdown && typeof N.cashBreakdown == "object" ? N.cashBreakdown : {},
-        correspondent: h
+        sessionId: o.id,
+        registerName: o.register.name,
+        user: o.user.name ?? o.user.username,
+        closedAt: ((D = o.closedAt) == null ? void 0 : D.toISOString()) ?? null,
+        countedCashAmount: o.countedAmount ?? 0,
+        countedTransferAmount: b,
+        countedAvailableAmount: (o.countedAmount ?? 0) + b + C.reduce((x, v) => x + v.countedAmount, 0),
+        closingBreakdown: y.cashBreakdown && typeof y.cashBreakdown == "object" ? y.cashBreakdown : {},
+        correspondent: C
       };
     })() : null;
     if (!c)
@@ -3202,35 +3433,35 @@ function ys({
         success: !0,
         activeSession: null,
         previousReference: i,
-        recentSessions: s.map((p) => {
-          var N;
+        recentSessions: s.map((f) => {
+          var y;
           return {
-            id: p.id,
-            registerName: p.register.name,
-            user: p.user.name ?? p.user.username,
-            status: p.status,
-            openedAt: p.openedAt.toISOString(),
-            closedAt: ((N = p.closedAt) == null ? void 0 : N.toISOString()) ?? null,
-            openingAmount: p.openingAmount,
-            openingAvailableAmount: p.openingAmount + oe(K(G(p.note), "opening")) + (K(G(p.note), "opening").correspondentBalances ?? []).reduce((C, h) => C + Number(h.amount || 0), 0),
-            countedAmount: p.countedAmount,
-            countedAvailableAmount: (p.countedAmount ?? 0) + oe(K(G(p.note), "closing")) + (K(G(p.note), "closing").correspondentBalances ?? []).reduce((C, h) => C + Number(h.amount || 0), 0),
-            differenceAmount: p.differenceAmount
+            id: f.id,
+            registerName: f.register.name,
+            user: f.user.name ?? f.user.username,
+            status: f.status,
+            openedAt: f.openedAt.toISOString(),
+            closedAt: ((y = f.closedAt) == null ? void 0 : y.toISOString()) ?? null,
+            openingAmount: f.openingAmount,
+            openingAvailableAmount: f.openingAmount + ce(Y(H(f.note), "opening")) + (Y(H(f.note), "opening").correspondentBalances ?? []).reduce((N, C) => N + Number(C.amount || 0), 0),
+            countedAmount: f.countedAmount,
+            countedAvailableAmount: (f.countedAmount ?? 0) + ce(Y(H(f.note), "closing")) + (Y(H(f.note), "closing").correspondentBalances ?? []).reduce((N, C) => N + Number(C.amount || 0), 0),
+            differenceAmount: f.differenceAmount
           };
         })
       };
-    const u = dt({
+    const d = Nt({
       session: c,
       platforms: t
-    }), f = c.openingAmount + u.openingTransferAmount + u.openingCorrespondentTotal, g = c.countedAmount ?? u.expectedCash, T = u.countedTransferAmount ?? u.expectedTransferAmount, I = i ? {
+    }), g = c.openingAmount + d.openingTransferAmount + d.openingCorrespondentTotal, p = c.countedAmount ?? d.expectedCash, T = d.countedTransferAmount ?? d.expectedTransferAmount, I = i ? {
       cashDifferenceAmount: c.openingAmount - i.countedCashAmount,
-      transferDifferenceAmount: u.openingTransferAmount - i.countedTransferAmount,
-      correspondentDifferenceTotal: u.correspondentByPlatform.reduce((p, N) => {
-        var h;
-        const C = ((h = i.correspondent.find((v) => v.platformId === N.platformId)) == null ? void 0 : h.countedAmount) ?? 0;
-        return p + (N.openingAmount - C);
+      transferDifferenceAmount: d.openingTransferAmount - i.countedTransferAmount,
+      correspondentDifferenceTotal: d.correspondentByPlatform.reduce((f, y) => {
+        var C;
+        const N = ((C = i.correspondent.find((b) => b.platformId === y.platformId)) == null ? void 0 : C.countedAmount) ?? 0;
+        return f + (y.openingAmount - N);
       }, 0),
-      differenceAmount: f - i.countedAvailableAmount
+      differenceAmount: g - i.countedAvailableAmount
     } : null;
     return {
       success: !0,
@@ -3240,100 +3471,100 @@ function ys({
         user: c.user.name ?? c.user.username,
         openedAt: c.openedAt.toISOString(),
         openingAmount: c.openingAmount,
-        openingTransferAmount: u.openingTransferAmount,
-        openingAvailableAmount: f,
-        expectedCash: u.expectedCash,
-        expectedTransferAmount: u.expectedTransferAmount,
-        expectedAvailableAmount: u.expectedAvailableTotal,
-        countedCashAmount: g,
+        openingTransferAmount: d.openingTransferAmount,
+        openingAvailableAmount: g,
+        expectedCash: d.expectedCash,
+        expectedTransferAmount: d.expectedTransferAmount,
+        expectedAvailableAmount: d.expectedAvailableTotal,
+        countedCashAmount: p,
         countedTransferAmount: T,
-        countedAvailableAmount: g + T + u.correspondentByPlatform.reduce(
-          (p, N) => p + (N.countedAmount ?? N.expectedAmount),
+        countedAvailableAmount: p + T + d.correspondentByPlatform.reduce(
+          (f, y) => f + (y.countedAmount ?? y.expectedAmount),
           0
         ),
-        cashDifferenceAmount: g - u.expectedCash,
-        transferDifferenceAmount: T - u.expectedTransferAmount,
-        availableDifferenceAmount: g + T + u.correspondentByPlatform.reduce(
-          (p, N) => p + (N.countedAmount ?? N.expectedAmount),
+        cashDifferenceAmount: p - d.expectedCash,
+        transferDifferenceAmount: T - d.expectedTransferAmount,
+        availableDifferenceAmount: p + T + d.correspondentByPlatform.reduce(
+          (f, y) => f + (y.countedAmount ?? y.expectedAmount),
           0
-        ) - u.expectedAvailableTotal,
-        salesCash: u.salesCash,
+        ) - d.expectedAvailableTotal,
+        salesCash: d.salesCash,
         salesCard: 0,
-        salesTransfer: u.salesTransfer,
-        manualIncome: u.cashManualIncome,
-        manualExpense: u.cashManualExpense,
-        manualTransferIncome: u.transferManualIncome,
-        manualTransferExpense: u.transferManualExpense,
-        openingBreakdown: u.opening.cashBreakdown && typeof u.opening.cashBreakdown == "object" ? u.opening.cashBreakdown : {},
-        closingBreakdown: u.closing.cashBreakdown && typeof u.closing.cashBreakdown == "object" ? u.closing.cashBreakdown : {},
-        correspondent: u.correspondentByPlatform,
+        salesTransfer: d.salesTransfer,
+        manualIncome: d.cashManualIncome,
+        manualExpense: d.cashManualExpense,
+        manualTransferIncome: d.transferManualIncome,
+        manualTransferExpense: d.transferManualExpense,
+        openingBreakdown: d.opening.cashBreakdown && typeof d.opening.cashBreakdown == "object" ? d.opening.cashBreakdown : {},
+        closingBreakdown: d.closing.cashBreakdown && typeof d.closing.cashBreakdown == "object" ? d.closing.cashBreakdown : {},
+        correspondent: d.correspondentByPlatform,
         openingComparison: I,
         recentActivity: [
           ...c.sales.flatMap(
-            (p) => (p.payments && p.payments.length > 0 ? p.payments : [
+            (f) => (f.payments && f.payments.length > 0 ? f.payments : [
               {
-                method: p.paymentMethod,
-                amount: p.total
+                method: f.paymentMethod,
+                amount: f.total
               }
-            ]).map((N, C) => ({
-              id: `${p.id}-${N.method}-${C}`,
-              createdAt: p.createdAt.toISOString(),
+            ]).map((y, N) => ({
+              id: `${f.id}-${y.method}-${N}`,
+              createdAt: f.createdAt.toISOString(),
               type: "Venta",
-              medium: N.method === j.CASH ? "Efectivo" : (N.method === j.CARD, "Transferencia"),
-              detail: `${p.invoiceNumber} - ${p.customer}`,
-              amount: N.amount,
-              signedAmount: N.amount
+              medium: y.method === z.CASH ? "Efectivo" : (y.method === z.CARD, "Transferencia"),
+              detail: `${f.invoiceNumber} - ${f.customer}`,
+              amount: y.amount,
+              signedAmount: y.amount
             }))
           ),
-          ...c.correspondentTransactions.map((p) => ({
-            id: p.id,
-            createdAt: p.performedAt.toISOString(),
+          ...c.correspondentTransactions.map((f) => ({
+            id: f.id,
+            createdAt: f.performedAt.toISOString(),
             type: "Corresponsal",
-            medium: p.platform.name,
-            detail: `${p.type.name}${p.commissionAmount > 0 ? ` + comision ${p.commissionAmount.toLocaleString("es-CO")}` : ""}`,
-            amount: p.amount,
-            signedAmount: p.type.direction === _.OUT ? -p.amount : p.amount
+            medium: f.platform.name,
+            detail: `${f.type.name}${f.commissionAmount > 0 ? ` + comision ${f.commissionAmount.toLocaleString("es-CO")}` : ""}`,
+            amount: f.amount,
+            signedAmount: f.type.direction === F.OUT ? -f.amount : f.amount
           })),
-          ...c.movements.map((p) => ({
-            id: p.id,
-            createdAt: p.createdAt.toISOString(),
-            type: p.type,
-            medium: ie(p.note) === "TRANSFER" ? "Transferencias" : ie(p.note) === "CORRESPONDENT" ? Xe(p.note) || "Corresponsal" : "Efectivo",
-            detail: Be(p.note),
-            amount: p.amount,
-            signedAmount: p.type === B.EXPENSE_OUT || p.type === B.WITHDRAWAL_OUT ? -p.amount : p.amount
+          ...c.movements.map((f) => ({
+            id: f.id,
+            createdAt: f.createdAt.toISOString(),
+            type: f.type,
+            medium: de(f.note) === "TRANSFER" ? "Transferencias" : de(f.note) === "CORRESPONDENT" ? je(f.note) || "Corresponsal" : "Efectivo",
+            detail: $e(f.note),
+            amount: f.amount,
+            signedAmount: f.type === k.EXPENSE_OUT || f.type === k.WITHDRAWAL_OUT ? -f.amount : f.amount
           }))
-        ].sort((p, N) => new Date(N.createdAt).getTime() - new Date(p.createdAt).getTime()).slice(0, 30)
+        ].sort((f, y) => new Date(y.createdAt).getTime() - new Date(f.createdAt).getTime()).slice(0, 30)
       },
       previousReference: i,
-      recentSessions: s.map((p) => {
-        var N;
+      recentSessions: s.map((f) => {
+        var y;
         return {
-          id: p.id,
-          registerName: p.register.name,
-          user: p.user.name ?? p.user.username,
-          status: p.status,
-          openedAt: p.openedAt.toISOString(),
-          closedAt: ((N = p.closedAt) == null ? void 0 : N.toISOString()) ?? null,
-          openingAmount: p.openingAmount,
-          openingAvailableAmount: p.openingAmount + oe(K(G(p.note), "opening")) + (K(G(p.note), "opening").correspondentBalances ?? []).reduce((C, h) => C + Number(h.amount || 0), 0),
-          countedAmount: p.countedAmount,
-          countedAvailableAmount: (p.countedAmount ?? 0) + oe(K(G(p.note), "closing")) + (K(G(p.note), "closing").correspondentBalances ?? []).reduce((C, h) => C + Number(h.amount || 0), 0),
-          differenceAmount: p.differenceAmount
+          id: f.id,
+          registerName: f.register.name,
+          user: f.user.name ?? f.user.username,
+          status: f.status,
+          openedAt: f.openedAt.toISOString(),
+          closedAt: ((y = f.closedAt) == null ? void 0 : y.toISOString()) ?? null,
+          openingAmount: f.openingAmount,
+          openingAvailableAmount: f.openingAmount + ce(Y(H(f.note), "opening")) + (Y(H(f.note), "opening").correspondentBalances ?? []).reduce((N, C) => N + Number(C.amount || 0), 0),
+          countedAmount: f.countedAmount,
+          countedAvailableAmount: (f.countedAmount ?? 0) + ce(Y(H(f.note), "closing")) + (Y(H(f.note), "closing").correspondentBalances ?? []).reduce((N, C) => N + Number(C.amount || 0), 0),
+          differenceAmount: f.differenceAmount
         };
       })
     };
   }), e.handle("cash:open", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.cashOpen))
+    if (!B(o, E.cashOpen))
       return { success: !1, message: "Tu rol no puede abrir caja" };
-    const s = Qa.safeParse(c);
+    const s = Cs.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para apertura de caja" };
     if (await a.cashSession.findFirst({
-      where: { status: W.OPEN }
+      where: { status: Z.OPEN }
     }))
       return { success: !1, message: "Ya existe una caja abierta" };
     const i = await a.cashRegister.findFirst({
@@ -3342,38 +3573,38 @@ function ys({
     });
     if (!i)
       return { success: !1, message: "No hay caja activa configurada" };
-    const u = s.data.openingCashAmount + s.data.openingTransferAmount + s.data.correspondentBalances.reduce((T, I) => T + Number(I.amount || 0), 0), f = ct({
+    const d = s.data.openingCashAmount + s.data.openingTransferAmount + s.data.correspondentBalances.reduce((T, I) => T + Number(I.amount || 0), 0), g = It({
       opening: {
         cashBreakdown: s.data.cashBreakdown,
         transferAmount: s.data.openingTransferAmount,
         correspondentBalances: s.data.correspondentBalances,
         note: s.data.note || null
       }
-    }), g = await a.cashSession.create({
+    }), p = await a.cashSession.create({
       data: {
         registerId: i.id,
-        userId: n.id,
-        status: W.OPEN,
+        userId: o.id,
+        status: Z.OPEN,
         openingAmount: s.data.openingCashAmount,
-        expectedAmount: u,
-        note: f
+        expectedAmount: d,
+        note: g
       }
     });
     return await a.cashMovement.create({
       data: {
-        sessionId: g.id,
-        type: B.OPENING,
+        sessionId: p.id,
+        type: k.OPENING,
         amount: s.data.openingCashAmount,
         note: s.data.note || "Apertura de caja"
       }
-    }), { success: !0, sessionId: g.id };
+    }), { success: !0, sessionId: p.id };
   }), e.handle("cash:close", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.cashClose))
+    if (!B(o, E.cashClose))
       return { success: !1, message: "Tu rol no puede cerrar caja" };
-    const s = Za.safeParse(c);
+    const s = bs.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para cierre de caja" };
     const t = await a.cashSession.findUnique({
@@ -3399,19 +3630,19 @@ function ys({
         }
       }
     });
-    if (!t || t.status !== W.OPEN)
+    if (!t || t.status !== Z.OPEN)
       return { success: !1, message: "La caja seleccionada no está abierta" };
     const i = await a.correspondentPlatform.findMany({
       orderBy: { name: "asc" }
-    }), u = dt({
+    }), d = Nt({
       session: t,
       platforms: i
-    }), f = u.expectedCash, g = s.data.countedCashAmount - f, T = u.correspondentByPlatform.reduce((v, D) => {
-      var b;
-      const P = (b = s.data.correspondentBalances.find((d) => d.platformId === D.platformId)) == null ? void 0 : b.amount;
-      return v + Number(P ?? D.expectedAmount);
-    }, 0), I = f + u.expectedTransferAmount + u.correspondentExpectedTotal, N = s.data.countedCashAmount + s.data.countedTransferAmount + T - I, C = G(t.note), h = ct({
-      ...C,
+    }), g = d.expectedCash, p = s.data.countedCashAmount - g, T = d.correspondentByPlatform.reduce((b, D) => {
+      var v;
+      const x = (v = s.data.correspondentBalances.find((u) => u.platformId === D.platformId)) == null ? void 0 : v.amount;
+      return b + Number(x ?? D.expectedAmount);
+    }, 0), I = g + d.expectedTransferAmount + d.correspondentExpectedTotal, y = s.data.countedCashAmount + s.data.countedTransferAmount + T - I, N = H(t.note), C = It({
+      ...N,
       closing: {
         cashBreakdown: s.data.cashBreakdown,
         transferAmount: s.data.countedTransferAmount,
@@ -3419,31 +3650,31 @@ function ys({
         note: s.data.note || null
       }
     });
-    return await a.$transaction(async (v) => {
-      await v.cashSession.update({
+    return await a.$transaction(async (b) => {
+      await b.cashSession.update({
         where: { id: t.id },
         data: {
-          status: W.CLOSED,
+          status: Z.CLOSED,
           countedAmount: s.data.countedCashAmount,
           expectedAmount: I,
-          differenceAmount: N,
-          note: h,
+          differenceAmount: y,
+          note: C,
           closedAt: /* @__PURE__ */ new Date()
         }
-      }), await v.cashMovement.create({
+      }), await b.cashMovement.create({
         data: {
           sessionId: t.id,
-          type: B.CLOSING,
+          type: k.CLOSING,
           amount: s.data.countedCashAmount,
           note: s.data.note || "Cierre de caja"
         }
-      }), N !== 0 && await v.cashMovement.create({
+      }), y !== 0 && await b.cashMovement.create({
         data: {
           sessionId: t.id,
-          type: B.DIFFERENCE,
-          amount: N,
-          note: Se({
-            label: `Diferencia general de cierre (${g >= 0 ? "POS" : "negativa"} en efectivo: ${g.toLocaleString("es-CO")})`,
+          type: k.DIFFERENCE,
+          amount: y,
+          note: Oe({
+            label: `Diferencia general de cierre (${p >= 0 ? "POS" : "negativa"} en efectivo: ${p.toLocaleString("es-CO")})`,
             medium: "CASH",
             sourceType: "MANUAL"
           })
@@ -3468,27 +3699,27 @@ function ys({
           }
         }
       }
-    })).map((n) => {
+    })).map((o) => {
       var s, t, i;
       return {
-        id: n.id,
-        internalCode: n.internalCode,
-        name: n.name,
-        firstName: n.firstName ?? n.name,
-        lastName: n.lastName,
-        username: n.username,
-        documentNumber: n.documentNumber,
-        email: n.email,
-        phone: n.phone,
-        address: n.address,
-        birthDate: ((s = n.birthDate) == null ? void 0 : s.toISOString().slice(0, 10)) ?? null,
-        role: n.role,
-        roleProfileId: ((t = n.roleProfile) == null ? void 0 : t.id) ?? null,
-        roleProfileName: ((i = n.roleProfile) == null ? void 0 : i.name) ?? null,
-        isActive: n.isActive,
-        createdAt: n.createdAt.toISOString(),
-        salesCount: n._count.sales,
-        sessionsCount: n._count.cashSessions
+        id: o.id,
+        internalCode: o.internalCode,
+        name: o.name,
+        firstName: o.firstName ?? o.name,
+        lastName: o.lastName,
+        username: o.username,
+        documentNumber: o.documentNumber,
+        email: o.email,
+        phone: o.phone,
+        address: o.address,
+        birthDate: ((s = o.birthDate) == null ? void 0 : s.toISOString().slice(0, 10)) ?? null,
+        role: o.role,
+        roleProfileId: ((t = o.roleProfile) == null ? void 0 : t.id) ?? null,
+        roleProfileName: ((i = o.roleProfile) == null ? void 0 : i.name) ?? null,
+        isActive: o.isActive,
+        createdAt: o.createdAt.toISOString(),
+        salesCount: o._count.sales,
+        sessionsCount: o._count.cashSessions
       };
     })
   } : { success: !1, message: "Debes iniciar sesion", users: [] }), e.handle("products:categories:list", async () => r() ? {
@@ -3501,11 +3732,11 @@ function ys({
           orderBy: { name: "asc" }
         }
       }
-    })).map((n) => ({
-      id: n.id,
-      name: n.name,
-      isActive: n.isActive,
-      subcategories: n.subcategories.map((s) => ({
+    })).map((o) => ({
+      id: o.id,
+      name: o.name,
+      isActive: o.isActive,
+      subcategories: o.subcategories.map((s) => ({
         id: s.id,
         name: s.name,
         isActive: s.isActive
@@ -3520,11 +3751,11 @@ function ys({
         subcategory: !0
       },
       orderBy: { name: "asc" }
-    }), n = c.map((i) => i.id), s = await de(a, "Product", n, "create"), t = await de(a, "Product", n, "update", !0);
+    }), o = c.map((i) => i.id), s = await le(a, "Product", o, "create"), t = await le(a, "Product", o, "update", !0);
     return {
       success: !0,
       products: c.map((i) => {
-        var u, f;
+        var d, g;
         return {
           id: i.id,
           name: i.name,
@@ -3532,6 +3763,7 @@ function ys({
           barcode: i.barcode,
           unitMeasure: i.unitMeasure,
           price: i.price,
+          pricingConfig: Ue(i.pricingConfigJson),
           cost: i.cost,
           marginPercent: i.marginPercent,
           hasTax: i.hasTax,
@@ -3539,8 +3771,8 @@ function ys({
           stock: i.stock,
           categoryId: i.categoryId,
           subcategoryId: i.subcategoryId,
-          categoryName: ((u = i.category) == null ? void 0 : u.name) ?? null,
-          subcategoryName: ((f = i.subcategory) == null ? void 0 : f.name) ?? null,
+          categoryName: ((d = i.category) == null ? void 0 : d.name) ?? null,
+          subcategoryName: ((g = i.subcategory) == null ? void 0 : g.name) ?? null,
           isActive: i.isActive,
           createdAt: i.createdAt.toISOString(),
           updatedAt: i.updatedAt.toISOString(),
@@ -3550,26 +3782,27 @@ function ys({
       })
     };
   }), e.handle("products:create", async (m, c) => {
-    var f;
-    const n = r();
-    if (!n)
+    var I;
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.productsCreate))
+    if (!B(o, E.productsCreate))
       return { success: !1, message: "Tu rol no puede crear productos" };
-    const s = Fa.safeParse(c);
+    const s = rs.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para el producto" };
-    const t = s.data, i = t.categoryId ? await a.productCategory.findUnique({ where: { id: t.categoryId } }) : null, u = ((f = t.sku) == null ? void 0 : f.trim()) || await Ts(a, t.name, i == null ? void 0 : i.name);
+    const t = s.data, i = t.categoryId ? await a.productCategory.findUnique({ where: { id: t.categoryId } }) : null, d = ((I = t.sku) == null ? void 0 : I.trim()) || await Vs(a, t.name, i == null ? void 0 : i.name), g = Ee(t.pricingConfig), p = pt(g), T = p ? ft(t.price, g) : K(t.price);
     try {
-      const g = await a.$transaction(async (T) => {
-        const I = await T.product.create({
+      const f = await a.$transaction(async (y) => {
+        const N = await y.product.create({
           data: {
             name: t.name,
-            sku: u,
+            sku: d,
             barcode: t.barcode || null,
             unitMeasure: t.unitMeasure ?? "UNIDAD",
-            price: z(t.price),
-            cost: z(t.cost ?? 0),
+            price: T,
+            pricingConfigJson: p,
+            cost: K(t.cost ?? 0),
             marginPercent: t.marginPercent ?? 0,
             hasTax: t.hasTax ?? !1,
             taxRate: t.hasTax ? t.taxRate ?? 0 : 0,
@@ -3579,49 +3812,51 @@ function ys({
             isActive: t.isActive ?? !0
           }
         });
-        return (t.stock ?? 0) > 0 && await T.inventoryMovement.create({
+        return (t.stock ?? 0) > 0 && await y.inventoryMovement.create({
           data: {
-            productId: I.id,
-            type: Te.MANUAL_IN,
+            productId: N.id,
+            type: Ne.MANUAL_IN,
             qty: t.stock ?? 0,
             stockBefore: 0,
             stockAfter: t.stock ?? 0,
             referenceType: "PRODUCT_CREATE",
-            referenceId: I.id,
-            note: `Stock inicial registrado por ${_e(n)}`
+            referenceId: N.id,
+            note: `Stock inicial registrado por ${ke(o)}`
           }
-        }), I;
+        }), N;
       });
-      return await V(a, n, "products", "create", "Product", g.id, void 0, {
-        name: g.name,
-        sku: g.sku
-      }), { success: !0, productId: g.id };
-    } catch (g) {
-      return { success: !1, message: g instanceof Error ? g.message : "No se pudo crear el producto" };
+      return await V(a, o, "products", "create", "Product", f.id, void 0, {
+        name: f.name,
+        sku: f.sku
+      }), { success: !0, productId: f.id };
+    } catch (f) {
+      return { success: !1, message: f instanceof Error ? f.message : "No se pudo crear el producto" };
     }
   }), e.handle("products:update", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.productsEdit))
+    if (!B(o, E.productsEdit))
       return { success: !1, message: "Tu rol no puede editar productos" };
-    const s = $a.safeParse(c);
+    const s = ns.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para actualizar el producto" };
     const t = await a.product.findUnique({ where: { id: s.data.id } });
     if (!t)
       return { success: !1, message: "Producto no encontrado" };
+    const i = s.data.pricingConfig === void 0 ? Ue(t.pricingConfigJson) : Ee(s.data.pricingConfig), d = i && i.enabled ? ft(s.data.price ?? t.price, i) : K(s.data.price === void 0 ? t.price : s.data.price);
     try {
-      return await a.$transaction(async (i) => {
-        if (await i.product.update({
+      return await a.$transaction(async (g) => {
+        if (await g.product.update({
           where: { id: s.data.id },
           data: {
             name: s.data.name ?? t.name,
             sku: s.data.sku ?? t.sku,
             barcode: s.data.barcode === void 0 ? t.barcode : s.data.barcode,
             unitMeasure: s.data.unitMeasure ?? t.unitMeasure,
-            price: s.data.price === void 0 ? t.price : z(s.data.price),
-            cost: s.data.cost === void 0 ? t.cost : z(s.data.cost),
+            price: d,
+            pricingConfigJson: s.data.pricingConfig === void 0 ? t.pricingConfigJson : pt(i),
+            cost: s.data.cost === void 0 ? t.cost : K(s.data.cost),
             marginPercent: s.data.marginPercent ?? t.marginPercent,
             hasTax: s.data.hasTax ?? t.hasTax,
             taxRate: s.data.hasTax === !1 ? 0 : s.data.taxRate ?? t.taxRate,
@@ -3631,45 +3866,45 @@ function ys({
             isActive: s.data.isActive ?? t.isActive
           }
         }), s.data.stock !== void 0 && s.data.stock !== t.stock) {
-          const u = s.data.stock - t.stock;
-          await i.inventoryMovement.create({
+          const p = s.data.stock - t.stock;
+          await g.inventoryMovement.create({
             data: {
               productId: t.id,
-              type: u > 0 ? Te.ADJUSTMENT_IN : Te.ADJUSTMENT_OUT,
-              qty: Math.abs(u),
+              type: p > 0 ? Ne.ADJUSTMENT_IN : Ne.ADJUSTMENT_OUT,
+              qty: Math.abs(p),
               stockBefore: t.stock,
               stockAfter: s.data.stock,
               referenceType: "PRODUCT_EDIT",
               referenceId: t.id,
-              note: `Ajuste manual por ${_e(n)}`
+              note: `Ajuste manual por ${ke(o)}`
             }
           });
         }
-      }), await V(a, n, "products", "update", "Product", t.id, t, s.data), { success: !0 };
-    } catch (i) {
-      return { success: !1, message: i instanceof Error ? i.message : "No se pudo actualizar el producto" };
+      }), await V(a, o, "products", "update", "Product", t.id, t, s.data), { success: !0 };
+    } catch (g) {
+      return { success: !1, message: g instanceof Error ? g.message : "No se pudo actualizar el producto" };
     }
   }), e.handle("products:delete", async (m, c) => {
-    const n = await ot(r);
-    if (!M(n, E.productsDelete))
+    const o = await At(r);
+    if (!B(o, E.productsDelete))
       return { success: !1, message: "Tu rol no puede archivar productos" };
-    const s = Ee.safeParse(c);
+    const s = ye.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Producto invalido" };
     const t = await a.product.findUnique({ where: { id: s.data.id } });
     return t ? (await a.product.update({
       where: { id: s.data.id },
       data: { isActive: !1 }
-    }), await V(a, n, "products", "archive", "Product", t.id, t, {
+    }), await V(a, o, "products", "archive", "Product", t.id, t, {
       isActive: !1
     }), { success: !0 }) : { success: !1, message: "Producto no encontrado" };
   }), e.handle("products:category:create", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.productsEdit))
+    if (!B(o, E.productsEdit))
       return { success: !1, message: "Tu rol no puede administrar categorias" };
-    const s = Ka.safeParse(c);
+    const s = As.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Categoria invalida" };
     try {
@@ -3680,22 +3915,22 @@ function ys({
       return { success: !1, message: "La categoria ya existe" };
     }
   }), e.handle("products:category:delete", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.productsEdit))
+    if (!B(o, E.productsEdit))
       return { success: !1, message: "Tu rol no puede administrar categorias" };
-    const s = Ee.safeParse(c);
+    const s = ye.safeParse(c);
     return s.success ? (await a.productCategory.delete({
       where: { id: s.data.id }
     }), { success: !0 }) : { success: !1, message: "Categoria invalida" };
   }), e.handle("products:subcategory:create", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.productsEdit))
+    if (!B(o, E.productsEdit))
       return { success: !1, message: "Tu rol no puede administrar subcategorias" };
-    const s = Ha.safeParse(c);
+    const s = ys.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Subcategoria invalida" };
     try {
@@ -3710,12 +3945,12 @@ function ys({
       return { success: !1, message: "La subcategoria ya existe en esa categoria" };
     }
   }), e.handle("products:subcategory:delete", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.productsEdit))
+    if (!B(o, E.productsEdit))
       return { success: !1, message: "Tu rol no puede administrar subcategorias" };
-    const s = Ee.safeParse(c);
+    const s = ye.safeParse(c);
     return s.success ? (await a.productSubcategory.delete({
       where: { id: s.data.id }
     }), { success: !0 }) : { success: !1, message: "Subcategoria invalida" };
@@ -3729,7 +3964,7 @@ function ys({
           select: { sales: !0, credits: !0 }
         }
       }
-    }), n = c.map((t) => t.id), s = await de(a, "Customer", n, "create");
+    }), o = c.map((t) => t.id), s = await le(a, "Customer", o, "create");
     return {
       success: !0,
       customers: c.map((t) => ({
@@ -3737,6 +3972,7 @@ function ys({
         internalCode: t.internalCode,
         name: t.name,
         document: t.document,
+        segment: t.segment,
         phone: t.phone,
         email: t.email,
         address: t.address,
@@ -3748,12 +3984,12 @@ function ys({
       }))
     };
   }), e.handle("customers:sales-history", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion", sales: [] };
-    if (!M(n, E.salesHistory))
+    if (!B(o, E.salesHistory))
       return { success: !1, message: "Tu rol no puede ver facturas del POS", sales: [] };
-    const s = Ee.safeParse(c);
+    const s = ye.safeParse(c);
     return s.success ? {
       success: !0,
       sales: (await a.sale.findMany({
@@ -3775,33 +4011,34 @@ function ys({
         status: i.status,
         paymentMethod: i.paymentMethod,
         createdAt: i.createdAt.toISOString(),
-        cashier: ye(i.cashier),
-        itemsCount: i.items.reduce((u, f) => u + f.qty, 0)
+        cashier: Ce(i.cashier),
+        itemsCount: i.items.reduce((d, g) => d + g.qty, 0)
       }))
     } : { success: !1, message: "Cliente invalido", sales: [] };
   }), e.handle("customers:create", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.customersCreate))
+    if (!B(o, E.customersCreate))
       return { success: !1, message: "Tu rol no puede crear clientes" };
-    const s = wt.safeParse(c);
+    const s = qt.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para el cliente" };
     try {
       const t = (await a.customer.findMany({
         select: { internalCode: !0 }
-      })).map((f) => f.internalCode), i = Z({
+      })).map((g) => g.internalCode), i = te({
         desiredCode: null,
         existingCodes: t,
         prefix: "CLI",
         digits: 4,
         maxLength: 30
-      }), u = await a.customer.create({
+      }), d = await a.customer.create({
         data: {
           internalCode: i,
-          name: it(s.data.firstName, s.data.lastName),
-          document: be(s.data.documentType, s.data.documentNumber),
+          name: yt(s.data.firstName, s.data.lastName),
+          document: Re(s.data.documentType, s.data.documentNumber),
+          segment: s.data.segment,
           phone: s.data.phone || null,
           email: s.data.email || null,
           address: s.data.address || null,
@@ -3810,20 +4047,20 @@ function ys({
           isActive: !0
         }
       });
-      return await V(a, n, "customers", "create", "Customer", u.id, void 0, {
-        name: u.name,
-        document: u.document
-      }), { success: !0, customerId: u.id };
+      return await V(a, o, "customers", "create", "Customer", d.id, void 0, {
+        name: d.name,
+        document: d.document
+      }), { success: !0, customerId: d.id };
     } catch (t) {
       return { success: !1, message: t instanceof Error ? t.message : "No se pudo crear el cliente. Verifica documento o correo duplicado." };
     }
   }), e.handle("customers:update", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.customersEdit))
+    if (!B(o, E.customersEdit))
       return { success: !1, message: "Tu rol no puede editar clientes" };
-    const s = Ya.safeParse(c);
+    const s = Is.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para actualizar el cliente" };
     const t = await a.customer.findUnique({ where: { id: s.data.id } });
@@ -3833,16 +4070,17 @@ function ys({
       const i = (await a.customer.findMany({
         where: { NOT: { id: t.id } },
         select: { internalCode: !0 }
-      })).map((g) => g.internalCode), f = {
-        internalCode: Z({
+      })).map((p) => p.internalCode), g = {
+        internalCode: te({
           desiredCode: t.internalCode,
           existingCodes: i,
           prefix: "CLI",
           digits: 4,
           maxLength: 30
         }),
-        name: it(s.data.firstName, s.data.lastName),
-        document: be(s.data.documentType, s.data.documentNumber),
+        name: yt(s.data.firstName, s.data.lastName),
+        document: Re(s.data.documentType, s.data.documentNumber),
+        segment: s.data.segment ?? t.segment,
         phone: s.data.phone || null,
         email: s.data.email || null,
         address: s.data.address || null,
@@ -3851,11 +4089,11 @@ function ys({
       return await a.customer.update({
         where: { id: t.id },
         data: {
-          ...f,
+          ...g,
           creditLimit: 0,
           notes: null
         }
-      }), await V(a, n, "customers", "update", "Customer", t.id, t, f), { success: !0 };
+      }), await V(a, o, "customers", "update", "Customer", t.id, t, g), { success: !0 };
     } catch (i) {
       return { success: !1, message: i instanceof Error ? i.message : "No se pudo actualizar el cliente. Verifica documento o correo duplicado." };
     }
@@ -3869,7 +4107,7 @@ function ys({
           select: { purchases: !0 }
         }
       }
-    }), n = c.map((t) => t.id), s = await de(a, "Supplier", n, "create");
+    }), o = c.map((t) => t.id), s = await le(a, "Supplier", o, "create");
     return {
       success: !0,
       suppliers: c.map((t) => ({
@@ -3888,28 +4126,28 @@ function ys({
       }))
     };
   }), e.handle("suppliers:create", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.suppliersCreate))
+    if (!B(o, E.suppliersCreate))
       return { success: !1, message: "Tu rol no puede crear proveedores" };
-    const s = Ot.safeParse(c);
+    const s = Xt.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para el proveedor" };
     try {
       const t = (await a.supplier.findMany({
         select: { internalCode: !0 }
-      })).map((f) => f.internalCode), i = Z({
+      })).map((g) => g.internalCode), i = te({
         desiredCode: null,
         existingCodes: t,
         prefix: "PRV",
         digits: 4,
         maxLength: 30
-      }), u = await a.supplier.create({
+      }), d = await a.supplier.create({
         data: {
           internalCode: i,
           name: s.data.name,
-          taxId: be(s.data.documentType, s.data.documentNumber),
+          taxId: Re(s.data.documentType, s.data.documentNumber),
           phone: s.data.phone || null,
           email: s.data.email || null,
           address: s.data.address || null,
@@ -3917,20 +4155,20 @@ function ys({
           isActive: !0
         }
       });
-      return await V(a, n, "suppliers", "create", "Supplier", u.id, void 0, {
-        name: u.name,
-        taxId: u.taxId
-      }), { success: !0, supplierId: u.id };
+      return await V(a, o, "suppliers", "create", "Supplier", d.id, void 0, {
+        name: d.name,
+        taxId: d.taxId
+      }), { success: !0, supplierId: d.id };
     } catch (t) {
       return { success: !1, message: t instanceof Error ? t.message : "No se pudo crear el proveedor. Verifica documento o correo duplicado." };
     }
   }), e.handle("suppliers:update", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.suppliersEdit))
+    if (!B(o, E.suppliersEdit))
       return { success: !1, message: "Tu rol no puede editar proveedores" };
-    const s = Ja.safeParse(c);
+    const s = Ns.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para actualizar el proveedor" };
     const t = await a.supplier.findUnique({ where: { id: s.data.id } });
@@ -3940,8 +4178,8 @@ function ys({
       const i = (await a.supplier.findMany({
         where: { NOT: { id: t.id } },
         select: { internalCode: !0 }
-      })).map((g) => g.internalCode), f = {
-        internalCode: Z({
+      })).map((p) => p.internalCode), g = {
+        internalCode: te({
           desiredCode: t.internalCode,
           existingCodes: i,
           prefix: "PRV",
@@ -3949,7 +4187,7 @@ function ys({
           maxLength: 30
         }),
         name: s.data.name,
-        taxId: be(s.data.documentType, s.data.documentNumber),
+        taxId: Re(s.data.documentType, s.data.documentNumber),
         phone: s.data.phone || null,
         email: s.data.email || null,
         address: s.data.address || null,
@@ -3958,8 +4196,8 @@ function ys({
       };
       return await a.supplier.update({
         where: { id: t.id },
-        data: f
-      }), await V(a, n, "suppliers", "update", "Supplier", t.id, t, f), { success: !0 };
+        data: g
+      }), await V(a, o, "suppliers", "update", "Supplier", t.id, t, g), { success: !0 };
     } catch (i) {
       return { success: !1, message: i instanceof Error ? i.message : "No se pudo actualizar el proveedor. Verifica documento o correo duplicado." };
     }
@@ -3977,7 +4215,7 @@ function ys({
       },
       orderBy: { purchasedAt: "desc" },
       take: 200
-    }), n = c.map((t) => t.id), s = await de(a, "Purchase", n, "create");
+    }), o = c.map((t) => t.id), s = await le(a, "Purchase", o, "create");
     return {
       success: !0,
       purchases: c.map((t) => ({
@@ -3992,17 +4230,17 @@ function ys({
         balance: t.balance,
         note: t.note,
         purchasedAt: t.purchasedAt.toISOString(),
-        itemsCount: t.items.reduce((i, u) => i + u.qty, 0),
+        itemsCount: t.items.reduce((i, d) => i + d.qty, 0),
         createdBy: s.get(t.id) ?? null
       }))
     };
   }), e.handle("purchases:get-detail", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.purchasesDetails))
+    if (!B(o, E.purchasesDetails))
       return { success: !1, message: "Tu rol no puede ver el detalle de compras" };
-    const s = Ee.safeParse(c);
+    const s = ye.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Compra invalida" };
     const t = await a.purchase.findUnique({
@@ -4021,7 +4259,7 @@ function ys({
     });
     if (!t)
       return { success: !1, message: "Compra no encontrada" };
-    const i = await de(a, "Purchase", [t.id], "create");
+    const i = await le(a, "Purchase", [t.id], "create");
     return {
       success: !0,
       purchase: {
@@ -4036,121 +4274,121 @@ function ys({
         note: t.note,
         purchasedAt: t.purchasedAt.toISOString(),
         createdBy: i.get(t.id) ?? null,
-        items: t.items.map((u) => ({
-          id: u.id,
-          productName: u.product.name,
-          productSku: u.product.sku,
-          qty: u.qty,
-          cost: u.cost,
-          taxRate: u.taxRate,
-          subtotal: u.subtotal,
-          total: u.subtotal + z(u.subtotal * u.taxRate)
+        items: t.items.map((d) => ({
+          id: d.id,
+          productName: d.product.name,
+          productSku: d.product.sku,
+          qty: d.qty,
+          cost: d.cost,
+          taxRate: d.taxRate,
+          subtotal: d.subtotal,
+          total: d.subtotal + K(d.subtotal * d.taxRate)
         }))
       }
     };
   }), e.handle("purchases:create", async (m, c) => {
-    const n = await ot(r);
-    if (!M(n, E.purchasesCreate))
+    const o = await At(r);
+    if (!B(o, E.purchasesCreate))
       return { success: !1, message: "Tu rol no puede registrar compras" };
-    const s = Wa.safeParse(c);
+    const s = hs.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para la compra" };
     const t = await a.supplier.findUnique({ where: { id: s.data.supplierId } });
     if (!t)
       return { success: !1, message: "Proveedor no encontrado" };
-    const i = s.data.items.map((b) => b.productId), u = await a.product.findMany({
+    const i = s.data.items.map((v) => v.productId), d = await a.product.findMany({
       where: {
         id: { in: i },
         isActive: !0
       }
     });
-    if (u.length !== i.length)
+    if (d.length !== i.length)
       return { success: !1, message: "Uno o más productos no están disponibles" };
-    const f = new Map(u.map((b) => [b.id, b])), g = s.data.items.map((b) => {
-      const d = f.get(b.productId);
-      if (!d)
+    const g = new Map(d.map((v) => [v.id, v])), p = s.data.items.map((v) => {
+      const u = g.get(v.productId);
+      if (!u)
         throw new Error("Producto no encontrado");
-      const A = z(b.cost * b.qty), S = z(A * (b.taxRate ?? 0));
+      const A = K(v.cost * v.qty), S = K(A * (v.taxRate ?? 0));
       return {
-        product: d,
-        qty: b.qty,
-        cost: z(b.cost),
-        taxRate: b.taxRate ?? 0,
+        product: u,
+        qty: v.qty,
+        cost: K(v.cost),
+        taxRate: v.taxRate ?? 0,
         subtotal: A,
         tax: S,
         total: A + S
       };
-    }), T = g.reduce((b, d) => b + d.subtotal, 0), I = g.reduce((b, d) => b + d.tax, 0), p = T + I, N = s.data.purchasedAt ? new Date(s.data.purchasedAt) : /* @__PURE__ */ new Date(), C = s.data.markAsPaid ? Qe.PAID : Qe.RECEIVED, h = s.data.markAsPaid ? 0 : p, v = ke(s.data.paymentMedium), D = v === "CORRESPONDENT" && s.data.paymentPlatformId ? await a.correspondentPlatform.findUnique({
+    }), T = p.reduce((v, u) => v + u.subtotal, 0), I = p.reduce((v, u) => v + u.tax, 0), f = T + I, y = s.data.purchasedAt ? new Date(s.data.purchasedAt) : /* @__PURE__ */ new Date(), N = s.data.markAsPaid ? ct.PAID : ct.RECEIVED, C = s.data.markAsPaid ? 0 : f, b = Ve(s.data.paymentMedium), D = b === "CORRESPONDENT" && s.data.paymentPlatformId ? await a.correspondentPlatform.findUnique({
       where: { id: s.data.paymentPlatformId },
       select: { id: !0, name: !0 }
     }) : null;
-    if (v === "CORRESPONDENT" && !D)
+    if (b === "CORRESPONDENT" && !D)
       return { success: !1, message: "Selecciona un corresponsal valido para pagar la compra" };
-    const P = s.data.markAsPaid ? await a.cashSession.findFirst({
-      where: { status: W.OPEN },
+    const x = s.data.markAsPaid ? await a.cashSession.findFirst({
+      where: { status: Z.OPEN },
       orderBy: { openedAt: "desc" }
     }) : null;
-    if (s.data.markAsPaid && !P)
+    if (s.data.markAsPaid && !x)
       return { success: !1, message: "Abre el control diario antes de registrar compras pagadas" };
     try {
-      const b = await a.$transaction(async (d) => {
-        const A = await Is(d), S = await d.purchase.create({
+      const v = await a.$transaction(async (u) => {
+        const A = await js(u), S = await u.purchase.create({
           data: {
             supplierId: s.data.supplierId,
             number: A,
-            status: C,
+            status: N,
             subtotal: T,
             tax: I,
-            total: p,
-            balance: h,
+            total: f,
+            balance: C,
             note: s.data.note || null,
-            purchasedAt: N,
+            purchasedAt: y,
             items: {
-              create: g.map((y) => ({
-                productId: y.product.id,
-                qty: y.qty,
-                cost: y.cost,
-                taxRate: y.taxRate,
-                subtotal: y.subtotal
+              create: p.map((L) => ({
+                productId: L.product.id,
+                qty: L.qty,
+                cost: L.cost,
+                taxRate: L.taxRate,
+                subtotal: L.subtotal
               }))
             }
           }
         });
-        for (const y of g) {
-          const w = y.product.stock + y.qty, $ = w <= 0 ? y.cost : z((y.product.stock * y.product.cost + y.subtotal) / w), U = is(
-            $,
-            y.product.marginPercent,
-            y.product.hasTax,
-            y.product.taxRate
+        for (const L of p) {
+          const h = L.product.stock + L.qty, R = h <= 0 ? L.cost : K((L.product.stock * L.product.cost + L.subtotal) / h), M = xs(
+            R,
+            L.product.marginPercent,
+            L.product.hasTax,
+            L.product.taxRate
           );
-          await d.product.update({
-            where: { id: y.product.id },
+          await u.product.update({
+            where: { id: L.product.id },
             data: {
-              stock: w,
-              cost: $,
-              price: U
+              stock: h,
+              cost: R,
+              price: M
             }
-          }), await d.inventoryMovement.create({
+          }), await u.inventoryMovement.create({
             data: {
-              productId: y.product.id,
-              type: Te.PURCHASE_IN,
-              qty: y.qty,
-              stockBefore: y.product.stock,
-              stockAfter: w,
+              productId: L.product.id,
+              type: Ne.PURCHASE_IN,
+              qty: L.qty,
+              stockBefore: L.product.stock,
+              stockAfter: h,
               referenceType: "PURCHASE",
               referenceId: S.id,
-              note: `${S.number} - ${t.name} - registrado por ${_e(n)}`
+              note: `${S.number} - ${t.name} - registrado por ${ke(o)}`
             }
           });
         }
-        return s.data.markAsPaid && P && await d.cashMovement.create({
+        return s.data.markAsPaid && x && await u.cashMovement.create({
           data: {
-            sessionId: P.id,
-            type: B.EXPENSE_OUT,
-            amount: p,
-            note: Se({
+            sessionId: x.id,
+            type: k.EXPENSE_OUT,
+            amount: f,
+            note: Oe({
               label: `Compra pagada ${S.number} - ${t.name}`,
-              medium: v,
+              medium: b,
               platformId: (D == null ? void 0 : D.id) ?? null,
               platformName: (D == null ? void 0 : D.name) ?? null,
               sourceType: "PURCHASE",
@@ -4159,16 +4397,16 @@ function ys({
           }
         }), S;
       });
-      return await V(a, n, "purchases", "create", "Purchase", b.id, void 0, {
-        number: b.number,
+      return await V(a, o, "purchases", "create", "Purchase", v.id, void 0, {
+        number: v.number,
         supplier: t.name,
-        total: b.total,
+        total: v.total,
         markAsPaid: s.data.markAsPaid,
-        paymentMedium: v,
+        paymentMedium: b,
         paymentPlatform: (D == null ? void 0 : D.name) ?? null
-      }), { success: !0, purchaseId: b.id };
-    } catch (b) {
-      return { success: !1, message: b instanceof Error ? b.message : "No se pudo registrar la compra" };
+      }), { success: !0, purchaseId: v.id };
+    } catch (v) {
+      return { success: !1, message: v instanceof Error ? v.message : "No se pudo registrar la compra" };
     }
   }), e.handle("inventory:list", async () => r() ? {
     success: !0,
@@ -4180,28 +4418,28 @@ function ys({
       },
       orderBy: { createdAt: "desc" },
       take: 200
-    })).map((n) => ({
-      id: n.id,
-      productId: n.productId,
-      productName: n.product.name,
-      productSku: n.product.sku,
-      type: n.type,
-      qty: n.qty,
-      stockBefore: n.stockBefore,
-      stockAfter: n.stockAfter,
-      referenceType: n.referenceType,
-      referenceId: n.referenceId,
-      note: n.note,
-      createdAt: n.createdAt.toISOString()
+    })).map((o) => ({
+      id: o.id,
+      productId: o.productId,
+      productName: o.product.name,
+      productSku: o.product.sku,
+      type: o.type,
+      qty: o.qty,
+      stockBefore: o.stockBefore,
+      stockAfter: o.stockAfter,
+      referenceType: o.referenceType,
+      referenceId: o.referenceId,
+      note: o.note,
+      createdAt: o.createdAt.toISOString()
     }))
   } : { success: !1, message: "Debes iniciar sesion", moves: [] }), e.handle("sales:list", async (m, c) => {
-    var f;
+    var g;
     if (!r())
       return { success: !1, message: "Debes iniciar sesion", sales: [] };
-    const s = ns.safeParse(c);
+    const s = Ds.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Filtros invalidos", sales: [] };
-    const t = s.data, i = (f = t.search) == null ? void 0 : f.trim();
+    const t = s.data, i = (g = t.search) == null ? void 0 : g.trim();
     return {
       success: !0,
       sales: (await a.sale.findMany({
@@ -4227,24 +4465,24 @@ function ys({
         },
         orderBy: { createdAt: "desc" },
         take: 200
-      })).map((g) => ({
-        id: g.id,
-        invoiceNumber: g.invoiceNumber,
-        customer: g.customer,
-        paymentMethod: g.paymentMethod,
-        subtotal: g.subtotal,
-        tax: g.tax,
-        total: g.total,
-        status: g.status,
-        createdAt: g.createdAt.toISOString(),
-        cashier: ye(g.cashier),
-        itemsCount: g.items.reduce((T, I) => T + I.qty, 0)
+      })).map((p) => ({
+        id: p.id,
+        invoiceNumber: p.invoiceNumber,
+        customer: p.customer,
+        paymentMethod: p.paymentMethod,
+        subtotal: p.subtotal,
+        tax: p.tax,
+        total: p.total,
+        status: p.status,
+        createdAt: p.createdAt.toISOString(),
+        cashier: Ce(p.cashier),
+        itemsCount: p.items.reduce((T, I) => T + I.qty, 0)
       }))
     };
   }), e.handle("sales:get-detail", async (m, c) => {
     if (!r())
       return { success: !1, message: "Debes iniciar sesion" };
-    const s = st.safeParse(c);
+    const s = gt.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Venta invalida" };
     const t = await a.sale.findUnique({
@@ -4271,7 +4509,7 @@ function ys({
         total: t.total,
         status: t.status,
         createdAt: t.createdAt.toISOString(),
-        cashier: ye(t.cashier),
+        cashier: Ce(t.cashier),
         items: t.items.map((i) => ({
           id: i.id,
           name: i.name,
@@ -4291,12 +4529,12 @@ function ys({
       }
     } : { success: !1, message: "Venta no encontrada" };
   }), e.handle("sales:print-invoice", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.salesPrint))
+    if (!B(o, E.salesPrint))
       return { success: !1, message: "Tu rol no puede imprimir facturas" };
-    const s = st.safeParse(c);
+    const s = gt.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Venta invalida" };
     const [t, i] = await Promise.all([
@@ -4314,15 +4552,15 @@ function ys({
     ]);
     if (!t)
       return { success: !1, message: "Venta no encontrada" };
-    const u = nt(i == null ? void 0 : i.address), f = us({
+    const d = Tt(i == null ? void 0 : i.address), g = Ms({
       businessName: i == null ? void 0 : i.businessName,
       taxId: i == null ? void 0 : i.taxId,
-      address: u.address,
-      city: u.city,
+      address: d.address,
+      city: d.city,
       receiptFooter: i == null ? void 0 : i.receiptFooter,
       invoiceNumber: t.invoiceNumber,
       customer: t.customer,
-      paymentSummary: cs(t.payments, t.paymentMethod),
+      paymentSummary: Ls(t.payments, t.paymentMethod),
       total: t.total,
       subtotal: t.subtotal,
       tax: t.tax,
@@ -4334,21 +4572,21 @@ function ys({
         price: T.price,
         lineTotal: T.lineTotal
       }))
-    }, s.data.template), g = new qe({
+    }, s.data.template), p = new Ge({
       show: !1,
       webPreferences: {
         sandbox: !1
       }
     });
-    return await g.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(f)}`), await new Promise((T) => {
-      g.webContents.print(
+    return await p.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(g)}`), await new Promise((T) => {
+      p.webContents.print(
         {
           silent: !1,
           printBackground: !0
         },
-        (I, p) => {
-          if (g.close(), !I) {
-            T({ success: !1, message: p || "No se pudo imprimir" });
+        (I, f) => {
+          if (p.close(), !I) {
+            T({ success: !1, message: f || "No se pudo imprimir" });
             return;
           }
           T({ success: !0 });
@@ -4356,15 +4594,15 @@ function ys({
       );
     });
   }), e.handle("accounting:summary", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.reportsView))
+    if (!B(o, E.reportsView))
       return { success: !1, message: "Tu rol no puede consultar contabilidad" };
-    const s = Pa.safeParse(c);
+    const s = Ya.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Filtros invalidos" };
-    const t = ms(s.data.dateFrom, s.data.dateTo), [i, u, f, g, T, I] = await Promise.all([
+    const t = Bs(s.data.dateFrom, s.data.dateTo), [i, d, g, p, T, I] = await Promise.all([
       a.customer.findMany({
         where: { isActive: !0 },
         orderBy: { name: "asc" },
@@ -4379,7 +4617,7 @@ function ys({
       a.sale.findMany({
         where: {
           ...t ? { createdAt: t } : {},
-          status: { not: me.CANCELLED }
+          status: { not: fe.CANCELLED }
         },
         include: {
           customerRef: {
@@ -4467,7 +4705,7 @@ function ys({
       a.cashMovement.findMany({
         where: {
           ...t ? { createdAt: t } : {},
-          type: { in: [B.EXPENSE_OUT, B.WITHDRAWAL_OUT] }
+          type: { in: [k.EXPENSE_OUT, k.WITHDRAWAL_OUT] }
         },
         include: {
           session: {
@@ -4484,204 +4722,204 @@ function ys({
         orderBy: { createdAt: "desc" },
         take: 150
       })
-    ]), p = f.map((d) => {
+    ]), f = g.map((u) => {
       var S;
-      const A = Ae(d.balance, d.total, d.dueDate);
+      const A = Ie(u.balance, u.total, u.dueDate);
       return {
-        id: d.id,
-        saleId: d.saleId,
-        invoiceNumber: d.sale.invoiceNumber,
-        customerId: d.customerId,
-        customerName: d.customer.name,
-        total: d.total,
-        balance: d.balance,
-        paidAmount: d.payments.reduce((y, w) => y + w.amount, 0),
+        id: u.id,
+        saleId: u.saleId,
+        invoiceNumber: u.sale.invoiceNumber,
+        customerId: u.customerId,
+        customerName: u.customer.name,
+        total: u.total,
+        balance: u.balance,
+        paidAmount: u.payments.reduce((L, h) => L + h.amount, 0),
         status: A,
-        dueDate: ((S = d.dueDate) == null ? void 0 : S.toISOString()) ?? null,
-        createdAt: d.createdAt.toISOString()
+        dueDate: ((S = u.dueDate) == null ? void 0 : S.toISOString()) ?? null,
+        createdAt: u.createdAt.toISOString()
       };
-    }), N = u.map((d) => {
-      var q, k;
-      const A = d.returns.reduce((L, xe) => L + xe.total, 0), S = d.credits[0] ?? null, y = d.payments.reduce((L, xe) => L + xe.amount, 0), w = Math.max(d.total - A, 0), $ = S ? S.balance : Math.max(w - y, 0), U = A >= d.total ? "RETURNED" : $ <= 0 ? "PAID" : y > 0 ? "PARTIAL" : "PENDING", Y = d.payments.length ? d.payments.map((L) => `${le(L.method)} $${L.amount.toLocaleString("es-CO")}`).join(" + ") : S ? "Pendiente por cartera" : le(d.paymentMethod);
+    }), y = d.map((u) => {
+      var G, _;
+      const A = u.returns.reduce((q, U) => q + U.total, 0), S = u.credits[0] ?? null, L = u.payments.reduce((q, U) => q + U.amount, 0), h = Math.max(u.total - A, 0), R = S ? S.balance : Math.max(h - L, 0), M = A >= u.total ? "RETURNED" : R <= 0 ? "PAID" : L > 0 ? "PARTIAL" : "PENDING", j = u.payments.length ? u.payments.map((q) => `${pe(q.method)} $${q.amount.toLocaleString("es-CO")}`).join(" + ") : S ? "Pendiente por cartera" : pe(u.paymentMethod);
       return {
-        id: d.id,
-        invoiceNumber: d.invoiceNumber,
-        customer: d.customer,
-        customerId: ((q = d.customerRef) == null ? void 0 : q.id) ?? null,
-        total: d.total,
-        paidAtSale: y,
-        pendingAmount: $,
+        id: u.id,
+        invoiceNumber: u.invoiceNumber,
+        customer: u.customer,
+        customerId: ((G = u.customerRef) == null ? void 0 : G.id) ?? null,
+        total: u.total,
+        paidAtSale: L,
+        pendingAmount: R,
         returnedTotal: A,
-        grossProfit: d.profit,
-        paymentSummary: Y,
-        collectionStatus: U,
-        status: d.status,
-        createdAt: d.createdAt.toISOString(),
-        availableCreditTotal: Math.max(d.total - A, 0),
-        availableCreditNoteTotal: Math.max(d.total - A, 0),
+        grossProfit: u.profit,
+        paymentSummary: j,
+        collectionStatus: M,
+        status: u.status,
+        createdAt: u.createdAt.toISOString(),
+        availableCreditTotal: Math.max(u.total - A, 0),
+        availableCreditNoteTotal: Math.max(u.total - A, 0),
         credit: S ? {
           id: S.id,
           total: S.total,
           balance: S.balance,
-          status: Ae(S.balance, S.total, S.dueDate),
-          dueDate: ((k = S.dueDate) == null ? void 0 : k.toISOString()) ?? null
+          status: Ie(S.balance, S.total, S.dueDate),
+          dueDate: ((_ = S.dueDate) == null ? void 0 : _.toISOString()) ?? null
         } : null
       };
-    }), C = /* @__PURE__ */ new Map();
-    for (const d of [j.CASH, j.CARD, j.TRANSFER])
-      C.set(d, { salesAmount: 0, collectionsAmount: 0 });
-    for (const d of u) {
-      if (d.payments.length === 0) {
-        const A = C.get(d.paymentMethod) ?? { salesAmount: 0, collectionsAmount: 0 };
-        A.salesAmount += d.total, C.set(d.paymentMethod, A);
+    }), N = /* @__PURE__ */ new Map();
+    for (const u of [z.CASH, z.CARD, z.TRANSFER])
+      N.set(u, { salesAmount: 0, collectionsAmount: 0 });
+    for (const u of d) {
+      if (u.payments.length === 0) {
+        const A = N.get(u.paymentMethod) ?? { salesAmount: 0, collectionsAmount: 0 };
+        A.salesAmount += u.total, N.set(u.paymentMethod, A);
         continue;
       }
-      for (const A of d.payments) {
-        const S = C.get(A.method) ?? { salesAmount: 0, collectionsAmount: 0 };
-        S.salesAmount += A.amount, C.set(A.method, S);
+      for (const A of u.payments) {
+        const S = N.get(A.method) ?? { salesAmount: 0, collectionsAmount: 0 };
+        S.salesAmount += A.amount, N.set(A.method, S);
       }
     }
-    for (const d of g) {
-      const A = C.get(d.method) ?? { salesAmount: 0, collectionsAmount: 0 };
-      A.collectionsAmount += d.amount, C.set(d.method, A);
+    for (const u of p) {
+      const A = N.get(u.method) ?? { salesAmount: 0, collectionsAmount: 0 };
+      A.collectionsAmount += u.amount, N.set(u.method, A);
     }
-    const h = N.reduce((d, A) => d + A.paidAtSale, 0), v = g.reduce((d, A) => d + A.amount, 0), D = N.reduce((d, A) => d + A.pendingAmount, 0), P = N.reduce((d, A) => d + A.grossProfit, 0), b = [
-      ...N.map((d) => ({
-        id: `sale-${d.id}`,
-        createdAt: d.createdAt,
+    const C = y.reduce((u, A) => u + A.paidAtSale, 0), b = p.reduce((u, A) => u + A.amount, 0), D = y.reduce((u, A) => u + A.pendingAmount, 0), x = y.reduce((u, A) => u + A.grossProfit, 0), v = [
+      ...y.map((u) => ({
+        id: `sale-${u.id}`,
+        createdAt: u.createdAt,
         category: "SALE",
-        title: `Venta ${d.invoiceNumber}`,
-        detail: `${d.customer} | cobrado al momento $${d.paidAtSale.toLocaleString("es-CO")} | pendiente $${d.pendingAmount.toLocaleString("es-CO")}`,
-        medium: d.paymentSummary,
-        amount: d.total,
+        title: `Venta ${u.invoiceNumber}`,
+        detail: `${u.customer} | cobrado al momento $${u.paidAtSale.toLocaleString("es-CO")} | pendiente $${u.pendingAmount.toLocaleString("es-CO")}`,
+        medium: u.paymentSummary,
+        amount: u.total,
         direction: "IN",
-        reference: d.invoiceNumber,
-        operationalImpact: d.paidAtSale
+        reference: u.invoiceNumber,
+        operationalImpact: u.paidAtSale
       })),
-      ...g.map((d) => {
+      ...p.map((u) => {
         var A, S;
         return {
-          id: `collection-${d.id}`,
-          createdAt: d.createdAt.toISOString(),
+          id: `collection-${u.id}`,
+          createdAt: u.createdAt.toISOString(),
           category: "COLLECTION",
-          title: `Abono cartera ${((A = d.credit) == null ? void 0 : A.sale.invoiceNumber) ?? ""}`.trim(),
-          detail: `${d.customer.name} | ${d.note || "Sin detalle"}`,
-          medium: le(d.method),
-          amount: d.amount,
+          title: `Abono cartera ${((A = u.credit) == null ? void 0 : A.sale.invoiceNumber) ?? ""}`.trim(),
+          detail: `${u.customer.name} | ${u.note || "Sin detalle"}`,
+          medium: pe(u.method),
+          amount: u.amount,
           direction: "IN",
-          reference: ((S = d.credit) == null ? void 0 : S.sale.invoiceNumber) ?? null,
-          operationalImpact: d.amount
+          reference: ((S = u.credit) == null ? void 0 : S.sale.invoiceNumber) ?? null,
+          operationalImpact: u.amount
         };
       }),
-      ...T.map((d) => ({
-        id: `credit-note-${d.id}`,
-        createdAt: d.createdAt.toISOString(),
+      ...T.map((u) => ({
+        id: `credit-note-${u.id}`,
+        createdAt: u.createdAt.toISOString(),
         category: "CREDIT_NOTE",
-        title: `Nota credito ${d.sale.invoiceNumber}`,
-        detail: `${d.sale.customer} | ${d.reason || "Ajuste sobre venta"}`,
+        title: `Nota credito ${u.sale.invoiceNumber}`,
+        detail: `${u.sale.customer} | ${u.reason || "Ajuste sobre venta"}`,
         medium: "Ajuste comercial",
-        amount: d.total,
+        amount: u.total,
         direction: "OUT",
-        reference: d.sale.invoiceNumber,
-        operationalImpact: -d.total
+        reference: u.sale.invoiceNumber,
+        operationalImpact: -u.total
       })),
-      ...I.map((d) => {
-        var A, S, y;
+      ...I.map((u) => {
+        var A, S, L;
         return {
-          id: `expense-${d.id}`,
-          createdAt: d.createdAt.toISOString(),
+          id: `expense-${u.id}`,
+          createdAt: u.createdAt.toISOString(),
           category: "EXPENSE",
-          title: d.type === B.WITHDRAWAL_OUT ? "Retiro operativo" : "Gasto operativo",
-          detail: Be(d.note),
-          medium: ((A = se(d.note)) == null ? void 0 : A.medium) === "CORRESPONDENT" ? ((S = se(d.note)) == null ? void 0 : S.platformName) || "Corresponsal" : ((y = se(d.note)) == null ? void 0 : y.medium) === "TRANSFER" ? "Transferencias" : "Efectivo",
-          amount: d.amount,
+          title: u.type === k.WITHDRAWAL_OUT ? "Retiro operativo" : "Gasto operativo",
+          detail: $e(u.note),
+          medium: ((A = ne(u.note)) == null ? void 0 : A.medium) === "CORRESPONDENT" ? ((S = ne(u.note)) == null ? void 0 : S.platformName) || "Corresponsal" : ((L = ne(u.note)) == null ? void 0 : L.medium) === "TRANSFER" ? "Transferencias" : "Efectivo",
+          amount: u.amount,
           direction: "OUT",
           reference: null,
-          operationalImpact: -d.amount
+          operationalImpact: -u.amount
         };
       })
-    ].sort((d, A) => new Date(A.createdAt).getTime() - new Date(d.createdAt).getTime()).slice(0, 250);
+    ].sort((u, A) => new Date(A.createdAt).getTime() - new Date(u.createdAt).getTime()).slice(0, 250);
     return {
       success: !0,
       summary: {
-        salesCount: N.length,
-        salesTotal: N.reduce((d, A) => d + A.total, 0),
-        collectedSalesTotal: h,
+        salesCount: y.length,
+        salesTotal: y.reduce((u, A) => u + A.total, 0),
+        collectedSalesTotal: C,
         pendingSalesBalance: D,
-        pendingCreditsCount: p.filter((d) => d.balance > 0).length,
-        pendingCreditsBalance: p.reduce((d, A) => d + A.balance, 0),
-        paymentsTotal: v,
-        collectionsTotal: v,
-        operationalIncomeTotal: h + v,
-        creditNotesTotal: T.reduce((d, A) => d + A.total, 0),
-        expensesTotal: I.reduce((d, A) => d + A.amount, 0),
-        grossProfitTotal: P,
-        averageTicket: N.length > 0 ? z(N.reduce((d, A) => d + A.total, 0) / N.length) : 0,
-        netOperationalBalance: h + v - T.reduce((d, A) => d + A.total, 0) - I.reduce((d, A) => d + A.amount, 0)
+        pendingCreditsCount: f.filter((u) => u.balance > 0).length,
+        pendingCreditsBalance: f.reduce((u, A) => u + A.balance, 0),
+        paymentsTotal: b,
+        collectionsTotal: b,
+        operationalIncomeTotal: C + b,
+        creditNotesTotal: T.reduce((u, A) => u + A.total, 0),
+        expensesTotal: I.reduce((u, A) => u + A.amount, 0),
+        grossProfitTotal: x,
+        averageTicket: y.length > 0 ? K(y.reduce((u, A) => u + A.total, 0) / y.length) : 0,
+        netOperationalBalance: C + b - T.reduce((u, A) => u + A.total, 0) - I.reduce((u, A) => u + A.amount, 0)
       },
-      customers: i.map((d) => ({
-        id: d.id,
-        internalCode: d.internalCode,
-        name: d.name,
-        document: d.document,
-        phone: d.phone
+      customers: i.map((u) => ({
+        id: u.id,
+        internalCode: u.internalCode,
+        name: u.name,
+        document: u.document,
+        phone: u.phone
       })),
-      paymentSummary: [...C.entries()].map(([d, A]) => ({
-        method: d,
-        label: le(d),
+      paymentSummary: [...N.entries()].map(([u, A]) => ({
+        method: u,
+        label: pe(u),
         salesAmount: A.salesAmount,
         collectionsAmount: A.collectionsAmount,
         totalAmount: A.salesAmount + A.collectionsAmount
       })),
-      movementHistory: b,
-      sales: N,
-      credits: p,
-      payments: g.map((d) => {
+      movementHistory: v,
+      sales: y,
+      credits: f,
+      payments: p.map((u) => {
         var A, S;
         return {
-          id: d.id,
-          creditId: d.creditId,
-          saleId: ((A = d.credit) == null ? void 0 : A.sale.id) ?? null,
-          invoiceNumber: ((S = d.credit) == null ? void 0 : S.sale.invoiceNumber) ?? null,
-          customerName: d.customer.name,
-          method: d.method,
-          amount: d.amount,
-          note: d.note,
-          createdAt: d.createdAt.toISOString()
+          id: u.id,
+          creditId: u.creditId,
+          saleId: ((A = u.credit) == null ? void 0 : A.sale.id) ?? null,
+          invoiceNumber: ((S = u.credit) == null ? void 0 : S.sale.invoiceNumber) ?? null,
+          customerName: u.customer.name,
+          method: u.method,
+          amount: u.amount,
+          note: u.note,
+          createdAt: u.createdAt.toISOString()
         };
       }),
-      creditNotes: T.map((d) => ({
-        id: d.id,
-        saleId: d.saleId,
-        invoiceNumber: d.sale.invoiceNumber,
-        customerName: d.sale.customer,
-        total: d.total,
-        reason: d.reason,
-        createdAt: d.createdAt.toISOString()
+      creditNotes: T.map((u) => ({
+        id: u.id,
+        saleId: u.saleId,
+        invoiceNumber: u.sale.invoiceNumber,
+        customerName: u.sale.customer,
+        total: u.total,
+        reason: u.reason,
+        createdAt: u.createdAt.toISOString()
       })),
-      expenses: I.map((d) => {
-        const A = se(d.note);
+      expenses: I.map((u) => {
+        const A = ne(u.note);
         return {
-          id: d.id,
-          sessionId: d.sessionId,
-          registerName: d.session.register.name,
-          userName: d.session.user.name ?? d.session.user.username,
-          type: d.type,
-          amount: d.amount,
-          note: Be(d.note),
+          id: u.id,
+          sessionId: u.sessionId,
+          registerName: u.session.register.name,
+          userName: u.session.user.name ?? u.session.user.username,
+          type: u.type,
+          amount: u.amount,
+          note: $e(u.note),
           sourceMedium: (A == null ? void 0 : A.medium) ?? "CASH",
           sourcePlatform: (A == null ? void 0 : A.platformName) ?? null,
-          createdAt: d.createdAt.toISOString()
+          createdAt: u.createdAt.toISOString()
         };
       })
     };
   }), e.handle("accounting:credit:create", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.reportsView))
+    if (!B(o, E.reportsView))
       return { success: !1, message: "Tu rol no puede registrar cartera" };
-    const s = La.safeParse(c);
+    const s = Ja.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para la cartera" };
     const t = await a.sale.findUnique({
@@ -4701,21 +4939,21 @@ function ys({
     });
     if (!i || !i.isActive)
       return { success: !1, message: "Selecciona un cliente activo para crear la cuenta por cobrar" };
-    const u = t.returns.reduce((T, I) => T + I.total, 0), f = Math.max(t.total - u, 0), g = s.data.total ?? f;
-    if (f <= 0)
+    const d = t.returns.reduce((T, I) => T + I.total, 0), g = Math.max(t.total - d, 0), p = s.data.total ?? g;
+    if (g <= 0)
       return { success: !1, message: "La venta no tiene saldo disponible para cartera" };
-    if (g > f)
+    if (p > g)
       return { success: !1, message: "El valor supera el saldo disponible de la venta" };
     try {
       const T = await a.$transaction(async (I) => {
-        const p = await I.customerCredit.create({
+        const f = await I.customerCredit.create({
           data: {
             customerId: i.id,
             saleId: t.id,
-            total: g,
-            balance: g,
+            total: p,
+            balance: p,
             dueDate: s.data.dueDate ? new Date(s.data.dueDate) : null,
-            status: Ae(g, g, s.data.dueDate ? new Date(s.data.dueDate) : null)
+            status: Ie(p, p, s.data.dueDate ? new Date(s.data.dueDate) : null)
           }
         });
         return await I.sale.update({
@@ -4723,25 +4961,25 @@ function ys({
           data: {
             customerId: i.id,
             customer: i.name,
-            status: me.CREDIT
+            status: fe.CREDIT
           }
-        }), p;
+        }), f;
       });
-      return await V(a, n, "accounting", "create", "CustomerCredit", T.id, void 0, {
+      return await V(a, o, "accounting", "create", "CustomerCredit", T.id, void 0, {
         saleId: t.id,
         customerId: i.id,
-        total: g
+        total: p
       }), { success: !0, creditId: T.id, message: "Cuenta por cobrar creada correctamente." };
     } catch (T) {
       return { success: !1, message: T instanceof Error ? T.message : "No se pudo crear la cuenta por cobrar" };
     }
   }), e.handle("accounting:payment:create", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.reportsView))
+    if (!B(o, E.reportsView))
       return { success: !1, message: "Tu rol no puede registrar pagos" };
-    const s = Ua.safeParse(c);
+    const s = Qa.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para el abono" };
     const t = await a.customerCredit.findUnique({
@@ -4761,14 +4999,14 @@ function ys({
     if (s.data.amount > t.balance)
       return { success: !1, message: "El abono supera el saldo pendiente" };
     const i = await a.cashSession.findFirst({
-      where: { status: W.OPEN },
+      where: { status: Z.OPEN },
       orderBy: { openedAt: "desc" }
     });
     if (!i)
       return { success: !1, message: "Abre el control diario antes de registrar abonos" };
     try {
-      const u = await a.$transaction(async (f) => {
-        const g = await f.customerPayment.create({
+      const d = await a.$transaction(async (g) => {
+        const p = await g.customerPayment.create({
           data: {
             customerId: t.customerId,
             creditId: t.id,
@@ -4776,51 +5014,51 @@ function ys({
             amount: s.data.amount,
             note: s.data.note || null
           }
-        }), T = t.total - t.balance + s.data.amount, I = Math.max(t.total - T, 0), p = Ae(I, t.total, t.dueDate);
-        if (await f.customerCredit.update({
+        }), T = t.total - t.balance + s.data.amount, I = Math.max(t.total - T, 0), f = Ie(I, t.total, t.dueDate);
+        if (await g.customerCredit.update({
           where: { id: t.id },
           data: {
             balance: I,
-            status: p
+            status: f
           }
-        }), await f.cashMovement.create({
+        }), await g.cashMovement.create({
           data: {
             sessionId: i.id,
-            type: B.INCOME_IN,
+            type: k.INCOME_IN,
             amount: s.data.amount,
-            note: Se({
+            note: Oe({
               label: `Abono cartera ${t.sale.invoiceNumber}`,
-              medium: s.data.method === j.CASH ? "CASH" : "TRANSFER",
+              medium: s.data.method === z.CASH ? "CASH" : "TRANSFER",
               sourceType: "ACCOUNTING_PAYMENT",
               userNote: s.data.note || null
             })
           }
         }), I <= 0) {
-          const N = t.sale.returns.reduce((C, h) => C + h.total, 0);
-          await f.sale.update({
+          const y = t.sale.returns.reduce((N, C) => N + C.total, 0);
+          await g.sale.update({
             where: { id: t.saleId },
             data: {
-              status: ut(t.sale.total, N)
+              status: ht(t.sale.total, y)
             }
           });
         }
-        return g;
+        return p;
       });
-      return await V(a, n, "accounting", "create", "CustomerPayment", u.id, void 0, {
+      return await V(a, o, "accounting", "create", "CustomerPayment", d.id, void 0, {
         creditId: t.id,
         amount: s.data.amount,
         method: s.data.method
-      }), { success: !0, paymentId: u.id, message: "Abono registrado correctamente." };
-    } catch (u) {
-      return { success: !1, message: u instanceof Error ? u.message : "No se pudo registrar el abono" };
+      }), { success: !0, paymentId: d.id, message: "Abono registrado correctamente." };
+    } catch (d) {
+      return { success: !1, message: d instanceof Error ? d.message : "No se pudo registrar el abono" };
     }
   }), e.handle("accounting:credit-note:create", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.reportsView))
+    if (!B(o, E.reportsView))
       return { success: !1, message: "Tu rol no puede registrar notas credito" };
-    const s = Ma.safeParse(c);
+    const s = Wa.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para la nota credito" };
     const t = await a.sale.findUnique({
@@ -4832,113 +5070,113 @@ function ys({
     });
     if (!t)
       return { success: !1, message: "La venta ya no existe" };
-    const i = t.returns.reduce((f, g) => f + g.total, 0), u = Math.max(t.total - i, 0);
-    if (u <= 0)
+    const i = t.returns.reduce((g, p) => g + p.total, 0), d = Math.max(t.total - i, 0);
+    if (d <= 0)
       return { success: !1, message: "La venta no tiene saldo disponible para nota credito" };
-    if (s.data.amount > u)
+    if (s.data.amount > d)
       return { success: !1, message: "La nota credito supera el saldo disponible de la venta" };
     try {
-      const f = await a.$transaction(async (g) => {
-        const T = await g.saleReturn.create({
+      const g = await a.$transaction(async (p) => {
+        const T = await p.saleReturn.create({
           data: {
             saleId: t.id,
             total: s.data.amount,
             reason: s.data.reason || null
           }
         }), I = i + s.data.amount;
-        await g.sale.update({
+        await p.sale.update({
           where: { id: t.id },
           data: {
-            status: ut(t.total, I)
+            status: ht(t.total, I)
           }
         });
-        const p = t.credits[0];
-        if (p) {
-          const N = Math.max(p.total - p.balance, 0), C = Math.max(p.total - s.data.amount, 0), h = Math.max(C - N, 0);
-          await g.customerCredit.update({
-            where: { id: p.id },
+        const f = t.credits[0];
+        if (f) {
+          const y = Math.max(f.total - f.balance, 0), N = Math.max(f.total - s.data.amount, 0), C = Math.max(N - y, 0);
+          await p.customerCredit.update({
+            where: { id: f.id },
             data: {
-              total: C,
-              balance: h,
-              status: Ae(h, C, p.dueDate)
+              total: N,
+              balance: C,
+              status: Ie(C, N, f.dueDate)
             }
           });
         }
         return T;
       });
-      return await V(a, n, "accounting", "create", "SaleReturn", f.id, void 0, {
+      return await V(a, o, "accounting", "create", "SaleReturn", g.id, void 0, {
         saleId: t.id,
         total: s.data.amount
-      }), { success: !0, creditNoteId: f.id, message: "Nota credito registrada correctamente." };
-    } catch (f) {
-      return { success: !1, message: f instanceof Error ? f.message : "No se pudo registrar la nota credito" };
+      }), { success: !0, creditNoteId: g.id, message: "Nota credito registrada correctamente." };
+    } catch (g) {
+      return { success: !1, message: g instanceof Error ? g.message : "No se pudo registrar la nota credito" };
     }
   }), e.handle("accounting:expense:create", async (m, c) => {
-    const n = r();
-    if (!n)
+    const o = r();
+    if (!o)
       return { success: !1, message: "Debes iniciar sesion" };
-    if (!M(n, E.reportsView))
+    if (!B(o, E.reportsView))
       return { success: !1, message: "Tu rol no puede registrar gastos" };
-    const s = _a.safeParse(c);
+    const s = Za.safeParse(c);
     if (!s.success)
       return { success: !1, message: "Datos invalidos para el gasto" };
     const t = await a.cashSession.findFirst({
-      where: { status: W.OPEN },
+      where: { status: Z.OPEN },
       orderBy: { openedAt: "desc" }
     });
     if (!t)
       return { success: !1, message: "Abre caja general antes de registrar gastos o retiros" };
-    const i = ke(s.data.sourceMedium), u = i === "CORRESPONDENT" && s.data.sourcePlatformId ? await a.correspondentPlatform.findUnique({
+    const i = Ve(s.data.sourceMedium), d = i === "CORRESPONDENT" && s.data.sourcePlatformId ? await a.correspondentPlatform.findUnique({
       where: { id: s.data.sourcePlatformId },
       select: { id: !0, name: !0 }
     }) : null;
-    if (i === "CORRESPONDENT" && !u)
+    if (i === "CORRESPONDENT" && !d)
       return { success: !1, message: "Selecciona un corresponsal valido para registrar el egreso" };
     try {
-      const f = await a.cashMovement.create({
+      const g = await a.cashMovement.create({
         data: {
           sessionId: t.id,
           type: s.data.type,
           amount: s.data.amount,
-          note: Se({
+          note: Oe({
             label: s.data.note,
             medium: i,
-            platformId: (u == null ? void 0 : u.id) ?? null,
-            platformName: (u == null ? void 0 : u.name) ?? null,
+            platformId: (d == null ? void 0 : d.id) ?? null,
+            platformName: (d == null ? void 0 : d.name) ?? null,
             sourceType: "EXPENSE",
             userNote: s.data.note
           })
         }
       });
-      return await V(a, n, "accounting", "create", "CashMovement", f.id, void 0, {
+      return await V(a, o, "accounting", "create", "CashMovement", g.id, void 0, {
         type: s.data.type,
         amount: s.data.amount,
         note: s.data.note,
         sourceMedium: i,
-        sourcePlatform: (u == null ? void 0 : u.name) ?? null
-      }), { success: !0, expenseId: f.id, message: "Gasto registrado correctamente." };
-    } catch (f) {
-      return { success: !1, message: f instanceof Error ? f.message : "No se pudo registrar el gasto" };
+        sourcePlatform: (d == null ? void 0 : d.name) ?? null
+      }), { success: !0, expenseId: g.id, message: "Gasto registrado correctamente." };
+    } catch (g) {
+      return { success: !1, message: g instanceof Error ? g.message : "No se pudo registrar el gasto" };
     }
   });
 }
-const Lt = H.dirname(Ft(import.meta.url));
-process.env.APP_ROOT = H.join(Lt, "..");
-const Ve = process.env.VITE_DEV_SERVER_URL, zs = H.join(process.env.APP_ROOT, "dist-electron"), Ut = H.join(process.env.APP_ROOT, "dist");
-process.env.VITE_PUBLIC = Ve ? H.join(process.env.APP_ROOT, "public") : Ut;
-let ue = null, R, lt = /* @__PURE__ */ new Date(), x = null;
-function Mt() {
-  ue = new qe({
-    icon: H.join(process.env.VITE_PUBLIC, "mascot.png"),
+const Kt = J.dirname(ea(import.meta.url));
+process.env.APP_ROOT = J.join(Kt, "..");
+const ze = process.env.VITE_DEV_SERVER_URL, Er = J.join(process.env.APP_ROOT, "dist-electron"), Ht = J.join(process.env.APP_ROOT, "dist");
+process.env.VITE_PUBLIC = ze ? J.join(process.env.APP_ROOT, "public") : Ht;
+let me = null, O, Ct = /* @__PURE__ */ new Date(), P = null;
+function Yt() {
+  me = new Ge({
+    icon: J.join(process.env.VITE_PUBLIC, "mascot.png"),
     webPreferences: {
-      preload: H.join(Lt, "preload.mjs"),
+      preload: J.join(Kt, "preload.mjs"),
       contextIsolation: !0,
       nodeIntegration: !1
     },
     show: !1
-  }), Bt.setApplicationMenu(null), ue.maximize(), ue.show(), Ve ? ue.loadURL(Ve) : ue.loadFile(H.join(Ut, "index.html"));
+  }), Zt.setApplicationMenu(null), me.maximize(), me.show(), ze ? me.loadURL(ze) : me.loadFile(J.join(Ht, "index.html"));
 }
-function Ns() {
+function Gs() {
   const e = (process.env.SEED_ADMIN_ENABLED ?? "false").toLowerCase() === "true", a = process.env.SEED_ADMIN_USERNAME ?? "admin", r = process.env.SEED_ADMIN_NAME ?? "Administrador", l = process.env.SEED_ADMIN_PASSWORD ?? "", m = Number(process.env.BCRYPT_ROUNDS ?? "10");
   if (e && l.trim().length < 8)
     throw new Error("SEED_ADMIN_PASSWORD es obligatorio y debe tener minimo 8 caracteres.");
@@ -4946,22 +5184,22 @@ function Ns() {
     throw new Error("BCRYPT_ROUNDS invalido. Usa un valor entre 8 y 15.");
   return { enabled: e, username: a, name: r, password: l, bcryptRounds: m };
 }
-async function Cs(e) {
-  const a = Ns();
-  if (!a.enabled || await e.user.findFirst({ where: { role: F.ADMIN } }))
+async function Ks(e) {
+  const a = Gs();
+  if (!a.enabled || await e.user.findFirst({ where: { role: $.ADMIN } }))
     return;
-  const l = await ce.hash(a.password, a.bcryptRounds);
+  const l = await ue.hash(a.password, a.bcryptRounds);
   await e.user.create({
     data: {
       username: a.username,
       name: a.name,
-      role: F.ADMIN,
+      role: $.ADMIN,
       passwordHash: l,
       isActive: !0
     }
   });
 }
-async function hs(e) {
+async function Hs(e) {
   await e.businessSettings.upsert({
     where: { id: "default" },
     update: {},
@@ -4983,29 +5221,29 @@ async function hs(e) {
     }
   });
 }
-async function we(e) {
+async function De(e) {
   try {
-    await R.loginEvent.create({
+    await O.loginEvent.create({
       data: {
         userId: e.userId ?? null,
         username: e.username,
         success: e.success,
         reason: e.reason,
         occurredAt: /* @__PURE__ */ new Date(),
-        appVersion: te.getVersion(),
-        osPlatform: Pe.platform(),
-        osRelease: Pe.release(),
-        deviceName: Pe.hostname()
+        appVersion: se.getVersion(),
+        osPlatform: Me.platform(),
+        osRelease: Me.release(),
+        deviceName: Me.hostname()
       }
     });
   } catch (a) {
     console.error("Error registrando login:", a);
   }
 }
-function Ie(e) {
+function he(e) {
   return Math.round(e);
 }
-function vs(e) {
+function Ys(e) {
   const a = /* @__PURE__ */ new Date();
   if (e === "day")
     return new Date(a.getFullYear(), a.getMonth(), a.getDate());
@@ -5015,25 +5253,25 @@ function vs(e) {
   }
   return new Date(a.getFullYear(), a.getMonth(), 1);
 }
-function bs(e, a) {
+function Js(e, a) {
   return `${e}-${String(a).padStart(6, "0")}`;
 }
-function J(e) {
+function W(e) {
   const a = e == null ? void 0 : e.trim();
   return a || null;
 }
-function Ye(e, a) {
+function Ze(e, a) {
   return [e.trim(), a.trim()].filter(Boolean).join(" ");
 }
-function mt(e) {
+function bt(e) {
   return e.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
 }
-function Ss(e, a, r) {
-  const l = mt(e).slice(0, 3).padEnd(3, "x"), m = mt(a).slice(0, 3).padEnd(3, "x"), n = r.replace(/\D/g, "").slice(-3).padStart(3, "0");
-  return `${l}${m}${n}`;
+function Qs(e, a, r) {
+  const l = bt(e).slice(0, 3).padEnd(3, "x"), m = bt(a).slice(0, 3).padEnd(3, "x"), o = r.replace(/\D/g, "").slice(-3).padStart(3, "0");
+  return `${l}${m}${o}`;
 }
-async function _t(e) {
-  const a = Ss(e.firstName, e.lastName, e.documentNumber);
+async function Jt(e) {
+  const a = Qs(e.firstName, e.lastName, e.documentNumber);
   let r = 0, l = a, m = !0;
   for (; m; ) {
     const c = r === 0 ? "" : String(r + 1).padStart(2, "0");
@@ -5047,22 +5285,22 @@ async function _t(e) {
   }
   return l;
 }
-function Je(e) {
+function et(e) {
   if (!e)
     return null;
   const [a, r, l] = e.split("-").map(Number);
   return !a || !r || !l ? null : new Date(Date.UTC(a, r - 1, l));
 }
-function pt(e) {
-  return e === "ADMIN" ? F.ADMIN : F.EMPLOYEE;
+function vt(e) {
+  return e === "ADMIN" ? $.ADMIN : $.EMPLOYEE;
 }
-function pe(e) {
+function ge(e) {
   return `SYSTEM_${e}`;
 }
-function ae(e) {
-  return e ? bt(x == null ? void 0 : x.permissions, e) : !0;
+function Q(e) {
+  return e ? Ft(P == null ? void 0 : P.permissions, e) : !0;
 }
-async function ws(e, a) {
+async function Ws(e, a) {
   if (!a)
     return [];
   const r = await e.rolePermission.findMany({
@@ -5073,10 +5311,10 @@ async function ws(e, a) {
     select: { permissionKey: !0 },
     orderBy: { permissionKey: "asc" }
   });
-  return Ne(r.map((l) => l.permissionKey));
+  return be(r.map((l) => l.permissionKey));
 }
-async function Os(e, a) {
-  var m, c, n, s;
+async function Zs(e, a) {
+  var m, c, o, s;
   const r = await e.user.findUnique({
     where: { id: a },
     include: {
@@ -5092,9 +5330,9 @@ async function Os(e, a) {
   });
   if (!r)
     return null;
-  const l = Ne(
+  const l = be(
     ((m = r.roleProfile) == null ? void 0 : m.permissions.map((t) => t.permissionKey)) ?? ((c = await e.roleProfile.findUnique({
-      where: { key: pe(r.role) },
+      where: { key: ge(r.role) },
       include: {
         permissions: {
           where: { allowed: !0 },
@@ -5104,16 +5342,16 @@ async function Os(e, a) {
     })) == null ? void 0 : c.permissions.map((t) => t.permissionKey)) ?? []
   );
   return {
-    roleProfileId: ((n = r.roleProfile) == null ? void 0 : n.id) ?? null,
+    roleProfileId: ((o = r.roleProfile) == null ? void 0 : o.id) ?? null,
     roleProfileName: ((s = r.roleProfile) == null ? void 0 : s.name) ?? null,
     permissions: l
   };
 }
-async function Rs(e) {
-  const a = await e.$queryRawUnsafe('PRAGMA table_info("User");'), r = new Set(a.map((n) => n.name)), l = [];
+async function er(e) {
+  const a = await e.$queryRawUnsafe('PRAGMA table_info("User");'), r = new Set(a.map((o) => o.name)), l = [];
   r.has("firstName") || l.push('ALTER TABLE "User" ADD COLUMN "firstName" TEXT;'), r.has("lastName") || l.push('ALTER TABLE "User" ADD COLUMN "lastName" TEXT;'), r.has("documentNumber") || l.push('ALTER TABLE "User" ADD COLUMN "documentNumber" TEXT;'), r.has("email") || l.push('ALTER TABLE "User" ADD COLUMN "email" TEXT;'), r.has("phone") || l.push('ALTER TABLE "User" ADD COLUMN "phone" TEXT;'), r.has("address") || l.push('ALTER TABLE "User" ADD COLUMN "address" TEXT;'), r.has("birthDate") || l.push('ALTER TABLE "User" ADD COLUMN "birthDate" DATETIME;'), r.has("internalCode") || l.push('ALTER TABLE "User" ADD COLUMN "internalCode" TEXT;');
-  for (const n of l)
-    await e.$executeRawUnsafe(n);
+  for (const o of l)
+    await e.$executeRawUnsafe(o);
   await e.$executeRawUnsafe(`
     UPDATE "User"
     SET "firstName" = "name"
@@ -5129,16 +5367,16 @@ async function Rs(e) {
     },
     orderBy: [{ createdAt: "asc" }, { username: "asc" }]
   }), c = [];
-  for (const n of m) {
-    const s = Z({
-      desiredCode: n.internalCode,
+  for (const o of m) {
+    const s = te({
+      desiredCode: o.internalCode,
       existingCodes: c,
       prefix: "USR",
       digits: 4,
       maxLength: 30
     });
-    s !== n.internalCode && await e.user.update({
-      where: { id: n.id },
+    s !== o.internalCode && await e.user.update({
+      where: { id: o.id },
       data: { internalCode: s }
     }), c.push(s);
   }
@@ -5146,7 +5384,7 @@ async function Rs(e) {
     'CREATE UNIQUE INDEX IF NOT EXISTS "User_internalCode_key" ON "User"("internalCode");'
   );
 }
-async function Ds(e) {
+async function tr(e) {
   await e.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "NotificationRead" (
       "id" TEXT NOT NULL PRIMARY KEY,
@@ -5163,7 +5401,7 @@ async function Ds(e) {
     ON "NotificationRead"("userId");
   `);
 }
-async function xs(e) {
+async function ar(e) {
   const a = await e.$queryRawUnsafe('PRAGMA table_info("Product");');
   new Set(a.map((l) => l.name)).has("unitMeasure") || await e.$executeRawUnsafe(
     `ALTER TABLE "Product" ADD COLUMN "unitMeasure" TEXT NOT NULL DEFAULT 'UNIDAD';`
@@ -5173,7 +5411,7 @@ async function xs(e) {
     WHERE "unitMeasure" IS NULL OR TRIM("unitMeasure") = '';
   `);
 }
-async function Ps(e) {
+async function sr(e) {
   await e.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "RoleProfile" (
       "id" TEXT NOT NULL PRIMARY KEY,
@@ -5212,29 +5450,29 @@ async function Ps(e) {
     ON "User"("roleProfileId");
   `);
 }
-async function Ls(e) {
-  for (const r of De) {
-    const l = Nt(r), m = await e.roleProfile.findUnique({
-      where: { key: pe(r.key) },
+async function rr(e) {
+  for (const r of Le) {
+    const l = Ut(r), m = await e.roleProfile.findUnique({
+      where: { key: ge(r.key) },
       select: { id: !0 }
     }), c = m ? await e.roleProfile.update({
       where: { id: m.id },
       data: {
         name: r.name,
         description: r.description,
-        baseRole: pt(r.key),
+        baseRole: vt(r.key),
         isSystem: !0
       }
     }) : await e.roleProfile.create({
       data: {
-        key: pe(r.key),
+        key: ge(r.key),
         name: r.name,
         description: r.description,
-        baseRole: pt(r.key),
+        baseRole: vt(r.key),
         isSystem: !0,
         isActive: !0
       }
-    }), n = await e.rolePermission.findMany({
+    }), o = await e.rolePermission.findMany({
       where: {
         roleProfileId: c.id,
         allowed: !0
@@ -5242,7 +5480,7 @@ async function Ls(e) {
       select: {
         permissionKey: !0
       }
-    }), s = new Set(n.map((i) => i.permissionKey)), t = l.filter(
+    }), s = new Set(o.map((i) => i.permissionKey)), t = l.filter(
       (i) => !s.has(i.key)
     );
     t.length > 0 && await e.rolePermission.createMany({
@@ -5254,7 +5492,7 @@ async function Ls(e) {
     });
   }
   const a = await e.roleProfile.findMany({
-    where: { key: { in: De.map((r) => pe(r.key)) } },
+    where: { key: { in: Le.map((r) => ge(r.key)) } },
     select: { id: !0, baseRole: !0 }
   });
   for (const r of a)
@@ -5268,59 +5506,59 @@ async function Ls(e) {
       }
     });
 }
-async function Us() {
-  await ba(R), await hs(R), await Sa(R), Da({
-    app: te,
+async function nr() {
+  await Xa(O), await Hs(O), await Va(O), Ka({
+    app: se,
     ipcMain: X,
-    prisma: R,
-    getCurrentSessionUser: () => x
+    prisma: O,
+    getCurrentSessionUser: () => P
   });
 }
-te.whenReady().then(async () => {
-  const e = H.join(te.getPath("userData"), "app.db").replace(/\\/g, "/");
-  process.env.DATABASE_URL = `file:${e}`, R = new kt(), lt = /* @__PURE__ */ new Date(), await Rs(R), await Ds(R), await Ps(R), await Es(R), await Cs(R), await Ls(R), await xs(R), ys({
+se.whenReady().then(async () => {
+  const e = J.join(se.getPath("userData"), "app.db").replace(/\\/g, "/");
+  process.env.DATABASE_URL = `file:${e}`, O = new aa(), Ct = /* @__PURE__ */ new Date(), await er(O), await tr(O), await sr(O), await qs(O), await Ks(O), await rr(O), await ar(O), zs({
     ipcMain: X,
-    prisma: R,
-    getCurrentSessionUser: () => x,
-    getConnectedAt: () => lt
-  }), await Us(), Mt();
+    prisma: O,
+    getCurrentSessionUser: () => P,
+    getConnectedAt: () => Ct
+  }), await nr(), Yt();
 }).catch((e) => {
-  console.error("No se pudo inicializar la aplicacion POS.", e), te.quit();
+  console.error("No se pudo inicializar la aplicacion POS.", e), se.quit();
 });
-te.on("activate", () => {
-  qe.getAllWindows().length === 0 && Mt();
+se.on("activate", () => {
+  Ge.getAllWindows().length === 0 && Yt();
 });
 X.handle("auth:login", async (e, a) => {
-  const r = jt.safeParse(a);
+  const r = oa.safeParse(a);
   if (!r.success)
-    return await we({
+    return await De({
       username: String((a == null ? void 0 : a.username) ?? ""),
       success: !1,
       reason: "invalid_payload"
     }), { success: !1, message: "Datos invalidos" };
-  const { username: l, password: m } = r.data, c = await R.user.findUnique({
+  const { username: l, password: m } = r.data, c = await O.user.findUnique({
     where: { username: l }
   });
   if (!c || !c.isActive)
-    return await we({
+    return await De({
       username: l,
       success: !1,
       reason: "user_not_found_or_inactive"
     }), { success: !1, message: "Usuario o contrasena incorrectos" };
-  if (!await ce.compare(m, c.passwordHash))
-    return await we({
+  if (!await ue.compare(m, c.passwordHash))
+    return await De({
       userId: c.id,
       username: l,
       success: !1,
       reason: "wrong_password"
     }), { success: !1, message: "Usuario o contrasena incorrectos" };
-  await we({
+  await De({
     userId: c.id,
     username: l,
     success: !0
   });
-  const s = await Os(R, c.id);
-  return x = {
+  const s = await Zs(O, c.id);
+  return P = {
     id: c.id,
     username: c.username,
     name: c.name ?? void 0,
@@ -5330,109 +5568,109 @@ X.handle("auth:login", async (e, a) => {
     permissions: (s == null ? void 0 : s.permissions) ?? []
   }, {
     success: !0,
-    user: x
+    user: P
   };
 });
 X.handle("auth:createUser", async (e, a) => {
-  const r = zt.safeParse(a);
+  const r = ia.safeParse(a);
   if (!r.success)
     return { success: !1, message: "Datos invalidos" };
-  if (!x || x.role !== F.ADMIN)
+  if (!P || P.role !== $.ADMIN)
     return { success: !1, message: "Solo admins pueden crear usuarios" };
-  if (!ae(E.usersCreate))
+  if (!Q(E.usersCreate))
     return { success: !1, message: "Tu rol no puede crear usuarios" };
   const {
     internalCode: l,
     firstName: m,
     lastName: c,
-    documentNumber: n,
+    documentNumber: o,
     email: s,
     phone: t,
     address: i,
-    birthDate: u,
-    newPassword: f,
-    roleProfileId: g,
+    birthDate: d,
+    newPassword: g,
+    roleProfileId: p,
     isActive: T
-  } = r.data, I = await ce.hash(f, 10), p = Ye(m, c);
+  } = r.data, I = await ue.hash(g, 10), f = Ze(m, c);
   try {
-    if (await R.user.findFirst({
-      where: { documentNumber: n },
+    if (await O.user.findFirst({
+      where: { documentNumber: o },
       select: { id: !0 }
     }))
       return { success: !1, message: "La cedula ya esta registrada para otro usuario" };
-    const C = g ? await R.roleProfile.findUnique({
-      where: { id: g },
+    const N = p ? await O.roleProfile.findUnique({
+      where: { id: p },
       select: { id: !0, baseRole: !0, isActive: !0 }
-    }) : await R.roleProfile.findUnique({
-      where: { key: pe("EMPLOYEE") },
+    }) : await O.roleProfile.findUnique({
+      where: { key: ge("EMPLOYEE") },
       select: { id: !0, baseRole: !0, isActive: !0 }
     });
-    if (!C || !C.isActive)
+    if (!N || !N.isActive)
       return { success: !1, message: "El perfil de rol seleccionado no esta disponible" };
-    const h = await _t({
-      prismaClient: R,
+    const C = await Jt({
+      prismaClient: O,
       firstName: m,
       lastName: c,
-      documentNumber: n
-    }), v = (await R.user.findMany({
+      documentNumber: o
+    }), b = (await O.user.findMany({
       select: { internalCode: !0 }
-    })).map((P) => P.internalCode), D = Z({
+    })).map((x) => x.internalCode), D = te({
       desiredCode: l,
-      existingCodes: v,
+      existingCodes: b,
       prefix: "USR",
       digits: 4,
       maxLength: 30
     });
-    return await R.user.create({
+    return await O.user.create({
       data: {
         internalCode: D,
-        username: h,
+        username: C,
         firstName: m.trim(),
         lastName: c.trim(),
-        name: p,
-        documentNumber: n,
-        email: J(s),
-        phone: J(t),
-        address: J(i),
-        birthDate: Je(u),
+        name: f,
+        documentNumber: o,
+        email: W(s),
+        phone: W(t),
+        address: W(i),
+        birthDate: et(d),
         passwordHash: I,
-        role: C.baseRole,
-        roleProfileId: C.id,
+        role: N.baseRole,
+        roleProfileId: N.id,
         isActive: T ?? !0
       }
-    }), { success: !0, username: h };
-  } catch (N) {
-    return { success: !1, message: N instanceof Error ? N.message : "No se pudo crear el usuario" };
+    }), { success: !0, username: C };
+  } catch (y) {
+    return { success: !1, message: y instanceof Error ? y.message : "No se pudo crear el usuario" };
   }
 });
 X.handle("users:update", async (e, a) => {
-  const r = Gt.safeParse(a);
+  const r = ca.safeParse(a);
   if (!r.success)
     return { success: !1, message: "Datos invalidos" };
-  if (!x || x.role !== F.ADMIN)
+  if (!P || P.role !== $.ADMIN)
     return { success: !1, message: "Solo admins pueden editar usuarios" };
-  if (!ae(E.usersEdit))
+  if (!Q(E.usersEdit))
     return { success: !1, message: "Tu rol no puede editar usuarios" };
   const {
     id: l,
     internalCode: m,
     firstName: c,
-    lastName: n,
+    lastName: o,
     documentNumber: s,
     email: t,
     phone: i,
-    address: u,
-    birthDate: f,
-    newPassword: g,
+    address: d,
+    birthDate: g,
+    newPassword: p,
     roleProfileId: T,
     isActive: I
-  } = r.data, p = await R.user.findUnique({
+  } = r.data, f = await O.user.findUnique({
     where: { id: l },
     select: { id: !0, role: !0, isActive: !0, roleProfileId: !0, internalCode: !0 }
   });
-  if (!p)
+  if (!f)
     return { success: !1, message: "El usuario ya no existe" };
-  if (await R.user.findFirst({
+  if (await O.user.findFirst({
     where: {
       documentNumber: s,
       NOT: { id: l }
@@ -5440,80 +5678,80 @@ X.handle("users:update", async (e, a) => {
     select: { id: !0 }
   }))
     return { success: !1, message: "La cedula ya esta registrada para otro usuario" };
-  const C = T ? await R.roleProfile.findUnique({
+  const N = T ? await O.roleProfile.findUnique({
     where: { id: T },
     select: { id: !0, baseRole: !0, isActive: !0, name: !0 }
-  }) : await R.roleProfile.findUnique({
-    where: { key: pe(p.role ?? "EMPLOYEE") },
+  }) : await O.roleProfile.findUnique({
+    where: { key: ge(f.role ?? "EMPLOYEE") },
     select: { id: !0, baseRole: !0, isActive: !0, name: !0 }
   });
-  if (!C || !C.isActive)
+  if (!N || !N.isActive)
     return { success: !1, message: "El perfil de rol seleccionado no esta disponible" };
-  if (p.role === F.ADMIN && (C.baseRole !== F.ADMIN || !I) && await R.user.count({
+  if (f.role === $.ADMIN && (N.baseRole !== $.ADMIN || !I) && await O.user.count({
     where: {
-      role: F.ADMIN,
+      role: $.ADMIN,
       isActive: !0,
       NOT: { id: l }
     }
   }) === 0)
     return { success: !1, message: "Debe existir al menos un administrador activo" };
-  const h = await _t({
-    prismaClient: R,
+  const C = await Jt({
+    prismaClient: O,
     firstName: c,
-    lastName: n,
+    lastName: o,
     documentNumber: s,
     excludeUserId: l
-  }), v = Ye(c, n);
+  }), b = Ze(c, o);
   try {
-    const D = (await R.user.findMany({
+    const D = (await O.user.findMany({
       where: { NOT: { id: l } },
       select: { internalCode: !0 }
-    })).map((b) => b.internalCode), P = Z({
+    })).map((v) => v.internalCode), x = te({
       desiredCode: m,
       existingCodes: D,
       prefix: "USR",
       digits: 4,
       maxLength: 30
     });
-    return await R.user.update({
+    return await O.user.update({
       where: { id: l },
       data: {
-        internalCode: P,
-        username: h,
+        internalCode: x,
+        username: C,
         firstName: c.trim(),
-        lastName: n.trim(),
-        name: v,
+        lastName: o.trim(),
+        name: b,
         documentNumber: s,
-        email: J(t),
-        phone: J(i),
-        address: J(u),
-        birthDate: Je(f),
-        role: C.baseRole,
-        roleProfileId: C.id,
+        email: W(t),
+        phone: W(i),
+        address: W(d),
+        birthDate: et(g),
+        role: N.baseRole,
+        roleProfileId: N.id,
         isActive: I,
-        ...g != null && g.trim() ? {
-          passwordHash: await ce.hash(g, 10)
+        ...p != null && p.trim() ? {
+          passwordHash: await ue.hash(p, 10)
         } : {}
       }
-    }), x.id === l && (x = {
-      ...x,
-      username: h,
-      name: v,
-      role: C.baseRole,
-      roleProfileId: C.id,
-      roleProfileName: C.name,
-      permissions: await ws(R, C.id)
-    }), { success: !0, username: h };
+    }), P.id === l && (P = {
+      ...P,
+      username: C,
+      name: b,
+      role: N.baseRole,
+      roleProfileId: N.id,
+      roleProfileName: N.name,
+      permissions: await Ws(O, N.id)
+    }), { success: !0, username: C };
   } catch (D) {
     return { success: !1, message: D instanceof Error ? D.message : "No se pudo actualizar el usuario" };
   }
 });
 X.handle("auth:get-profile", async () => {
   var a;
-  if (!x)
+  if (!P)
     return { success: !1, message: "Debes iniciar sesion" };
-  const e = await R.user.findUnique({
-    where: { id: x.id },
+  const e = await O.user.findUnique({
+    where: { id: P.id },
     select: {
       id: !0,
       username: !0,
@@ -5535,21 +5773,21 @@ X.handle("auth:get-profile", async () => {
   } : { success: !1, message: "Tu usuario ya no existe" };
 });
 X.handle("auth:update-profile", async (e, a) => {
-  var u;
-  const r = Ht.safeParse(a);
+  var d;
+  const r = ua.safeParse(a);
   if (!r.success)
     return { success: !1, message: "Datos invalidos" };
-  if (!x)
+  if (!P)
     return { success: !1, message: "Debes iniciar sesion" };
-  const { firstName: l, lastName: m, email: c, phone: n, birthDate: s } = r.data, t = Ye(l, m), i = await R.user.update({
-    where: { id: x.id },
+  const { firstName: l, lastName: m, email: c, phone: o, birthDate: s } = r.data, t = Ze(l, m), i = await O.user.update({
+    where: { id: P.id },
     data: {
       firstName: l.trim(),
       lastName: m.trim(),
       name: t,
-      email: J(c),
-      phone: J(n),
-      birthDate: Je(s)
+      email: W(c),
+      phone: W(o),
+      birthDate: et(s)
     },
     select: {
       id: !0,
@@ -5563,71 +5801,71 @@ X.handle("auth:update-profile", async (e, a) => {
       role: !0
     }
   });
-  return x = {
-    ...x,
+  return P = {
+    ...P,
     name: t
   }, {
     success: !0,
-    user: x,
+    user: P,
     profile: {
       ...i,
-      birthDate: ((u = i.birthDate) == null ? void 0 : u.toISOString().slice(0, 10)) ?? null
+      birthDate: ((d = i.birthDate) == null ? void 0 : d.toISOString().slice(0, 10)) ?? null
     }
   };
 });
 X.handle("auth:change-password", async (e, a) => {
-  const r = Yt.safeParse(a);
+  const r = la.safeParse(a);
   if (!r.success)
     return { success: !1, message: "Datos invalidos" };
-  if (!x)
+  if (!P)
     return { success: !1, message: "Debes iniciar sesion" };
   const { currentPassword: l, newPassword: m, confirmPassword: c } = r.data;
   if (m !== c)
     return { success: !1, message: "La confirmacion no coincide con la nueva contrasena" };
-  const n = await R.user.findUnique({
-    where: { id: x.id },
+  const o = await O.user.findUnique({
+    where: { id: P.id },
     select: { id: !0, passwordHash: !0 }
   });
-  return n ? await ce.compare(l, n.passwordHash) ? await ce.compare(m, n.passwordHash) ? { success: !1, message: "La nueva contrasena debe ser diferente a la anterior" } : (await R.user.update({
-    where: { id: n.id },
+  return o ? await ue.compare(l, o.passwordHash) ? await ue.compare(m, o.passwordHash) ? { success: !1, message: "La nueva contrasena debe ser diferente a la anterior" } : (await O.user.update({
+    where: { id: o.id },
     data: {
-      passwordHash: await ce.hash(m, 10)
+      passwordHash: await ue.hash(m, 10)
     }
   }), { success: !0 }) : { success: !1, message: "La contrasena actual es incorrecta" } : { success: !1, message: "Tu usuario ya no existe" };
 });
-X.handle("notifications:get-read", async () => x ? {
+X.handle("notifications:get-read", async () => P ? {
   success: !0,
-  readKeys: (await R.notificationRead.findMany({
-    where: { userId: x.id },
+  readKeys: (await O.notificationRead.findMany({
+    where: { userId: P.id },
     select: { readKey: !0 },
     orderBy: { createdAt: "desc" }
   })).map((a) => a.readKey)
 } : { success: !1, message: "Debes iniciar sesion", readKeys: [] });
 X.handle("notifications:mark-read", async (e, a) => {
-  if (!x)
+  if (!P)
     return { success: !1, message: "Debes iniciar sesion" };
   const r = Array.isArray(a == null ? void 0 : a.readKeys) ? a.readKeys.filter((l) => typeof l == "string" && l.trim().length > 0) : [];
   return r.length === 0 ? { success: !0 } : (await Promise.all(
     r.map(
-      (l) => R.notificationRead.upsert({
+      (l) => O.notificationRead.upsert({
         where: {
           userId_readKey: {
-            userId: x.id,
+            userId: P.id,
             readKey: l
           }
         },
         update: {},
         create: {
-          userId: x.id,
+          userId: P.id,
           readKey: l
         }
       })
     )
   ), { success: !0 });
 });
-X.handle("roles:list", async () => !x || x.role !== F.ADMIN ? { success: !1, message: "Solo admins pueden ver roles", roles: [] } : ae(E.rolesView) ? {
+X.handle("roles:list", async () => !P || P.role !== $.ADMIN ? { success: !1, message: "Solo admins pueden ver roles", roles: [] } : Q(E.rolesView) ? {
   success: !0,
-  roles: (await R.roleProfile.findMany({
+  roles: (await O.roleProfile.findMany({
     include: {
       permissions: {
         where: { allowed: !0 },
@@ -5647,7 +5885,7 @@ X.handle("roles:list", async () => !x || x.role !== F.ADMIN ? { success: !1, mes
     baseRole: a.baseRole,
     isSystem: a.isSystem,
     isActive: a.isActive,
-    permissionKeys: Ne(
+    permissionKeys: be(
       a.permissions.map((r) => r.permissionKey)
     ),
     usersCount: a._count.users,
@@ -5656,23 +5894,23 @@ X.handle("roles:list", async () => !x || x.role !== F.ADMIN ? { success: !1, mes
   }))
 } : { success: !1, message: "Tu rol no puede ver roles", roles: [] });
 X.handle("roles:create", async (e, a) => {
-  const r = Jt.safeParse(a);
+  const r = ma.safeParse(a);
   if (!r.success)
     return { success: !1, message: "Datos invalidos para el rol" };
-  const l = Ne(r.data.permissionKeys);
-  if (!x || x.role !== F.ADMIN)
+  const l = be(r.data.permissionKeys);
+  if (!P || P.role !== $.ADMIN)
     return { success: !1, message: "Solo admins pueden crear roles" };
-  if (!ae(E.rolesManage))
+  if (!Q(E.rolesManage))
     return { success: !1, message: "Tu rol no puede crear roles" };
   if (l.length > 0 && l.find(
-    (c) => !Ct(r.data.baseRole, c)
+    (c) => !Mt(r.data.baseRole, c)
   ))
     return { success: !1, message: "Uno o mas permisos no pertenecen al rol base seleccionado" };
   try {
-    return { success: !0, roleId: (await R.roleProfile.create({
+    return { success: !0, roleId: (await O.roleProfile.create({
       data: {
         name: r.data.name.trim(),
-        description: J(r.data.description),
+        description: W(r.data.description),
         baseRole: r.data.baseRole,
         isSystem: !1,
         isActive: r.data.isActive ?? !0,
@@ -5690,58 +5928,58 @@ X.handle("roles:create", async (e, a) => {
   }
 });
 X.handle("roles:update", async (e, a) => {
-  const r = Wt.safeParse(a);
+  const r = pa.safeParse(a);
   if (!r.success)
     return { success: !1, message: "Datos invalidos para el rol" };
-  const l = Ne(r.data.permissionKeys);
-  if (!x || x.role !== F.ADMIN)
+  const l = be(r.data.permissionKeys);
+  if (!P || P.role !== $.ADMIN)
     return { success: !1, message: "Solo admins pueden editar roles" };
-  if (!ae(E.rolesManage))
+  if (!Q(E.rolesManage))
     return { success: !1, message: "Tu rol no puede editar roles" };
-  const m = await R.roleProfile.findUnique({
+  const m = await O.roleProfile.findUnique({
     where: { id: r.data.id },
     select: { id: !0, baseRole: !0, isSystem: !0, name: !0 }
   });
   if (!m)
     return { success: !1, message: "El rol ya no existe" };
   if (l.find(
-    (n) => !Ct(m.baseRole, n)
+    (o) => !Mt(m.baseRole, o)
   ))
     return { success: !1, message: "Uno o mas permisos no pertenecen al rol base seleccionado" };
   try {
-    return await R.$transaction(async (n) => {
-      await n.roleProfile.update({
+    return await O.$transaction(async (o) => {
+      await o.roleProfile.update({
         where: { id: r.data.id },
         data: {
           name: r.data.name.trim(),
-          description: J(r.data.description),
+          description: W(r.data.description),
           isActive: r.data.isActive ?? !0
         }
-      }), await n.rolePermission.deleteMany({ where: { roleProfileId: r.data.id } }), await n.rolePermission.createMany({
+      }), await o.rolePermission.deleteMany({ where: { roleProfileId: r.data.id } }), await o.rolePermission.createMany({
         data: l.map((s) => ({
           roleProfileId: r.data.id,
           permissionKey: s,
           allowed: !0
         }))
       });
-    }), x.roleProfileId === r.data.id && (x = {
-      ...x,
+    }), P.roleProfileId === r.data.id && (P = {
+      ...P,
       roleProfileName: r.data.name.trim(),
       permissions: l
     }), { success: !0, roleId: r.data.id };
-  } catch (n) {
-    return { success: !1, message: n instanceof Error ? n.message : "No se pudo actualizar el rol" };
+  } catch (o) {
+    return { success: !1, message: o instanceof Error ? o.message : "No se pudo actualizar el rol" };
   }
 });
 X.handle("roles:delete", async (e, a) => {
-  const r = Qt.safeParse(a);
+  const r = fa.safeParse(a);
   if (!r.success)
     return { success: !1, message: "Datos invalidos para el rol" };
-  if (!x || x.role !== F.ADMIN)
+  if (!P || P.role !== $.ADMIN)
     return { success: !1, message: "Solo admins pueden eliminar roles" };
-  if (!ae(E.rolesManage))
+  if (!Q(E.rolesManage))
     return { success: !1, message: "Tu rol no puede eliminar roles" };
-  const l = await R.roleProfile.findUnique({
+  const l = await O.roleProfile.findUnique({
     where: { id: r.data.id },
     include: {
       _count: {
@@ -5751,13 +5989,19 @@ X.handle("roles:delete", async (e, a) => {
       }
     }
   });
-  return l ? l.isSystem ? { success: !1, message: "Los roles del sistema no se pueden eliminar" } : l._count.users > 0 ? { success: !1, message: "Reasigna los usuarios del rol antes de eliminarlo" } : (await R.roleProfile.delete({
+  return l ? l.isSystem ? { success: !1, message: "Los roles del sistema no se pueden eliminar" } : l._count.users > 0 ? { success: !1, message: "Reasigna los usuarios del rol antes de eliminarlo" } : (await O.roleProfile.delete({
     where: { id: r.data.id }
   }), { success: !0, roleId: r.data.id }) : { success: !1, message: "El rol ya no existe" };
 });
-X.handle("auth:logout", async () => (x = null, { success: !0 }));
-X.handle("products:list", async () => (await R.product.findMany({
-  where: { isActive: !0, stock: { gt: 0 } },
+X.handle("auth:logout", async () => (P = null, { success: !0 }));
+X.handle("products:list", async () => (await O.product.findMany({
+  where: {
+    isActive: !0,
+    OR: [
+      { stock: { gt: 0 } },
+      { pricingConfigJson: { not: null } }
+    ]
+  },
   include: {
     category: !0,
     subcategory: !0
@@ -5771,6 +6015,7 @@ X.handle("products:list", async () => (await R.product.findMany({
     sku: a.sku,
     barcode: a.barcode,
     price: a.price,
+    pricingConfig: Ue(a.pricingConfigJson),
     cost: a.cost,
     taxRate: a.taxRate,
     stock: a.stock,
@@ -5779,181 +6024,210 @@ X.handle("products:list", async () => (await R.product.findMany({
   };
 }));
 X.handle("sales:create", async (e, a) => {
-  var d, A, S;
-  if (!x)
+  var A, S, L;
+  if (!P)
     return { success: !1, message: "Debes iniciar sesion para vender" };
-  if (!ae(E.salesCreate))
+  if (!Q(E.salesCreate))
     return { success: !1, message: "Tu rol no puede registrar ventas" };
-  if (!ae(E.salesManagePayments))
+  if (!Q(E.salesManagePayments))
     return { success: !1, message: "Tu rol no puede gestionar pagos" };
-  const r = ta.safeParse(a);
+  const r = Aa.safeParse(a);
   if (!r.success)
     return { success: !1, message: "Datos invalidos para la venta" };
   let l = null;
-  if (r.data.customerId && (l = await R.customer.findFirst({
+  if (r.data.customerId && (l = await O.customer.findFirst({
     where: {
       id: r.data.customerId,
       isActive: !0
     },
     select: {
       id: !0,
-      name: !0
+      name: !0,
+      segment: !0
     }
   }), !l))
     return { success: !1, message: "El cliente seleccionado ya no esta disponible" };
-  const m = (l == null ? void 0 : l.name) ?? ((d = r.data.customer) == null ? void 0 : d.trim()) ?? "Consumidor final";
-  if (m !== "Consumidor final" && !ae(E.salesChangeCustomer))
+  const m = (l == null ? void 0 : l.name) ?? ((A = r.data.customer) == null ? void 0 : A.trim()) ?? "Consumidor final";
+  if (m !== "Consumidor final" && !Q(E.salesChangeCustomer))
     return { success: !1, message: "Tu rol no puede cambiar el cliente en la factura" };
-  const c = r.data.items.map((y) => y.productId), n = await R.product.findMany({
+  const c = r.data.items.map((h) => h.productId), o = await O.product.findMany({
     where: {
       id: { in: c },
       isActive: !0
     }
   });
-  if (n.length !== c.length)
+  if (o.length !== c.length)
     return { success: !1, message: "Uno o mas productos ya no estan disponibles" };
-  const s = new Map(n.map((y) => [y.id, y])), t = r.data.items.map((y) => {
-    const w = s.get(y.productId);
-    if (!w)
+  const s = new Map(o.map((h) => [h.id, h])), t = Q(E.salesEditItemPrices), i = r.data.items.map((h) => {
+    var at, st, rt, nt, ot;
+    const R = s.get(h.productId);
+    if (!R)
       throw new Error("Producto no encontrado");
-    if (w.stock < y.qty)
-      throw new Error(`Stock insuficiente para ${w.name}`);
-    const $ = Ie(w.price * y.qty), U = Ie($ * w.taxRate), Y = $ + U, q = Ie((w.price - w.cost) * y.qty);
+    const M = Ue(R.pricingConfigJson), j = !!(M != null && M.enabled);
+    if (!j && R.stock < h.qty)
+      throw new Error(`Stock insuficiente para ${R.name}`);
+    if (((at = h.pricingContext) == null ? void 0 : at.manualUnitPrice) !== void 0 && ((st = h.pricingContext) == null ? void 0 : st.manualUnitPrice) !== null && !t)
+      throw new Error("Tu rol no puede aplicar precios manuales en productos con reglas escalonadas");
+    const G = Ts({
+      fallbackPrice: R.price,
+      pricingConfig: M,
+      qty: h.qty,
+      sheetTypeId: (rt = h.pricingContext) == null ? void 0 : rt.sheetTypeId,
+      specialRuleId: ((nt = h.pricingContext) == null ? void 0 : nt.specialRuleId) ?? null,
+      manualUnitPrice: ((ot = h.pricingContext) == null ? void 0 : ot.manualUnitPrice) ?? null,
+      canOverrideMinimum: t
+    });
+    if (!G.ok)
+      throw new Error(G.message);
+    const { quote: _ } = G, q = _.sheetTypeName ? `${R.name} - ${_.sheetTypeName}` : R.name, U = he(_.unitPrice * h.qty), tt = he(U * R.taxRate), Qt = U + tt, Wt = he((_.unitPrice - R.cost) * h.qty);
     return {
-      product: w,
-      qty: y.qty,
-      lineSubtotal: $,
-      lineTax: U,
-      lineTotal: Y,
-      lineProfit: q
+      product: R,
+      quote: _,
+      lineName: q,
+      qty: h.qty,
+      lineSubtotal: U,
+      lineTax: tt,
+      lineTotal: Qt,
+      lineProfit: Wt,
+      skipStockControl: j
     };
-  }), i = t.reduce((y, w) => y + w.lineSubtotal, 0), u = t.reduce((y, w) => y + w.lineTax, 0), f = i + u, g = t.reduce((y, w) => y + w.product.cost * w.qty, 0), T = t.reduce((y, w) => y + w.lineProfit, 0), p = (r.data.payments && r.data.payments.length > 0 ? r.data.payments : [
+  }), d = i.reduce((h, R) => h + R.lineSubtotal, 0), g = i.reduce((h, R) => h + R.lineTax, 0), p = d + g, T = i.reduce((h, R) => h + R.product.cost * R.qty, 0), I = i.reduce((h, R) => h + R.lineProfit, 0), y = (r.data.payments && r.data.payments.length > 0 ? r.data.payments : [
     {
       method: r.data.paymentMethod,
-      amount: r.data.amountPaid ?? f
+      amount: r.data.amountPaid ?? p
     }
-  ]).map((y) => ({
-    method: y.method,
-    amount: Ie(y.amount)
-  })).filter((y) => y.amount > 0);
-  if (p.length === 0 && !r.data.allowDebt)
+  ]).map((h) => ({
+    method: h.method,
+    amount: he(h.amount)
+  })).filter((h) => h.amount > 0);
+  if (y.length === 0 && !r.data.allowDebt)
     return { success: !1, message: "Debes registrar al menos un pago para completar la venta" };
-  const N = p.reduce((y, w) => y + w.amount, 0), C = Math.max(0, N - f), h = p.filter((y) => y.method === "CASH").reduce((y, w) => y + w.amount, 0);
-  if (C > h)
+  const N = y.reduce((h, R) => h + R.amount, 0), C = Math.max(0, N - p), b = y.filter((h) => h.method === "CASH").reduce((h, R) => h + R.amount, 0);
+  if (C > b)
     return { success: !1, message: "Las vueltas solo pueden salir de un pago en efectivo" };
-  let v = f;
-  const D = /* @__PURE__ */ new Map();
-  for (const y of p) {
-    if (v <= 0)
+  let D = p;
+  const x = /* @__PURE__ */ new Map();
+  for (const h of y) {
+    if (D <= 0)
       break;
-    const w = Math.min(y.amount, v);
-    w <= 0 || (D.set(
-      y.method,
-      (D.get(y.method) ?? 0) + w
-    ), v -= w);
+    const R = Math.min(h.amount, D);
+    R <= 0 || (x.set(
+      h.method,
+      (x.get(h.method) ?? 0) + R
+    ), D -= R);
   }
-  const P = ((A = [...D.entries()].sort((y, w) => w[1] - y[1])[0]) == null ? void 0 : A[0]) ?? ((S = p[0]) == null ? void 0 : S.method) ?? r.data.paymentMethod, b = D.get(j.CASH) ?? 0;
-  if (r.data.clientTotal !== void 0 && Math.abs(r.data.clientTotal - f) > 1)
+  const v = ((S = [...x.entries()].sort((h, R) => R[1] - h[1])[0]) == null ? void 0 : S[0]) ?? ((L = y[0]) == null ? void 0 : L.method) ?? r.data.paymentMethod, u = x.get(z.CASH) ?? 0;
+  if (r.data.clientTotal !== void 0 && Math.abs(r.data.clientTotal - p) > 1)
     return { success: !1, message: "El total enviado no coincide con el calculo del sistema" };
-  if (N < f && !r.data.allowDebt)
+  if (N < p && !r.data.allowDebt)
     return { success: !1, message: "El pago recibido no alcanza para cubrir la venta" };
   try {
-    const y = await R.$transaction(async (w) => {
-      const $ = await w.sale.count() + 1, U = await w.businessSettings.findUnique({
+    const h = await O.$transaction(async (R) => {
+      const M = await R.sale.count() + 1, j = await R.businessSettings.findUnique({
         where: { id: "default" },
         select: { invoicePrefix: !0 }
-      }), Y = bs((U == null ? void 0 : U.invoicePrefix) || "FV", $), q = await w.cashSession.findFirst({
+      }), G = Js((j == null ? void 0 : j.invoicePrefix) || "FV", M), _ = await R.cashSession.findFirst({
         where: {
-          userId: x.id,
+          userId: P.id,
           status: "OPEN"
         },
         orderBy: { openedAt: "desc" }
-      }), k = await w.sale.create({
+      }), q = await R.sale.create({
         data: {
-          invoiceNumber: Y,
+          invoiceNumber: G,
           customer: m,
           customerId: (l == null ? void 0 : l.id) ?? null,
-          paymentMethod: P,
-          subtotal: i,
-          tax: u,
-          total: f,
-          costTotal: g,
-          profit: T,
-          cashierId: x.id,
-          cashSessionId: (q == null ? void 0 : q.id) ?? null,
+          paymentMethod: v,
+          subtotal: d,
+          tax: g,
+          total: p,
+          costTotal: T,
+          profit: I,
+          cashierId: P.id,
+          cashSessionId: (_ == null ? void 0 : _.id) ?? null,
           items: {
-            create: t.map((L) => ({
-              productId: L.product.id,
-              sku: L.product.sku,
-              barcode: L.product.barcode,
-              name: L.product.name,
-              price: L.product.price,
-              cost: L.product.cost,
-              qty: L.qty,
-              taxRate: L.product.taxRate,
-              lineSubtotal: L.lineSubtotal,
-              lineTax: L.lineTax,
-              lineTotal: L.lineTotal,
-              lineProfit: L.lineProfit
+            create: i.map((U) => ({
+              productId: U.product.id,
+              sku: U.product.sku,
+              barcode: U.product.barcode,
+              name: U.lineName,
+              price: U.quote.unitPrice,
+              cost: U.product.cost,
+              qty: U.qty,
+              taxRate: U.product.taxRate,
+              lineSubtotal: U.lineSubtotal,
+              lineTax: U.lineTax,
+              lineTotal: U.lineTotal,
+              lineProfit: U.lineProfit,
+              pricingContextJson: JSON.stringify({
+                sheetTypeId: U.quote.sheetTypeId,
+                sheetTypeName: U.quote.sheetTypeName,
+                specialRuleId: U.quote.specialRuleId,
+                specialRuleLabel: U.quote.specialRuleLabel,
+                source: U.quote.source,
+                sourceLabel: U.quote.sourceLabel,
+                minimumPrice: U.quote.minimumPrice,
+                minimumApplied: U.quote.minimumApplied
+              })
             }))
           },
           payments: {
-            create: p.map((L) => ({
-              method: L.method,
-              amount: L.amount
+            create: y.map((U) => ({
+              method: U.method,
+              amount: U.amount
             }))
           }
         }
       });
-      q && b > 0 && await w.cashMovement.create({
+      _ && u > 0 && await R.cashMovement.create({
         data: {
-          sessionId: q.id,
-          type: B.SALE_IN,
-          amount: b,
-          note: k.invoiceNumber
+          sessionId: _.id,
+          type: k.SALE_IN,
+          amount: u,
+          note: q.invoiceNumber
         }
       });
-      for (const L of t)
-        await w.product.update({
-          where: { id: L.product.id },
+      for (const U of i)
+        U.skipStockControl || (await R.product.update({
+          where: { id: U.product.id },
           data: {
-            stock: { decrement: L.qty }
+            stock: { decrement: U.qty }
           }
-        }), await w.inventoryMovement.create({
+        }), await R.inventoryMovement.create({
           data: {
-            productId: L.product.id,
-            type: Te.SALE_OUT,
-            qty: L.qty,
-            stockBefore: L.product.stock,
-            stockAfter: L.product.stock - L.qty,
+            productId: U.product.id,
+            type: Ne.SALE_OUT,
+            qty: U.qty,
+            stockBefore: U.product.stock,
+            stockAfter: U.product.stock - U.qty,
             referenceType: "SALE",
-            referenceId: k.id,
-            note: k.invoiceNumber
+            referenceId: q.id,
+            note: q.invoiceNumber
           }
-        });
-      return k;
+        }));
+      return q;
     });
     return {
       success: !0,
-      saleId: y.id,
-      invoiceNumber: y.invoiceNumber,
-      total: f,
+      saleId: h.id,
+      invoiceNumber: h.invoiceNumber,
+      total: p,
       amountPaid: N,
       changeAmount: C
     };
-  } catch (y) {
-    return { success: !1, message: y instanceof Error ? y.message : "No se pudo registrar la venta" };
+  } catch (h) {
+    return { success: !1, message: h instanceof Error ? h.message : "No se pudo registrar la venta" };
   }
 });
 X.handle("dashboard:stats", async (e, a = "day") => {
-  const r = ["day", "week", "month"].includes(a) ? a : "day", l = vs(r), m = await R.sale.findMany({
+  const r = ["day", "week", "month"].includes(a) ? a : "day", l = Ys(r), m = await O.sale.findMany({
     where: { createdAt: { gte: l } },
     include: { items: !0 },
     orderBy: { createdAt: "desc" }
-  }), c = m.reduce((T, I) => T + I.total, 0), n = m.reduce((T, I) => T + I.profit, 0), s = m.reduce((T, I) => T + I.tax, 0), t = m.length > 0 ? Ie(c / m.length) : 0, i = m.reduce((T, I) => (T[I.paymentMethod] = (T[I.paymentMethod] ?? 0) + I.total, T), {}), u = m.flatMap((T) => T.items).reduce((T, I) => {
-    const p = T[I.name] ?? { name: I.name, qty: 0, total: 0 };
-    return p.qty += I.qty, p.total += I.lineTotal, T[I.name] = p, T;
-  }, {}), f = Object.values(u).sort((T, I) => I.qty - T.qty).slice(0, 5), g = await R.product.findMany({
+  }), c = m.reduce((T, I) => T + I.total, 0), o = m.reduce((T, I) => T + I.profit, 0), s = m.reduce((T, I) => T + I.tax, 0), t = m.length > 0 ? he(c / m.length) : 0, i = m.reduce((T, I) => (T[I.paymentMethod] = (T[I.paymentMethod] ?? 0) + I.total, T), {}), d = m.flatMap((T) => T.items).reduce((T, I) => {
+    const f = T[I.name] ?? { name: I.name, qty: 0, total: 0 };
+    return f.qty += I.qty, f.total += I.lineTotal, T[I.name] = f, T;
+  }, {}), g = Object.values(d).sort((T, I) => I.qty - T.qty).slice(0, 5), p = await O.product.findMany({
     where: { isActive: !0 },
     orderBy: [{ stock: "asc" }, { name: "asc" }],
     take: 5,
@@ -5969,7 +6243,7 @@ X.handle("dashboard:stats", async (e, a = "day") => {
     totals: {
       salesCount: m.length,
       revenue: c,
-      profit: n,
+      profit: o,
       tax: s,
       averageTicket: t
     },
@@ -5977,7 +6251,7 @@ X.handle("dashboard:stats", async (e, a = "day") => {
       { label: "Efectivo", value: i.CASH ?? 0 },
       { label: "Transferencia", value: (i.CARD ?? 0) + (i.TRANSFER ?? 0) }
     ],
-    topProducts: f,
+    topProducts: g,
     recentSales: m.slice(0, 6).map((T) => ({
       id: T.id,
       invoiceNumber: T.invoiceNumber,
@@ -5986,18 +6260,18 @@ X.handle("dashboard:stats", async (e, a = "day") => {
       createdAt: T.createdAt.toISOString(),
       itemsCount: T.items.length
     })),
-    lowStock: g
+    lowStock: p
   };
 });
-te.on("window-all-closed", () => {
-  process.platform !== "darwin" && (te.quit(), ue = null);
+se.on("window-all-closed", () => {
+  process.platform !== "darwin" && (se.quit(), me = null);
 });
-te.on("quit", async () => {
-  await (R == null ? void 0 : R.$disconnect());
+se.on("quit", async () => {
+  await (O == null ? void 0 : O.$disconnect());
 });
 export {
-  zs as MAIN_DIST,
-  Ut as RENDERER_DIST,
-  Ve as VITE_DEV_SERVER_URL,
-  Cs as seedAdminIfNeeded
+  Er as MAIN_DIST,
+  Ht as RENDERER_DIST,
+  ze as VITE_DEV_SERVER_URL,
+  Ks as seedAdminIfNeeded
 };

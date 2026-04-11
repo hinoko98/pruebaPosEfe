@@ -6,7 +6,6 @@ import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
-import Alert from "@mui/material/Alert";
 import Accordion from "@mui/material/Accordion";
 import AccordionDetails from "@mui/material/AccordionDetails";
 import AccordionSummary from "@mui/material/AccordionSummary";
@@ -361,7 +360,11 @@ export function RolePermissionsView() {
       <FloatingAlert feedback={feedback} onClose={() => setFeedback(null)} />
 
       {loading ? (
-        <Alert severity="info">Cargando roles y permisos...</Alert>
+        <Box sx={{ px: 1, py: 0.5 }}>
+          <Typography variant="body2" color="text.secondary">
+            Cargando configuracion de roles...
+          </Typography>
+        </Box>
       ) : selectedRole ? (
         <>
           <Card>
@@ -548,12 +551,14 @@ export function RolePermissionsView() {
                 </Accordion>
               ))}
             </Stack>
-          ) : (
-            <Alert severity="warning">No encontramos permisos que coincidan con la busqueda actual.</Alert>
-          )}
+          ) : null}
         </>
       ) : (
-        <Alert severity="warning">Todavia no hay roles disponibles.</Alert>
+        <Box sx={{ px: 1, py: 0.5 }}>
+          <Typography variant="body2" color="text.secondary">
+            No hay roles disponibles.
+          </Typography>
+        </Box>
       )}
 
       <Dialog open={createOpen} onClose={closeCreateDialog} fullWidth maxWidth="md">
@@ -608,11 +613,7 @@ export function RolePermissionsView() {
               </TextField>
             </Box>
 
-            {isAdminCreateBase ? (
-              <Alert severity="info">
-                Los roles basados en administrador heredan acceso completo. No se configuran permisos manuales en esta pantalla.
-              </Alert>
-            ) : (
+            {isAdminCreateBase ? null : (
               createSections.map((section) => (
                 <Accordion
                   key={section.title}

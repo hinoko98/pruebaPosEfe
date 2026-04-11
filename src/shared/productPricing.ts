@@ -1,12 +1,11 @@
-export type CustomerSegment = "GENERAL" | "DOCENTE";
-
 export type ProductPricingScale = {
   minQty: number;
   unitPrice: number;
 };
 
-export type ProductPricingCustomerRule = {
-  customerSegment: CustomerSegment;
+export type ProductPricingSpecialRule = {
+  id: string;
+  label: string;
   unitPrice: number;
 };
 
@@ -16,7 +15,7 @@ export type ProductPricingSheetType = {
   basePrice: number;
   minimumPrice: number | null;
   quantityScales: ProductPricingScale[];
-  customerSegmentRules: ProductPricingCustomerRule[];
+  specialPriceRules: ProductPricingSpecialRule[];
 };
 
 export type ProductPricingConfig = {
@@ -30,8 +29,9 @@ export type ProductPricingScaleInput = {
   unitPrice: number;
 };
 
-export type ProductPricingCustomerRuleInput = {
-  customerSegment: CustomerSegment;
+export type ProductPricingSpecialRuleInput = {
+  id?: string;
+  label: string;
   unitPrice: number;
 };
 
@@ -41,7 +41,11 @@ export type ProductPricingSheetTypeInput = {
   basePrice: number;
   minimumPrice?: number | null;
   quantityScales?: ProductPricingScaleInput[];
-  customerSegmentRules?: ProductPricingCustomerRuleInput[];
+  specialPriceRules?: ProductPricingSpecialRuleInput[];
+  customerSegmentRules?: Array<{
+    customerSegment: "GENERAL" | "DOCENTE";
+    unitPrice: number;
+  }>;
 };
 
 export type ProductPricingConfigInput = {
@@ -56,7 +60,9 @@ export type ProductPricingQuote = {
   minimumPrice: number;
   sheetTypeId: string | null;
   sheetTypeName: string | null;
-  source: "FIXED_PRICE" | "QUANTITY_SCALE" | "CUSTOMER_RULE" | "MANUAL_OVERRIDE";
+  specialRuleId: string | null;
+  specialRuleLabel: string | null;
+  source: "FIXED_PRICE" | "QUANTITY_SCALE" | "SPECIAL_RULE" | "MANUAL_OVERRIDE";
   sourceLabel: string;
   priceBeforeMinimum: number;
   minimumApplied: boolean;
@@ -67,7 +73,7 @@ export type ProductPricingQuoteInput = {
   pricingConfig?: ProductPricingConfig | null;
   qty: number;
   sheetTypeId?: string | null;
-  customerSegment?: CustomerSegment;
+  specialRuleId?: string | null;
   manualUnitPrice?: number | null;
   canOverrideMinimum?: boolean;
 };
@@ -88,11 +94,20 @@ function normalizeScale(scale: ProductPricingScale) {
   };
 }
 
-function normalizeCustomerRule(rule: ProductPricingCustomerRule) {
+function normalizeSpecialRule(rule: ProductPricingSpecialRule | ProductPricingSpecialRuleInput) {
   return {
-    customerSegment: rule.customerSegment === "DOCENTE" ? "DOCENTE" : "GENERAL",
+    id: String(rule.id || "").trim() || crypto.randomUUID(),
+    label: String(rule.label || "").trim() || "Tarifa especial",
     unitPrice: toMoney(rule.unitPrice),
-  } as ProductPricingCustomerRule;
+  } satisfies ProductPricingSpecialRule;
+}
+
+function normalizeLegacyCustomerRule(rule: { customerSegment: "GENERAL" | "DOCENTE"; unitPrice: number }) {
+  return normalizeSpecialRule({
+    id: `legacy-${rule.customerSegment.toLowerCase()}`,
+    label: rule.customerSegment === "DOCENTE" ? "Tarifa docente" : "Tarifa especial",
+    unitPrice: rule.unitPrice,
+  });
 }
 
 function pickQuantityScalePrice(sheetType: ProductPricingSheetType, qty: number) {
@@ -104,12 +119,13 @@ function pickQuantityScalePrice(sheetType: ProductPricingSheetType, qty: number)
   return eligibleRules[0] ?? null;
 }
 
-function pickCustomerRule(sheetType: ProductPricingSheetType, customerSegment: CustomerSegment) {
-  if (customerSegment === "GENERAL") return null;
+function pickSpecialRule(sheetType: ProductPricingSheetType, specialRuleId?: string | null) {
+  if (!specialRuleId) return null;
+
   return (
-    sheetType.customerSegmentRules
-      .map(normalizeCustomerRule)
-      .find((rule) => rule.customerSegment === customerSegment && rule.unitPrice > 0) ?? null
+    sheetType.specialPriceRules
+      .map(normalizeSpecialRule)
+      .find((rule) => rule.id === specialRuleId && rule.unitPrice > 0) ?? null
   );
 }
 
@@ -119,27 +135,35 @@ export function normalizeProductPricingConfig(
   if (!pricingConfig?.enabled) return null;
 
   const normalizedSheetTypes = (pricingConfig.sheetTypes ?? [])
-    .map((sheetType) => ({
-      id: String(sheetType.id || "").trim() || crypto.randomUUID(),
-      name: normalizeSheetName(sheetType.name),
-      basePrice: toMoney(sheetType.basePrice),
-      minimumPrice:
-        sheetType.minimumPrice === null || sheetType.minimumPrice === undefined
-          ? null
-          : toMoney(sheetType.minimumPrice),
-      quantityScales: (sheetType.quantityScales ?? [])
-        .map(normalizeScale)
-        .filter((scale) => scale.unitPrice > 0)
-        .sort((left, right) => left.minQty - right.minQty)
-        .filter((scale, index, collection) => collection.findIndex((entry) => entry.minQty === scale.minQty) === index),
-      customerSegmentRules: (sheetType.customerSegmentRules ?? [])
-        .map(normalizeCustomerRule)
-        .filter((rule) => rule.unitPrice > 0)
-        .filter(
-          (rule, index, collection) =>
-            collection.findIndex((entry) => entry.customerSegment === rule.customerSegment) === index
-        ),
-    }))
+    .map((sheetType) => {
+      const legacyCustomerRules = "customerSegmentRules" in sheetType ? (sheetType.customerSegmentRules ?? []) : [];
+
+      return {
+        id: String(sheetType.id || "").trim() || crypto.randomUUID(),
+        name: normalizeSheetName(sheetType.name),
+        basePrice: toMoney(sheetType.basePrice),
+        minimumPrice:
+          sheetType.minimumPrice === null || sheetType.minimumPrice === undefined
+            ? null
+            : toMoney(sheetType.minimumPrice),
+        quantityScales: (sheetType.quantityScales ?? [])
+          .map(normalizeScale)
+          .filter((scale) => scale.unitPrice > 0)
+          .sort((left, right) => left.minQty - right.minQty)
+          .filter(
+            (scale, index, collection) => collection.findIndex((entry) => entry.minQty === scale.minQty) === index
+          ),
+        specialPriceRules: [...(sheetType.specialPriceRules ?? []), ...legacyCustomerRules.map(normalizeLegacyCustomerRule)]
+          .map(normalizeSpecialRule)
+          .filter((rule) => rule.unitPrice > 0)
+          .filter(
+            (rule, index, collection) =>
+              collection.findIndex(
+                (entry) => entry.id === rule.id || entry.label.toLowerCase() === rule.label.toLowerCase()
+              ) === index
+          ),
+      };
+    })
     .filter((sheetType) => sheetType.basePrice > 0);
 
   if (normalizedSheetTypes.length === 0) return null;
@@ -185,7 +209,7 @@ export function resolveProductPricingQuote({
   pricingConfig,
   qty,
   sheetTypeId,
-  customerSegment = "GENERAL",
+  specialRuleId,
   manualUnitPrice,
   canOverrideMinimum = false,
 }: ProductPricingQuoteInput):
@@ -204,6 +228,8 @@ export function resolveProductPricingQuote({
         minimumPrice: 0,
         sheetTypeId: null,
         sheetTypeName: null,
+        specialRuleId: null,
+        specialRuleLabel: null,
         source: "FIXED_PRICE",
         sourceLabel: "Precio fijo del producto",
         priceBeforeMinimum: normalizedFallbackPrice,
@@ -243,6 +269,8 @@ export function resolveProductPricingQuote({
         minimumPrice,
         sheetTypeId: selectedSheetType.id,
         sheetTypeName: selectedSheetType.name,
+        specialRuleId: null,
+        specialRuleLabel: null,
         source: "MANUAL_OVERRIDE",
         sourceLabel: "Ajuste manual autorizado",
         priceBeforeMinimum: requestedUnitPrice,
@@ -251,10 +279,18 @@ export function resolveProductPricingQuote({
     };
   }
 
-  const customerRule = pickCustomerRule(selectedSheetType, customerSegment);
+  const specialRule = pickSpecialRule(selectedSheetType, specialRuleId);
+  if (specialRuleId && !specialRule) {
+    return {
+      ok: false,
+      message: "La tarifa especial seleccionada ya no esta disponible para este producto.",
+    };
+  }
+
   const quantityScale = pickQuantityScalePrice(selectedSheetType, normalizedQty);
 
-  const computedUnitPrice = customerRule?.unitPrice ?? quantityScale?.unitPrice ?? selectedSheetType.basePrice;
+  const baseResolvedPrice = quantityScale?.unitPrice ?? selectedSheetType.basePrice;
+  const computedUnitPrice = specialRule?.unitPrice ?? baseResolvedPrice;
   const enforcedUnitPrice =
     computedUnitPrice < minimumPrice && !canOverrideMinimum ? minimumPrice : computedUnitPrice;
 
@@ -266,9 +302,11 @@ export function resolveProductPricingQuote({
       minimumPrice,
       sheetTypeId: selectedSheetType.id,
       sheetTypeName: selectedSheetType.name,
-      source: customerRule ? "CUSTOMER_RULE" : quantityScale ? "QUANTITY_SCALE" : "FIXED_PRICE",
-      sourceLabel: customerRule
-        ? `Tarifa especial ${customerRule.customerSegment.toLowerCase()}`
+      specialRuleId: specialRule?.id ?? null,
+      specialRuleLabel: specialRule?.label ?? null,
+      source: specialRule ? "SPECIAL_RULE" : quantityScale ? "QUANTITY_SCALE" : "FIXED_PRICE",
+      sourceLabel: specialRule
+        ? specialRule.label
         : quantityScale
           ? `Escala desde ${quantityScale.minQty} unidades`
           : "Precio base por hoja",

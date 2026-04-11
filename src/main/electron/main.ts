@@ -1412,6 +1412,7 @@ ipcMain.handle("sales:create", async (_event, payload) => {
   }
 
   const productMap = new Map(products.map((product) => [product.id, product]));
+  const canEditSaleItemPrices = hasCurrentSessionPermission(APP_PERMISSION_KEYS.salesEditItemPrices);
   const normalizedItems = parsed.data.items.map((item) => {
     const product = productMap.get(item.productId);
     if (!product) {
@@ -1425,14 +1426,18 @@ ipcMain.handle("sales:create", async (_event, payload) => {
       throw new Error(`Stock insuficiente para ${product.name}`);
     }
 
+    if (item.pricingContext?.manualUnitPrice !== undefined && item.pricingContext?.manualUnitPrice !== null && !canEditSaleItemPrices) {
+      throw new Error("Tu rol no puede aplicar precios manuales en productos con reglas escalonadas");
+    }
+
     const pricingResult = resolveProductPricingQuote({
       fallbackPrice: product.price,
       pricingConfig: productPricingConfig,
       qty: item.qty,
       sheetTypeId: item.pricingContext?.sheetTypeId,
-      customerSegment: selectedCustomer?.segment ?? "GENERAL",
+      specialRuleId: item.pricingContext?.specialRuleId ?? null,
       manualUnitPrice: item.pricingContext?.manualUnitPrice ?? null,
-      canOverrideMinimum: currentSessionUser?.role === Role.ADMIN,
+      canOverrideMinimum: canEditSaleItemPrices,
     });
 
     if (!pricingResult.ok) {
@@ -1567,11 +1572,12 @@ ipcMain.handle("sales:create", async (_event, payload) => {
               pricingContextJson: JSON.stringify({
                 sheetTypeId: item.quote.sheetTypeId,
                 sheetTypeName: item.quote.sheetTypeName,
+                specialRuleId: item.quote.specialRuleId,
+                specialRuleLabel: item.quote.specialRuleLabel,
                 source: item.quote.source,
                 sourceLabel: item.quote.sourceLabel,
                 minimumPrice: item.quote.minimumPrice,
                 minimumApplied: item.quote.minimumApplied,
-                customerSegment: selectedCustomer?.segment ?? "GENERAL",
               }),
             })),
           },

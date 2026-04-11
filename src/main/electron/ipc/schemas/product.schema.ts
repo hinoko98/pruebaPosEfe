@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-export const customerSegmentSchema = z.enum(["GENERAL", "DOCENTE"]);
-
 export const productUnitMeasureSchema = z.enum([
   "UNIDAD",
   "PAR",
@@ -26,8 +24,9 @@ const productPricingScaleSchema = z.object({
   unitPrice: z.number().min(0, "El precio unitario no puede ser negativo"),
 });
 
-const productPricingCustomerRuleSchema = z.object({
-  customerSegment: customerSegmentSchema,
+const productPricingSpecialRuleSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  label: z.string().trim().min(1).max(80),
   unitPrice: z.number().min(0, "El precio unitario no puede ser negativo"),
 });
 
@@ -37,7 +36,7 @@ const productPricingSheetTypeSchema = z.object({
   basePrice: z.number().positive("El precio base por hoja debe ser mayor a 0"),
   minimumPrice: z.number().min(0).nullable().optional(),
   quantityScales: z.array(productPricingScaleSchema).optional().default([]),
-  customerSegmentRules: z.array(productPricingCustomerRuleSchema).optional().default([]),
+  specialPriceRules: z.array(productPricingSpecialRuleSchema).optional().default([]),
 });
 
 export const productPricingConfigSchema = z
@@ -68,8 +67,10 @@ export const productPricingConfigSchema = z
       }
       seenIds.add(sheetType.id);
 
+      const minimumAllowed = sheetType.minimumPrice ?? data.minimumPrice;
+
       for (const scale of sheetType.quantityScales) {
-        if (scale.unitPrice < data.minimumPrice) {
+        if (scale.unitPrice < minimumAllowed) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: "La escala no puede quedar por debajo del precio minimo permitido",
@@ -77,6 +78,26 @@ export const productPricingConfigSchema = z
           });
           break;
         }
+      }
+
+      const seenRuleIds = new Set<string>();
+      for (const [ruleIndex, rule] of sheetType.specialPriceRules.entries()) {
+        if (rule.unitPrice < minimumAllowed) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "La tarifa especial no puede quedar por debajo del precio minimo permitido",
+            path: ["sheetTypes", sheetIndex, "specialPriceRules", ruleIndex, "unitPrice"],
+          });
+        }
+
+        if (seenRuleIds.has(rule.id)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Cada tarifa especial debe tener un identificador unico dentro del tipo de hoja",
+            path: ["sheetTypes", sheetIndex, "specialPriceRules", ruleIndex, "id"],
+          });
+        }
+        seenRuleIds.add(rule.id);
       }
     }
   });

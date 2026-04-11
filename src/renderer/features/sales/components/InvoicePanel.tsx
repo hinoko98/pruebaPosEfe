@@ -64,7 +64,7 @@ export default function InvoicePanel({
   cart: CartItem[];
   totals: { subtotal: number; tax: number; total: number };
   customer: string;
-  customers: Array<{ id: string; name: string; document?: string | null; phone?: string | null; segment?: "GENERAL" | "DOCENTE" }>;
+  customers: Array<{ id: string; name: string; document?: string | null; phone?: string | null }>;
   onCustomerChange: (value: string) => void;
   onCheckout: () => void;
   onCancel: () => void;
@@ -78,7 +78,6 @@ export default function InvoicePanel({
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const isEmpty = cart.length === 0;
-  const selectedCustomer = customers.find((entry) => entry.name === customer);
   const cartCount = cart.reduce((sum, item) => sum + item.qty, 0);
   const inputStyle = getFieldStyle(theme);
   const colors = {
@@ -180,7 +179,7 @@ export default function InvoicePanel({
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "end" }}>
           <FieldShell label="Cliente">
             <select
-              value={selectedCustomer ? selectedCustomer.name : customer || "Consumidor final"}
+              value={customer || "Consumidor final"}
               onChange={(event) => onCustomerChange(event.target.value)}
               style={inputStyle}
               disabled={!canChangeCustomer}
@@ -217,11 +216,6 @@ export default function InvoicePanel({
           </button>
         </div>
 
-        {selectedCustomer ? (
-          <div style={{ fontSize: 12, color: colors.muted }}>
-            Tipo de cliente: {selectedCustomer.segment === "DOCENTE" ? "Docente" : "General"}
-          </div>
-        ) : null}
       </div>
 
       <div
@@ -306,9 +300,9 @@ export default function InvoicePanel({
                       <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>
                         {fmt(item.price)} c/u
                       </div>
-                      {item.sheetTypeName || item.pricingSourceLabel ? (
+                      {item.sheetTypeName || item.specialRuleLabel || item.pricingSourceLabel ? (
                         <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>
-                          {[item.sheetTypeName, item.pricingSourceLabel].filter(Boolean).join(" | ")}
+                          {[item.sheetTypeName, item.specialRuleLabel, item.pricingSourceLabel].filter(Boolean).join(" | ")}
                         </div>
                       ) : null}
                     </div>

@@ -12,38 +12,60 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import type { CustomerSegment, Product } from "../types";
+import type { Product } from "../types";
 import { resolveProductPricingQuote } from "../../../../shared/productPricing";
 import { fmt } from "../views/PosView";
 
 type ProductPricingDialogProps = {
   open: boolean;
   product: Product | null;
-  customerSegment: CustomerSegment;
+  canEditManualPrice: boolean;
   onClose: () => void;
   onConfirm: (payload: {
     qty: number;
     sheetTypeId: string;
+    specialRuleId?: string | null;
+    manualUnitPrice?: number | null;
   }) => void;
 };
+
+function normalizeManualValue(value: string) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+}
 
 export default function ProductPricingDialog({
   open,
   product,
-  customerSegment,
+  canEditManualPrice,
   onClose,
   onConfirm,
 }: ProductPricingDialogProps) {
   const [sheetTypeId, setSheetTypeId] = useState("");
+  const [specialRuleId, setSpecialRuleId] = useState("");
   const [qty, setQty] = useState("1");
+  const [manualUnitPrice, setManualUnitPrice] = useState("");
 
   useEffect(() => {
     if (!open || !product?.pricingConfig?.enabled) return;
     setSheetTypeId(product.pricingConfig.sheetTypes[0]?.id ?? "");
+    setSpecialRuleId("");
     setQty("1");
+    setManualUnitPrice("");
   }, [open, product]);
 
   const normalizedQty = Math.max(1, Math.round(Number(qty || 1)));
+  const normalizedManualUnitPrice = normalizeManualValue(manualUnitPrice);
+
+  const selectedSheetType = product?.pricingConfig?.sheetTypes.find((sheet) => sheet.id === sheetTypeId) ?? null;
+
+  useEffect(() => {
+    if (!selectedSheetType) return;
+    if (!selectedSheetType.specialPriceRules.some((rule) => rule.id === specialRuleId)) {
+      setSpecialRuleId("");
+    }
+  }, [selectedSheetType, specialRuleId]);
+
   const pricingResult = useMemo(() => {
     if (!product) return null;
 
@@ -52,11 +74,11 @@ export default function ProductPricingDialog({
       pricingConfig: product.pricingConfig,
       qty: normalizedQty,
       sheetTypeId,
-      customerSegment,
+      specialRuleId: specialRuleId || null,
+      manualUnitPrice: normalizedManualUnitPrice,
+      canOverrideMinimum: canEditManualPrice,
     });
-  }, [customerSegment, normalizedQty, product, sheetTypeId]);
-
-  const selectedSheetType = product?.pricingConfig?.sheetTypes.find((sheet) => sheet.id === sheetTypeId) ?? null;
+  }, [canEditManualPrice, normalizedManualUnitPrice, normalizedQty, product, sheetTypeId, specialRuleId]);
 
   const handleConfirm = () => {
     if (!pricingResult?.ok || !pricingResult.quote.sheetTypeId) return;
@@ -64,6 +86,8 @@ export default function ProductPricingDialog({
     onConfirm({
       qty: normalizedQty,
       sheetTypeId: pricingResult.quote.sheetTypeId,
+      specialRuleId: pricingResult.quote.specialRuleId,
+      manualUnitPrice: normalizedManualUnitPrice,
     });
   };
 
@@ -78,7 +102,7 @@ export default function ProductPricingDialog({
                 {product.name}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Define hoja y cantidad para calcular el precio correcto sin ajuste manual.
+                Selecciona hoja, cantidad y, si corresponde, activa una tarifa especial controlada por el sistema.
               </Typography>
             </Box>
           ) : null}
@@ -87,7 +111,7 @@ export default function ProductPricingDialog({
             <Alert severity="warning">Este producto no tiene reglas de precio por cantidad activas.</Alert>
           ) : (
             <>
-              <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "1fr 160px" }} gap={2}>
+              <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "1fr 150px" }} gap={2}>
                 <TextField
                   select
                   label="Tipo de hoja"
@@ -111,11 +135,46 @@ export default function ProductPricingDialog({
               </Box>
 
               {selectedSheetType ? (
-                <Alert severity="info">
-                  Base {fmt(selectedSheetType.basePrice)}
-                  {selectedSheetType.minimumPrice !== null ? ` | Minimo ${fmt(selectedSheetType.minimumPrice)}` : ""}
-                  {customerSegment === "DOCENTE" ? " | Cliente docente detectado" : ""}
-                </Alert>
+                <>
+                  <TextField
+                    select
+                    label="Tarifa especial"
+                    value={specialRuleId}
+                    onChange={(event) => setSpecialRuleId(event.target.value)}
+                    helperText={
+                      selectedSheetType.specialPriceRules.length > 0
+                        ? "Opcional. Si la activas, esta tarifa sobrescribe el precio base o la escala."
+                        : "Esta hoja no tiene tarifas especiales configuradas."
+                    }
+                    disabled={selectedSheetType.specialPriceRules.length === 0}
+                  >
+                    <MenuItem value="">Sin tarifa especial</MenuItem>
+                    {selectedSheetType.specialPriceRules.map((rule) => (
+                      <MenuItem key={rule.id} value={rule.id}>
+                        {rule.label} - {fmt(rule.unitPrice)}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+
+                  <Alert severity="info">
+                    Base {fmt(selectedSheetType.basePrice)}
+                    {selectedSheetType.minimumPrice !== null ? ` | Minimo ${fmt(selectedSheetType.minimumPrice)}` : ""}
+                    {selectedSheetType.quantityScales.length > 0
+                      ? ` | ${selectedSheetType.quantityScales.length} escalas configuradas`
+                      : " | Sin escalas adicionales"}
+                  </Alert>
+                </>
+              ) : null}
+
+              {canEditManualPrice ? (
+                <TextField
+                  label="Precio manual autorizado"
+                  type="number"
+                  inputProps={{ min: 0, step: 1 }}
+                  value={manualUnitPrice}
+                  onChange={(event) => setManualUnitPrice(event.target.value)}
+                  helperText="Opcional. Solo para roles autorizados; nunca quedara por debajo del minimo sin permiso."
+                />
               ) : null}
 
               {pricingResult && !pricingResult.ok ? (
@@ -134,10 +193,7 @@ export default function ProductPricingDialog({
                     <Row label="Precio unitario" value={fmt(pricingResult.quote.unitPrice)} />
                     <Row label="Subtotal" value={fmt(pricingResult.quote.subtotal)} />
                     <Row label="Regla aplicada" value={pricingResult.quote.sourceLabel} />
-                    <Row
-                      label="Minimo aplicado"
-                      value={pricingResult.quote.minimumApplied ? "Si" : "No"}
-                    />
+                    <Row label="Minimo aplicado" value={pricingResult.quote.minimumApplied ? "Si" : "No"} />
                   </Stack>
                 </Box>
               ) : null}

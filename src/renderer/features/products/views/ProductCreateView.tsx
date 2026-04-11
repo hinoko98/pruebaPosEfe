@@ -40,12 +40,11 @@ import {
   type SubcategoryMap,
 } from "@/features/products/services/products.api";
 import type {
-  CustomerSegment,
   Product,
   ProductFormInput,
   ProductPricingConfig,
-  ProductPricingCustomerRule,
   ProductPricingScale,
+  ProductPricingSpecialRule,
   ProductPricingSheetType,
 } from "@/features/products/types";
 import { getReferenceUnitPrice } from "../../../../shared/productPricing";
@@ -58,13 +57,19 @@ type ProductPricingScaleFormState = {
   unitPrice: string;
 };
 
+type ProductPricingSpecialRuleFormState = {
+  id: string;
+  label: string;
+  unitPrice: string;
+};
+
 type ProductPricingSheetFormState = {
   id: string;
   name: string;
   basePrice: string;
   minimumPrice: string;
-  teacherPrice: string;
   quantityScales: ProductPricingScaleFormState[];
+  specialRules: ProductPricingSpecialRuleFormState[];
 };
 
 export type ProductFormState = {
@@ -104,8 +109,6 @@ type ProductCreateViewProps = {
   subcategoryMap: SubcategoryMap;
 };
 
-const DOCENTE_SEGMENT: CustomerSegment = "DOCENTE";
-
 function currency(value: number) {
   return new Intl.NumberFormat("es-CO", {
     style: "currency",
@@ -134,13 +137,21 @@ function createScale(minQty: number, unitPrice: number): ProductPricingScaleForm
   };
 }
 
+function createSpecialRule(label = "", unitPrice = 0, id: string = crypto.randomUUID()): ProductPricingSpecialRuleFormState {
+  return {
+    id,
+    label,
+    unitPrice: String(unitPrice),
+  };
+}
+
 function createSheet(
   name = "",
   basePrice = 0,
   options?: {
     minimumPrice?: number;
-    teacherPrice?: number;
     quantityScales?: Array<{ minQty: number; unitPrice: number }>;
+    specialRules?: Array<{ id?: string; label: string; unitPrice: number }>;
   }
 ): ProductPricingSheetFormState {
   return {
@@ -149,23 +160,24 @@ function createSheet(
     basePrice: String(basePrice),
     minimumPrice:
       options?.minimumPrice === undefined || options.minimumPrice === null ? "" : String(options.minimumPrice),
-    teacherPrice:
-      options?.teacherPrice === undefined || options.teacherPrice === null ? "" : String(options.teacherPrice),
     quantityScales: (options?.quantityScales ?? []).map((scale) => createScale(scale.minQty, scale.unitPrice)),
+    specialRules: (options?.specialRules ?? []).map((rule) =>
+      createSpecialRule(rule.label, rule.unitPrice, rule.id || crypto.randomUUID())
+    ),
   };
 }
 
 function buildPrintPresetSheets() {
   return [
     createSheet("Carta", 300, {
-      teacherPrice: 100,
       quantityScales: [
         { minQty: 1, unitPrice: 300 },
         { minQty: 10, unitPrice: 270 },
-        { minQty: 20, unitPrice: 250 },
+        { minQty: 20, unitPrice: 240 },
         { minQty: 50, unitPrice: 200 },
         { minQty: 100, unitPrice: 150 },
       ],
+      specialRules: [{ label: "Tarifa especial", unitPrice: 100 }],
     }),
     createSheet("Oficio", 400),
   ];
@@ -193,16 +205,14 @@ function syncMarginFromPrice(form: ProductFormState): ProductFormState {
   return { ...form, marginPercent: fixedString(marginPercent) };
 }
 
-function buildSheetRules(sheet: ProductPricingSheetFormState): ProductPricingCustomerRule[] {
-  const teacherPrice = integerFromString(sheet.teacherPrice);
-  if (teacherPrice <= 0) return [];
-
-  return [
-    {
-      customerSegment: DOCENTE_SEGMENT,
-      unitPrice: teacherPrice,
-    },
-  ];
+function buildSheetSpecialRules(sheet: ProductPricingSheetFormState): ProductPricingSpecialRule[] {
+  return sheet.specialRules
+    .map((rule) => ({
+      id: rule.id,
+      label: rule.label.trim(),
+      unitPrice: integerFromString(rule.unitPrice),
+    }))
+    .filter((rule) => rule.label.length > 0 && rule.unitPrice > 0);
 }
 
 function buildSheetScales(sheet: ProductPricingSheetFormState): ProductPricingScale[] {
@@ -225,7 +235,7 @@ function buildPricingConfig(form: ProductFormState): ProductPricingConfig | null
       basePrice: integerFromString(sheet.basePrice),
       minimumPrice: sheet.minimumPrice.trim() ? integerFromString(sheet.minimumPrice) : null,
       quantityScales: buildSheetScales(sheet),
-      customerSegmentRules: buildSheetRules(sheet),
+      specialPriceRules: buildSheetSpecialRules(sheet),
     }))
     .filter((sheet) => sheet.name.length > 0 && sheet.basePrice > 0);
 
@@ -236,10 +246,8 @@ function buildPricingConfig(form: ProductFormState): ProductPricingConfig | null
   };
 }
 
-function getTeacherPrice(sheetType?: ProductPricingSheetType | null) {
-  return (
-    sheetType?.customerSegmentRules.find((rule) => rule.customerSegment === DOCENTE_SEGMENT)?.unitPrice ?? null
-  );
+function getSpecialRules(sheetType?: ProductPricingSheetType | null) {
+  return sheetType?.specialPriceRules ?? [];
 }
 
 export function applyPricingMode(form: ProductFormState, pricingMode: PricingMode) {
@@ -292,8 +300,8 @@ export function productToFormState(product: Product): ProductFormState {
       pricingConfig?.sheetTypes.map((sheetType) =>
         createSheet(sheetType.name, sheetType.basePrice, {
           minimumPrice: sheetType.minimumPrice ?? undefined,
-          teacherPrice: getTeacherPrice(sheetType) ?? undefined,
           quantityScales: sheetType.quantityScales,
+          specialRules: getSpecialRules(sheetType),
         })
       ) ?? [],
   };
@@ -354,6 +362,7 @@ export function validateProductForm(form: ProductFormState) {
     if (minimumPrice !== null && minimumPrice < 0) {
       return `El minimo de ${sheet.name.trim() || "la hoja"} no puede ser negativo.`;
     }
+    const minimumAllowed = minimumPrice ?? integerFromString(form.pricingMinimumPrice);
 
     const usedScaleQuantities = new Set<number>();
     for (const scale of sheet.quantityScales) {
@@ -364,11 +373,39 @@ export function validateProductForm(form: ProductFormState) {
         return `Cada escala de ${sheet.name.trim() || "la hoja"} debe tener un precio valido.`;
       }
 
+      if (unitPrice < minimumAllowed) {
+        return `Las escalas de ${sheet.name.trim() || "la hoja"} no pueden quedar por debajo del minimo permitido.`;
+      }
+
       if (usedScaleQuantities.has(minQty)) {
         return `No repitas la misma cantidad minima en ${sheet.name.trim() || "la hoja"}.`;
       }
 
       usedScaleQuantities.add(minQty);
+    }
+
+    const usedRuleLabels = new Set<string>();
+    for (const rule of sheet.specialRules) {
+      const label = rule.label.trim().toLowerCase();
+      const unitPrice = integerFromString(rule.unitPrice);
+
+      if (!label) {
+        return `Cada tarifa especial de ${sheet.name.trim() || "la hoja"} debe tener un nombre.`;
+      }
+
+      if (unitPrice <= 0) {
+        return `Cada tarifa especial de ${sheet.name.trim() || "la hoja"} debe tener un precio valido.`;
+      }
+
+      if (unitPrice < minimumAllowed) {
+        return `Las tarifas especiales de ${sheet.name.trim() || "la hoja"} no pueden quedar por debajo del minimo permitido.`;
+      }
+
+      if (usedRuleLabels.has(label)) {
+        return `No repitas tarifas especiales en ${sheet.name.trim() || "la hoja"}.`;
+      }
+
+      usedRuleLabels.add(label);
     }
   }
 
@@ -403,10 +440,11 @@ export function ProductFormFields({
     () => getReferenceUnitPrice(numberFromString(form.price), pricingConfig),
     [form.price, pricingConfig]
   );
-  const teacherPrices = form.pricingSheetTypes
-    .map((sheet) => integerFromString(sheet.teacherPrice))
+  const specialRulePrices = form.pricingSheetTypes
+    .flatMap((sheet) => sheet.specialRules)
+    .map((rule) => integerFromString(rule.unitPrice))
     .filter((price) => price > 0);
-  const lowestTeacherPrice = teacherPrices.length > 0 ? Math.min(...teacherPrices) : null;
+  const lowestSpecialRulePrice = specialRulePrices.length > 0 ? Math.min(...specialRulePrices) : null;
 
   useEffect(() => {
     if (form.pricingEnabled) {
@@ -511,6 +549,31 @@ export function ProductFormFields({
     updateSheet(sheetId, (sheet) => ({
       ...sheet,
       quantityScales: sheet.quantityScales.filter((scale) => scale.id !== scaleId),
+    }));
+  };
+
+  const addSpecialRule = (sheetId: string) => {
+    updateSheet(sheetId, (sheet) => ({
+      ...sheet,
+      specialRules: [...sheet.specialRules, createSpecialRule("Tarifa especial", integerFromString(sheet.basePrice) || 0)],
+    }));
+  };
+
+  const updateSpecialRule = (
+    sheetId: string,
+    ruleId: string,
+    patch: Partial<Pick<ProductPricingSpecialRuleFormState, "label" | "unitPrice">>
+  ) => {
+    updateSheet(sheetId, (sheet) => ({
+      ...sheet,
+      specialRules: sheet.specialRules.map((rule) => (rule.id === ruleId ? { ...rule, ...patch } : rule)),
+    }));
+  };
+
+  const removeSpecialRule = (sheetId: string, ruleId: string) => {
+    updateSheet(sheetId, (sheet) => ({
+      ...sheet,
+      specialRules: sheet.specialRules.filter((rule) => rule.id !== ruleId),
     }));
   };
 
@@ -715,21 +778,21 @@ export function ProductFormFields({
                     }
                   />
                 }
-                label={form.pricingEnabled ? "Reglas activas" : "Precio fijo"}
+                label={form.pricingEnabled ? "Permitir reglas por cantidad: si" : "Permitir reglas por cantidad: no"}
               />
             </Box>
 
             {form.pricingEnabled ? (
               <>
                 <Alert severity="info">
-                  El POS tomara primero el tipo de hoja, luego buscara la escala por cantidad y, si el cliente
-                  pertenece a un segmento especial como docente, aplicara esa tarifa. Si el resultado queda por
-                  debajo del minimo, el sistema lo ajusta automaticamente salvo autorizacion superior.
+                  Orden aplicada en venta: primero se valida el tipo de hoja, luego la escala por cantidad, despues la
+                  tarifa especial activada en la venta y al final el minimo permitido. Si el resultado queda por debajo
+                  del minimo, el sistema lo ajusta automaticamente salvo autorizacion superior.
                 </Alert>
 
                 <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(4, 1fr)" }} gap={2}>
                   <TextField
-                    label="Minimo global"
+                    label="Precio minimo permitido"
                     type="number"
                     inputProps={{ min: 0, step: "1" }}
                     value={form.pricingMinimumPrice}
@@ -744,8 +807,8 @@ export function ProductFormFields({
                     InputProps={{ readOnly: true }}
                   />
                   <TextField
-                    label="Tarifa docente mas baja"
-                    value={lowestTeacherPrice ? currency(lowestTeacherPrice) : "No configurada"}
+                    label="Tarifa especial mas baja"
+                    value={lowestSpecialRulePrice ? currency(lowestSpecialRulePrice) : "No configurada"}
                     InputProps={{ readOnly: true }}
                   />
                   <TextField
@@ -823,14 +886,9 @@ export function ProductFormFields({
                               helperText="Opcional"
                             />
                             <TextField
-                              label="Tarifa docente"
-                              type="number"
-                              inputProps={{ min: 0, step: "1" }}
-                              value={sheet.teacherPrice}
-                              onChange={(event) =>
-                                updateSheet(sheet.id, (current) => ({ ...current, teacherPrice: event.target.value }))
-                              }
-                              helperText="Opcional"
+                              label="Tarifas especiales"
+                              value={String(sheet.specialRules.length)}
+                              InputProps={{ readOnly: true }}
                             />
                           </Box>
 
@@ -887,6 +945,67 @@ export function ProductFormFields({
                                       color="error"
                                       variant="text"
                                       onClick={() => removeScale(sheet.id, scale.id)}
+                                    >
+                                      Quitar
+                                    </Button>
+                                  </Box>
+                                ))}
+                              </Stack>
+                            )}
+                          </Stack>
+
+                          <Divider />
+
+                          <Stack spacing={1.5}>
+                            <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
+                              <Box>
+                                <Typography variant="subtitle2" fontWeight={800}>
+                                  Tarifas especiales
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                  Regla opcional activable al agregar el producto a la venta. Sobrescribe el precio base
+                                  o la escala, pero nunca baja del minimo salvo permiso autorizado.
+                                </Typography>
+                              </Box>
+                              <Button variant="outlined" onClick={() => addSpecialRule(sheet.id)}>
+                                Agregar tarifa especial
+                              </Button>
+                            </Box>
+
+                            {sheet.specialRules.length === 0 ? (
+                              <Alert severity="info">
+                                Esta hoja no tiene tarifas especiales. El POS usara solo el precio base o la escala por cantidad.
+                              </Alert>
+                            ) : (
+                              <Stack spacing={1.25}>
+                                {sheet.specialRules.map((rule) => (
+                                  <Box
+                                    key={rule.id}
+                                    display="grid"
+                                    gridTemplateColumns={{ xs: "1fr", md: "1.2fr 180px auto" }}
+                                    gap={2}
+                                    alignItems="center"
+                                  >
+                                    <TextField
+                                      label="Nombre de tarifa"
+                                      value={rule.label}
+                                      onChange={(event) =>
+                                        updateSpecialRule(sheet.id, rule.id, { label: event.target.value })
+                                      }
+                                    />
+                                    <TextField
+                                      label="Precio unitario"
+                                      type="number"
+                                      inputProps={{ min: 0, step: "1" }}
+                                      value={rule.unitPrice}
+                                      onChange={(event) =>
+                                        updateSpecialRule(sheet.id, rule.id, { unitPrice: event.target.value })
+                                      }
+                                    />
+                                    <Button
+                                      color="error"
+                                      variant="text"
+                                      onClick={() => removeSpecialRule(sheet.id, rule.id)}
                                     >
                                       Quitar
                                     </Button>
@@ -989,7 +1108,7 @@ export default function ProductCreateView({
       <DialogTitle>Formulario rapido de producto</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          Completa los datos del producto y, si aplica, define las reglas automaticas por hoja, cantidad y tipo de cliente.
+          Completa los datos del producto y, si aplica, define las reglas automaticas por hoja, cantidad y tarifa especial.
         </Typography>
         {error ? <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert> : null}
         <ProductFormFields

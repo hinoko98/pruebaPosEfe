@@ -7,8 +7,9 @@ export type ProductPricingScale = {
   unitPrice: number;
 };
 
-export type ProductPricingCustomerRule = {
-  customerSegment: CustomerSegment;
+export type ProductPricingSpecialRule = {
+  id: string;
+  label: string;
   unitPrice: number;
 };
 
@@ -18,7 +19,7 @@ export type ProductPricingSheetType = {
   basePrice: number;
   minimumPrice: number | null;
   quantityScales: ProductPricingScale[];
-  customerSegmentRules: ProductPricingCustomerRule[];
+  specialPriceRules: ProductPricingSpecialRule[];
 };
 
 export type ProductPricingConfig = {
@@ -51,9 +52,12 @@ export type CartItem = {
   taxRate?: number;
   sheetTypeId?: string | null;
   sheetTypeName?: string | null;
+  specialRuleId?: string | null;
+  specialRuleLabel?: string | null;
   pricingSourceLabel?: string | null;
   minimumPrice?: number;
   pricingEnabled?: boolean;
+  manualUnitPrice?: number | null;
 };
 
 export type PaymentMethod = "CASH" | "CARD" | "TRANSFER";
