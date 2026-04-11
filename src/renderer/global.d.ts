@@ -32,12 +32,32 @@ import type { CreateProductInput, UpdateProductInput } from "~/main/electron/ipc
 import type { CreateRoleProfileInput, DeleteRoleProfileInput, UpdateRoleProfileInput } from "~/main/electron/ipc/schemas/roles.schema";
 import type { CreateSaleInput, CreateSaleResult } from "~/main/electron/ipc/schemas/sales.schema";
 
+type ProductPricingConfigShape = {
+  enabled: boolean;
+  minimumPrice: number;
+  sheetTypes: Array<{
+    id: string;
+    name: string;
+    basePrice: number;
+    minimumPrice: number | null;
+    quantityScales: Array<{
+      minQty: number;
+      unitPrice: number;
+    }>;
+    customerSegmentRules: Array<{
+      customerSegment: "GENERAL" | "DOCENTE";
+      unitPrice: number;
+    }>;
+  }>;
+};
+
 type PosProduct = {
   id: string;
   name: string;
   sku: string;
   barcode: string | null;
   price: number;
+  pricingConfig: ProductPricingConfigShape | null;
   cost: number;
   taxRate: number;
   stock: number;
@@ -310,6 +330,7 @@ type AccountingSummaryResponse = {
     internalCode: string | null;
     name: string;
     document: string | null;
+    segment: "GENERAL" | "DOCENTE";
     phone: string | null;
   }>;
   sales: Array<{
@@ -592,6 +613,7 @@ type ProductsAdminResponse = {
     barcode: string | null;
     unitMeasure: string;
     price: number;
+    pricingConfig: ProductPricingConfigShape | null;
     cost: number;
     marginPercent: number;
     hasTax: boolean;
@@ -626,6 +648,7 @@ type CustomersListResponse = {
     internalCode: string | null;
     name: string;
     document: string | null;
+    segment: "GENERAL" | "DOCENTE";
     phone: string | null;
     email: string | null;
     address: string | null;
@@ -788,6 +811,7 @@ type SaleDetailResponse = {
       lineSubtotal: number;
       lineTax: number;
       lineTotal: number;
+      pricingContextJson?: string | null;
     }>;
     payments: Array<{
       id: string;
@@ -911,6 +935,7 @@ declare global {
         lastName?: string;
         documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
         documentNumber?: string | null;
+        segment?: "GENERAL" | "DOCENTE";
         phone?: string | null;
         email?: string | null;
         address?: string | null;
@@ -923,6 +948,7 @@ declare global {
         lastName?: string;
         documentType?: "Cédula" | "NIT" | "Cédula de extranjería" | "Pasaporte" | "Tarjeta de identidad";
         documentNumber?: string | null;
+        segment?: "GENERAL" | "DOCENTE";
         phone?: string | null;
         email?: string | null;
         address?: string | null;

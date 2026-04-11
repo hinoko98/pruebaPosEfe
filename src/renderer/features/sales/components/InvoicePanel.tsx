@@ -64,7 +64,7 @@ export default function InvoicePanel({
   cart: CartItem[];
   totals: { subtotal: number; tax: number; total: number };
   customer: string;
-  customers: Array<{ id: string; name: string; document?: string | null; phone?: string | null }>;
+  customers: Array<{ id: string; name: string; document?: string | null; phone?: string | null; segment?: "GENERAL" | "DOCENTE" }>;
   onCustomerChange: (value: string) => void;
   onCheckout: () => void;
   onCancel: () => void;
@@ -216,6 +216,12 @@ export default function InvoicePanel({
             <UserPlusIcon />
           </button>
         </div>
+
+        {selectedCustomer ? (
+          <div style={{ fontSize: 12, color: colors.muted }}>
+            Tipo de cliente: {selectedCustomer.segment === "DOCENTE" ? "Docente" : "General"}
+          </div>
+        ) : null}
       </div>
 
       <div
@@ -300,6 +306,11 @@ export default function InvoicePanel({
                       <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>
                         {fmt(item.price)} c/u
                       </div>
+                      {item.sheetTypeName || item.pricingSourceLabel ? (
+                        <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>
+                          {[item.sheetTypeName, item.pricingSourceLabel].filter(Boolean).join(" | ")}
+                        </div>
+                      ) : null}
                     </div>
 
                     <button

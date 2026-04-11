@@ -1,6 +1,7 @@
 import type { Product } from "../types";
 import { fmt } from "../views/PosView";
 import { alpha, useTheme } from "@mui/material/styles";
+import { getReferenceUnitPrice } from "../../../../shared/productPricing";
 
 export default function ProductShelf({
   products,
@@ -63,7 +64,11 @@ export default function ProductShelf({
         overflowY: "auto",
       }}
     >
-      {products.map((product) => (
+      {products.map((product) => {
+        const referencePrice = getReferenceUnitPrice(product.price, product.pricingConfig);
+        const hasDynamicPricing = Boolean(product.pricingConfig?.enabled);
+
+        return (
         <button
           key={product.id}
           onClick={() => onPick(product)}
@@ -99,7 +104,14 @@ export default function ProductShelf({
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: theme.palette.primary.main }}>{fmt(product.price)}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: theme.palette.primary.main }}>
+                {hasDynamicPricing ? `Desde ${fmt(referencePrice)}` : fmt(product.price)}
+              </div>
+              {hasDynamicPricing ? (
+                <div style={{ fontSize: 11, color: theme.palette.text.secondary }}>
+                  Precio por hoja y cantidad
+                </div>
+              ) : null}
               <div style={{ fontSize: 11, color: theme.palette.text.secondary }}>Stock: {product.stock ?? 0}</div>
             </div>
             <div
@@ -116,11 +128,12 @@ export default function ProductShelf({
                 fontWeight: 700,
               }}
             >
-              Agregar
+              {hasDynamicPricing ? "Configurar" : "Agregar"}
             </div>
           </div>
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 }

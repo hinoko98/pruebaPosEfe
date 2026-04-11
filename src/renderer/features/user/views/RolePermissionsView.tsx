@@ -398,17 +398,6 @@ export function RolePermissionsView() {
                   <TextField label="Descripcion" value={selectedRole.description ?? ""} disabled />
                   <TextField label="Estado" value={selectedRole.isActive ? "Activo" : "Inactivo"} disabled />
                 </Box>
-
-                <Alert severity="info">
-                  El acceso a cada interfaz se configura en su propia seccion. Luego, en los modulos operativos,
-                  defines exactamente que puede hacer ese rol dentro de esa interfaz.
-                </Alert>
-
-                {isAdminRoleSelected ? (
-                  <Alert severity="warning">
-                    El rol administrador no se edita desde esta pantalla. Siempre conserva acceso total a todo el sistema.
-                  </Alert>
-                ) : null}
               </Stack>
             </CardContent>
           </Card>

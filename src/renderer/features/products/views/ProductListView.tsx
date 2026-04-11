@@ -41,6 +41,7 @@ import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
 import { useTablePagination } from "@/hooks/useTablePagination";
 import ProductCreateView from "@/features/products/views/ProductCreateView";
 import ProductEditView from "@/features/products/views/ProductEditView";
+import { getReferenceUnitPrice } from "../../../../shared/productPricing";
 
 function currency(value: number) {
   return new Intl.NumberFormat("es-CO", {
@@ -62,6 +63,14 @@ function categoryLabel(product: Product) {
   }
 
   return product.categoryName || "Sin categoria";
+}
+
+function salePriceLabel(product: Product) {
+  if (!product.pricingConfig?.enabled) {
+    return currency(product.price);
+  }
+
+  return `Desde ${currency(getReferenceUnitPrice(product.price, product.pricingConfig))}`;
 }
 
 function buildSubcategoryMap(categories: Awaited<ReturnType<typeof window.api.listProductCategories>>["categories"]) {
@@ -321,7 +330,7 @@ export default function ProductListView() {
                       <TableCell>{product.sku || "Auto"}</TableCell>
                       <TableCell>{categoryLabel(product)}</TableCell>
                       <TableCell align="right">{product.stock}</TableCell>
-                      <TableCell align="right">{currency(product.price)}</TableCell>
+                      <TableCell align="right">{salePriceLabel(product)}</TableCell>
                       <TableCell>
                         <Chip
                           size="small"
@@ -397,7 +406,14 @@ export default function ProductListView() {
               <DetailRow label="% de ganancia" value={`${viewProduct.marginPercent}%`} />
               <DetailRow label="Utilidad estimada por unidad" value={currency(estimatedUnitProfit(viewProduct))} />
               <DetailRow label="IVA" value={getTaxLabel(viewProduct.hasTax, viewProduct.taxRate)} />
-              <DetailRow label="Precio de venta" value={currency(viewProduct.price)} />
+              <DetailRow
+                label="Precio de venta"
+                value={salePriceLabel(viewProduct)}
+              />
+              <DetailRow
+                label="Modalidad de precio"
+                value={viewProduct.pricingConfig?.enabled ? "Escalonado por cantidad" : "Precio fijo"}
+              />
               <DetailRow label="Estado" value={viewProduct.isActive ? "Activo" : "Inactivo"} />
               <DetailRow label="Fecha de creacion" value={new Date(viewProduct.createdAt).toLocaleString("es-CO")} />
               <DetailRow label="Registrado por" value={viewProduct.createdBy || "Sin registro"} />

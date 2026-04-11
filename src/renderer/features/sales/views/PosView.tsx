@@ -1,7 +1,9 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useEffect, useMemo, useState } from "react";
 
 import InvoicePanel from "@/features/sales/components/InvoicePanel";
 import PaymentDialog, { type PaymentDialogSubmit } from "@/features/sales/components/PaymentDialog";
+import ProductPricingDialog from "@/features/sales/components/ProductPricingDialog";
 import ProductShelf from "@/features/sales/components/ProductShelf";
 import SaleReceiptDialog, { type ReceiptPrintTemplate } from "@/features/sales/components/SaleReceiptDialog";
 import SalesTabs from "@/features/sales/components/SalesTabs";
@@ -12,7 +14,8 @@ import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
 import { alpha, useTheme } from "@mui/material/styles";
 
-import type { CartItem, Payment, PaymentMethod, Product } from "../types";
+import type { CartItem, CustomerSegment, Payment, PaymentMethod, Product } from "../types";
+import { resolveProductPricingQuote } from "../../../../shared/productPricing";
 
 export type SaleTab = {
   id: string;
@@ -141,11 +144,14 @@ export default function PosView() {
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [customers, setCustomers] = useState<Array<{ id: string; name: string; document?: string | null; phone?: string | null }>>([]);
+  const [customers, setCustomers] = useState<
+    Array<{ id: string; name: string; document?: string | null; phone?: string | null; segment: CustomerSegment }>
+  >([]);
   const [tabs, setTabs] = useState<SaleTab[]>([newTab(1)]);
   const [activeId, setActiveId] = useState<string>(() => tabs[0].id);
   const [invoiceVisible, setInvoiceVisible] = useState(true);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [pricingDialogProduct, setPricingDialogProduct] = useState<Product | null>(null);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [completedSale, setCompletedSale] = useState<NonNullable<Awaited<ReturnType<typeof window.api.getSaleDetail>>["sale"]> | null>(null);
@@ -169,6 +175,7 @@ export default function PosView() {
                 name: customer.name,
                 document: customer.document,
                 phone: customer.phone,
+                segment: customer.segment,
               }))
           );
         }
@@ -187,6 +194,7 @@ export default function PosView() {
   const currentPayments = activeTab.payments.length ? activeTab.payments : [{ method: "CASH" as PaymentMethod, amount: 0 }];
   const selectedCustomer =
     customers.find((customer) => customer.name === activeTab.customer) ?? null;
+  const selectedCustomerSegment: CustomerSegment = selectedCustomer?.segment ?? "GENERAL";
   const cartCount = activeTab.cart.reduce((sum, item) => sum + item.qty, 0);
   const canCreateSales = hasPermission(user, APP_PERMISSION_KEYS.salesCreate);
   const canChangeCustomer = hasPermission(user, APP_PERMISSION_KEYS.salesChangeCustomer);
@@ -196,6 +204,46 @@ export default function PosView() {
 
   const updateTab = (patch: Partial<SaleTab>) => {
     setTabs((prev) => prev.map((tab) => (tab.id === activeId ? { ...tab, ...patch } : tab)));
+  };
+
+  const resolveLinePricing = (product: Product, qty: number, sheetTypeId: string, customerSegment: CustomerSegment) => {
+    return resolveProductPricingQuote({
+      fallbackPrice: product.price,
+      pricingConfig: product.pricingConfig,
+      qty,
+      sheetTypeId,
+      customerSegment,
+    });
+  };
+
+  const recalculateCartForCustomer = (cart: CartItem[], customerName: string) => {
+    const customerSegment = customers.find((customer) => customer.name === customerName)?.segment ?? "GENERAL";
+
+    return cart.map((line) => {
+      if (!line.pricingEnabled || !line.sheetTypeId) {
+        return line;
+      }
+
+      const product = products.find((entry) => entry.id === line.productId);
+      if (!product) {
+        return line;
+      }
+
+      const pricingResult = resolveLinePricing(product, line.qty, line.sheetTypeId, customerSegment);
+      if (!pricingResult.ok) {
+        setFeedback(pricingResult.message);
+        return line;
+      }
+
+      return {
+        ...line,
+        name: pricingResult.quote.sheetTypeName ? `${product.name} - ${pricingResult.quote.sheetTypeName}` : product.name,
+        price: pricingResult.quote.unitPrice,
+        sheetTypeName: pricingResult.quote.sheetTypeName,
+        pricingSourceLabel: pricingResult.quote.sourceLabel,
+        minimumPrice: pricingResult.quote.minimumPrice,
+      };
+    });
   };
 
   const addTab = () => {
@@ -217,6 +265,11 @@ export default function PosView() {
   };
 
   const addToCart = (product: Product, qty = 1) => {
+    if (product.pricingConfig?.enabled) {
+      setPricingDialogProduct(product);
+      return;
+    }
+
     const previousCart = activeTab.cart;
     const currentLine = previousCart.find((item) => item.productId === product.id);
     const maxStock = product.stock ?? Number.MAX_SAFE_INTEGER;
@@ -242,17 +295,104 @@ export default function PosView() {
     updateTab({ cart: nextCart });
   };
 
+  const addConfiguredProductToCart = (payload: {
+    product: Product;
+    qty: number;
+    sheetTypeId: string;
+  }) => {
+    const currentLine = activeTab.cart.find(
+      (item) => item.productId === payload.product.id && item.sheetTypeId === payload.sheetTypeId
+    );
+    const mergedQty = (currentLine?.qty ?? 0) + payload.qty;
+    const pricingResult = resolveLinePricing(
+      payload.product,
+      mergedQty,
+      payload.sheetTypeId,
+      selectedCustomerSegment
+    );
+
+    if (!pricingResult.ok) {
+      setFeedback(pricingResult.message);
+      return;
+    }
+
+    const nextCart = currentLine
+      ? activeTab.cart.map((item) =>
+          item.lineId === currentLine.lineId
+            ? {
+                ...item,
+                qty: mergedQty,
+                price: pricingResult.quote.unitPrice,
+                name: pricingResult.quote.sheetTypeName
+                  ? `${payload.product.name} - ${pricingResult.quote.sheetTypeName}`
+                  : payload.product.name,
+                sheetTypeName: pricingResult.quote.sheetTypeName,
+                pricingSourceLabel: pricingResult.quote.sourceLabel,
+                minimumPrice: pricingResult.quote.minimumPrice,
+              }
+            : item
+        )
+      : [
+          ...activeTab.cart,
+          {
+            lineId: crypto.randomUUID(),
+            productId: payload.product.id,
+            name: pricingResult.quote.sheetTypeName
+              ? `${payload.product.name} - ${pricingResult.quote.sheetTypeName}`
+              : payload.product.name,
+            sku: payload.product.sku,
+            price: pricingResult.quote.unitPrice,
+            qty: payload.qty,
+            taxRate: payload.product.taxRate ?? 0,
+            sheetTypeId: payload.sheetTypeId,
+            sheetTypeName: pricingResult.quote.sheetTypeName,
+            pricingSourceLabel: pricingResult.quote.sourceLabel,
+            minimumPrice: pricingResult.quote.minimumPrice,
+            pricingEnabled: true,
+          },
+        ];
+
+    updateTab({ cart: recalculateCartForCustomer(nextCart, activeTab.customer) });
+    setPricingDialogProduct(null);
+  };
+
   const updateQty = (lineId: string, qty: number) => {
     const line = activeTab.cart.find((item) => item.lineId === lineId);
     if (!line) return;
 
     const product = products.find((item) => item.id === line.productId);
     const maxStock = product?.stock ?? Number.MAX_SAFE_INTEGER;
+    const nextQty = Math.max(1, qty || 1);
+
+    if (line.pricingEnabled && line.sheetTypeId && product) {
+      const pricingResult = resolveLinePricing(product, nextQty, line.sheetTypeId, selectedCustomerSegment);
+      if (!pricingResult.ok) {
+        setFeedback(pricingResult.message);
+        return;
+      }
+
+      updateTab({
+        cart: activeTab.cart.map((item) =>
+          item.lineId === lineId
+            ? {
+                ...item,
+                name: pricingResult.quote.sheetTypeName ? `${product.name} - ${pricingResult.quote.sheetTypeName}` : product.name,
+                qty: nextQty,
+                price: pricingResult.quote.unitPrice,
+                sheetTypeName: pricingResult.quote.sheetTypeName,
+                pricingSourceLabel: pricingResult.quote.sourceLabel,
+                minimumPrice: pricingResult.quote.minimumPrice,
+              }
+            : item
+        ),
+      });
+      return;
+    }
 
     updateTab({
       cart: activeTab.cart.map((item) =>
         item.lineId === lineId
-          ? { ...item, qty: Math.min(Math.max(1, qty || 1), maxStock) }
+          ? { ...item, qty: Math.min(nextQty, maxStock) }
           : item
       ),
     });
@@ -324,6 +464,12 @@ export default function PosView() {
         items: activeTab.cart.map((item) => ({
           productId: item.productId,
           qty: item.qty,
+          pricingContext:
+            item.pricingEnabled && item.sheetTypeId
+              ? {
+                  sheetTypeId: item.sheetTypeId,
+                }
+              : undefined,
         })),
         clientTotal: totals.total,
         allowDebt: registerDebt,
@@ -467,7 +613,10 @@ export default function PosView() {
             customers={customers}
             onCustomerChange={(customer) => {
               if (!canChangeCustomer) return;
-              updateTab({ customer });
+              updateTab({
+                customer,
+                cart: recalculateCartForCustomer(activeTab.cart, customer),
+              });
             }}
             onCheckout={() => {
               if (activeTab.cart.length === 0 || !canCheckout) return;
@@ -513,6 +662,20 @@ export default function PosView() {
         canRegisterDebt={Boolean(selectedCustomer)}
         onClose={() => setPaymentDialogOpen(false)}
         onConfirm={(payload) => finalize(payload)}
+      />
+
+      <ProductPricingDialog
+        open={Boolean(pricingDialogProduct)}
+        product={pricingDialogProduct}
+        customerSegment={selectedCustomerSegment}
+        onClose={() => setPricingDialogProduct(null)}
+        onConfirm={(payload) => {
+          if (!pricingDialogProduct) return;
+          addConfiguredProductToCart({
+            product: pricingDialogProduct,
+            ...payload,
+          });
+        }}
       />
 
       <SaleReceiptDialog

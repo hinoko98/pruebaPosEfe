@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const customerSegmentSchema = z.enum(["GENERAL", "DOCENTE"]);
+
 export const productUnitMeasureSchema = z.enum([
   "UNIDAD",
   "PAR",
@@ -18,6 +20,66 @@ export const productUnitMeasureSchema = z.enum([
 ]);
 
 const allowedTaxRates = [0, 0.05, 0.19] as const;
+
+const productPricingScaleSchema = z.object({
+  minQty: z.number().int().min(1, "La cantidad minima debe ser mayor a 0"),
+  unitPrice: z.number().min(0, "El precio unitario no puede ser negativo"),
+});
+
+const productPricingCustomerRuleSchema = z.object({
+  customerSegment: customerSegmentSchema,
+  unitPrice: z.number().min(0, "El precio unitario no puede ser negativo"),
+});
+
+const productPricingSheetTypeSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  name: z.string().trim().min(1).max(60),
+  basePrice: z.number().positive("El precio base por hoja debe ser mayor a 0"),
+  minimumPrice: z.number().min(0).nullable().optional(),
+  quantityScales: z.array(productPricingScaleSchema).optional().default([]),
+  customerSegmentRules: z.array(productPricingCustomerRuleSchema).optional().default([]),
+});
+
+export const productPricingConfigSchema = z
+  .object({
+    enabled: z.boolean().optional().default(false),
+    minimumPrice: z.number().min(0, "El precio minimo no puede ser negativo").optional().default(0),
+    sheetTypes: z.array(productPricingSheetTypeSchema).optional().default([]),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.enabled) return;
+
+    if (data.sheetTypes.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Debes configurar al menos un tipo de hoja",
+        path: ["sheetTypes"],
+      });
+    }
+
+    const seenIds = new Set<string>();
+    for (const [sheetIndex, sheetType] of data.sheetTypes.entries()) {
+      if (seenIds.has(sheetType.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Cada tipo de hoja debe tener un identificador unico",
+          path: ["sheetTypes", sheetIndex, "id"],
+        });
+      }
+      seenIds.add(sheetType.id);
+
+      for (const scale of sheetType.quantityScales) {
+        if (scale.unitPrice < data.minimumPrice) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "La escala no puede quedar por debajo del precio minimo permitido",
+            path: ["sheetTypes", sheetIndex, "quantityScales"],
+          });
+          break;
+        }
+      }
+    }
+  });
 
 function validateAllowedTaxRate(taxRate: number | undefined, ctx: z.RefinementCtx) {
   if (taxRate === undefined) return;
@@ -69,6 +131,8 @@ export const createProductSchema = z
     subcategoryId: z.string().uuid().optional().nullable(),
 
     isActive: z.boolean().optional().default(true),
+
+    pricingConfig: productPricingConfigSchema.optional().nullable(),
   })
   .superRefine((data, ctx) => {
     validateAllowedTaxRate(data.taxRate, ctx);
@@ -105,6 +169,8 @@ export const updateProductSchema = z
     subcategoryId: z.string().uuid().optional().nullable(),
 
     isActive: z.boolean().optional(),
+
+    pricingConfig: productPricingConfigSchema.optional().nullable(),
   })
   .superRefine((data, ctx) => {
     validateAllowedTaxRate(data.taxRate, ctx);

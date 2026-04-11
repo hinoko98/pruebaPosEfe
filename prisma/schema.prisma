@@ -70,6 +70,11 @@ enum CreditStatus {
   CANCELLED
 }
 
+enum CustomerSegment {
+  GENERAL
+  DOCENTE
+}
+
 enum CorrespondentDirection {
   IN
   OUT
@@ -241,6 +246,7 @@ model Product {
   barcode       String?  @unique
   unitMeasure   String   @default("UNIDAD")
   price         Int
+  pricingConfigJson String?
   cost          Int      @default(0)
   marginPercent Float    @default(0)
   hasTax        Boolean  @default(false)
@@ -313,6 +319,7 @@ model SaleItem {
   lineTax      Int
   lineTotal    Int
   lineProfit   Int      @default(0)
+  pricingContextJson String?
   createdAt    DateTime @default(now())
 
   sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
@@ -340,6 +347,7 @@ model Customer {
   internalCode String? @unique
   name        String
   document    String?  @unique
+  segment     CustomerSegment @default(GENERAL)
   phone       String?
   email       String?
   address     String?

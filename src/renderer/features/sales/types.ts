@@ -1,11 +1,39 @@
 export type Money = number;
 
+export type CustomerSegment = "GENERAL" | "DOCENTE";
+
+export type ProductPricingScale = {
+  minQty: number;
+  unitPrice: number;
+};
+
+export type ProductPricingCustomerRule = {
+  customerSegment: CustomerSegment;
+  unitPrice: number;
+};
+
+export type ProductPricingSheetType = {
+  id: string;
+  name: string;
+  basePrice: number;
+  minimumPrice: number | null;
+  quantityScales: ProductPricingScale[];
+  customerSegmentRules: ProductPricingCustomerRule[];
+};
+
+export type ProductPricingConfig = {
+  enabled: boolean;
+  minimumPrice: number;
+  sheetTypes: ProductPricingSheetType[];
+};
+
 export type Product = {
   id: string;
   sku?: string;
   barcode?: string | null;
   name: string;
   price: Money;
+  pricingConfig?: ProductPricingConfig | null;
   cost?: Money;
   taxRate?: number;
   stock?: number;
@@ -21,6 +49,11 @@ export type CartItem = {
   price: Money;
   qty: number;
   taxRate?: number;
+  sheetTypeId?: string | null;
+  sheetTypeName?: string | null;
+  pricingSourceLabel?: string | null;
+  minimumPrice?: number;
+  pricingEnabled?: boolean;
 };
 
 export type PaymentMethod = "CASH" | "CARD" | "TRANSFER";

@@ -44,6 +44,7 @@ import {
   normalizeStoredPermissionKeys,
 } from "../../renderer/features/user/app-permissions";
 import { resolveManagedCode } from "../../shared/internalCodes";
+import { parseProductPricingConfig, resolveProductPricingQuote } from "../../shared/productPricing";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname, "..");
@@ -1321,7 +1322,13 @@ ipcMain.handle("auth:logout", async () => {
 
 ipcMain.handle("products:list", async () => {
   const products = await prisma.product.findMany({
-    where: { isActive: true, stock: { gt: 0 } },
+    where: {
+      isActive: true,
+      OR: [
+        { stock: { gt: 0 } },
+        { pricingConfigJson: { not: null } },
+      ],
+    },
     include: {
       category: true,
       subcategory: true,
@@ -1335,6 +1342,7 @@ ipcMain.handle("products:list", async () => {
     sku: product.sku,
     barcode: product.barcode,
     price: product.price,
+    pricingConfig: parseProductPricingConfig(product.pricingConfigJson),
     cost: product.cost,
     taxRate: product.taxRate,
     stock: product.stock,
@@ -1362,6 +1370,7 @@ ipcMain.handle("sales:create", async (_event, payload) => {
     | {
         id: string;
         name: string;
+        segment: "GENERAL" | "DOCENTE";
       }
     | null = null;
   if (parsed.data.customerId) {
@@ -1373,6 +1382,7 @@ ipcMain.handle("sales:create", async (_event, payload) => {
       select: {
         id: true,
         name: true,
+        segment: true,
       },
     });
 
@@ -1408,22 +1418,44 @@ ipcMain.handle("sales:create", async (_event, payload) => {
       throw new Error("Producto no encontrado");
     }
 
-    if (product.stock < item.qty) {
+    const productPricingConfig = parseProductPricingConfig(product.pricingConfigJson);
+    const skipStockControl = Boolean(productPricingConfig?.enabled);
+
+    if (!skipStockControl && product.stock < item.qty) {
       throw new Error(`Stock insuficiente para ${product.name}`);
     }
 
-    const lineSubtotal = money(product.price * item.qty);
+    const pricingResult = resolveProductPricingQuote({
+      fallbackPrice: product.price,
+      pricingConfig: productPricingConfig,
+      qty: item.qty,
+      sheetTypeId: item.pricingContext?.sheetTypeId,
+      customerSegment: selectedCustomer?.segment ?? "GENERAL",
+      manualUnitPrice: item.pricingContext?.manualUnitPrice ?? null,
+      canOverrideMinimum: currentSessionUser?.role === Role.ADMIN,
+    });
+
+    if (!pricingResult.ok) {
+      throw new Error(pricingResult.message);
+    }
+
+    const { quote } = pricingResult;
+    const lineName = quote.sheetTypeName ? `${product.name} - ${quote.sheetTypeName}` : product.name;
+    const lineSubtotal = money(quote.unitPrice * item.qty);
     const lineTax = money(lineSubtotal * product.taxRate);
     const lineTotal = lineSubtotal + lineTax;
-    const lineProfit = money((product.price - product.cost) * item.qty);
+    const lineProfit = money((quote.unitPrice - product.cost) * item.qty);
 
     return {
       product,
+      quote,
+      lineName,
       qty: item.qty,
       lineSubtotal,
       lineTax,
       lineTotal,
       lineProfit,
+      skipStockControl,
     };
   });
 
@@ -1523,8 +1555,8 @@ ipcMain.handle("sales:create", async (_event, payload) => {
               productId: item.product.id,
               sku: item.product.sku,
               barcode: item.product.barcode,
-              name: item.product.name,
-              price: item.product.price,
+              name: item.lineName,
+              price: item.quote.unitPrice,
               cost: item.product.cost,
               qty: item.qty,
               taxRate: item.product.taxRate,
@@ -1532,6 +1564,15 @@ ipcMain.handle("sales:create", async (_event, payload) => {
               lineTax: item.lineTax,
               lineTotal: item.lineTotal,
               lineProfit: item.lineProfit,
+              pricingContextJson: JSON.stringify({
+                sheetTypeId: item.quote.sheetTypeId,
+                sheetTypeName: item.quote.sheetTypeName,
+                source: item.quote.source,
+                sourceLabel: item.quote.sourceLabel,
+                minimumPrice: item.quote.minimumPrice,
+                minimumApplied: item.quote.minimumApplied,
+                customerSegment: selectedCustomer?.segment ?? "GENERAL",
+              }),
             })),
           },
           payments: {
@@ -1555,6 +1596,10 @@ ipcMain.handle("sales:create", async (_event, payload) => {
       }
 
       for (const item of normalizedItems) {
+        if (item.skipStockControl) {
+          continue;
+        }
+
         await tx.product.update({
           where: { id: item.product.id },
           data: {

@@ -2,6 +2,11 @@ import { z } from "zod";
 
 export const paymentMethodSchema = z.enum(["CASH", "CARD", "TRANSFER"]);
 
+const saleItemPricingContextSchema = z.object({
+  sheetTypeId: z.string().trim().min(1, "Debes seleccionar el tipo de hoja"),
+  manualUnitPrice: z.number().positive("El precio manual debe ser mayor a 0").optional().nullable(),
+});
+
 export const salePaymentInputSchema = z.object({
   method: paymentMethodSchema,
   amount: z.number().min(0, "El monto del pago no puede ser negativo"),
@@ -10,6 +15,7 @@ export const salePaymentInputSchema = z.object({
 export const saleItemInputSchema = z.object({
   productId: z.string().uuid("productId invalido"),
   qty: z.number().int("La cantidad debe ser entera").positive("La cantidad debe ser mayor a 0"),
+  pricingContext: saleItemPricingContextSchema.optional(),
 });
 
 export type SaleItemInput = z.infer<typeof saleItemInputSchema>;

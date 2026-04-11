@@ -25,6 +25,12 @@ import {
 import { createProductSchema, updateProductSchema } from "../../ipc/schemas/product.schema";
 import { APP_PERMISSION_KEYS, hasPermissionKey } from "../../../../renderer/features/user/app-permissions";
 import { resolveManagedCode } from "../../../../shared/internalCodes";
+import {
+  getReferenceUnitPrice,
+  normalizeProductPricingConfig,
+  parseProductPricingConfig,
+  stringifyProductPricingConfig,
+} from "../../../../shared/productPricing";
 
 type CurrentSessionUser = {
   id: string;
@@ -68,6 +74,7 @@ const createCustomerSchema = z.object({
   lastName: z.string().trim().max(80).optional().default(""),
   documentType: documentTypeSchema.optional().default("Cédula"),
   documentNumber: z.string().trim().max(40).optional().nullable(),
+  segment: z.enum(["GENERAL", "DOCENTE"]).optional().default("GENERAL"),
   phone: z.string().trim().regex(/^\d{10}$/).optional().nullable(),
   email: z.string().trim().email().max(120).optional().nullable(),
   address: z.string().trim().max(180).optional().nullable(),
@@ -1654,6 +1661,7 @@ export function registerBackofficeIpcHandlers({
         barcode: product.barcode,
         unitMeasure: product.unitMeasure,
         price: product.price,
+        pricingConfig: parseProductPricingConfig(product.pricingConfigJson),
         cost: product.cost,
         marginPercent: product.marginPercent,
         hasTax: product.hasTax,
@@ -1686,6 +1694,11 @@ export function registerBackofficeIpcHandlers({
       ? await prisma.productCategory.findUnique({ where: { id: data.categoryId } })
       : null;
     const sku = data.sku?.trim() || (await generateSku(prisma, data.name, category?.name));
+    const normalizedPricingConfig = normalizeProductPricingConfig(data.pricingConfig);
+    const pricingConfigJson = stringifyProductPricingConfig(normalizedPricingConfig);
+    const referencePrice = pricingConfigJson
+      ? getReferenceUnitPrice(data.price, normalizedPricingConfig)
+      : money(data.price);
 
     try {
       const product = await prisma.$transaction(async (tx) => {
@@ -1695,7 +1708,8 @@ export function registerBackofficeIpcHandlers({
             sku,
             barcode: data.barcode || null,
             unitMeasure: data.unitMeasure ?? "UNIDAD",
-            price: money(data.price),
+            price: referencePrice,
+            pricingConfigJson,
             cost: money(data.cost ?? 0),
             marginPercent: data.marginPercent ?? 0,
             hasTax: data.hasTax ?? false,
@@ -1748,6 +1762,14 @@ export function registerBackofficeIpcHandlers({
 
     const current = await prisma.product.findUnique({ where: { id: parsed.data.id } });
     if (!current) return { success: false, message: "Producto no encontrado" };
+    const nextPricingConfig =
+      parsed.data.pricingConfig === undefined
+        ? parseProductPricingConfig(current.pricingConfigJson)
+        : normalizeProductPricingConfig(parsed.data.pricingConfig);
+    const nextReferencePrice =
+      nextPricingConfig && nextPricingConfig.enabled
+        ? getReferenceUnitPrice(parsed.data.price ?? current.price, nextPricingConfig)
+        : money(parsed.data.price === undefined ? current.price : parsed.data.price);
 
     try {
       await prisma.$transaction(async (tx) => {
@@ -1758,7 +1780,11 @@ export function registerBackofficeIpcHandlers({
             sku: parsed.data.sku ?? current.sku,
             barcode: parsed.data.barcode === undefined ? current.barcode : parsed.data.barcode,
             unitMeasure: parsed.data.unitMeasure ?? current.unitMeasure,
-            price: parsed.data.price === undefined ? current.price : money(parsed.data.price),
+            price: nextReferencePrice,
+            pricingConfigJson:
+              parsed.data.pricingConfig === undefined
+                ? current.pricingConfigJson
+                : stringifyProductPricingConfig(nextPricingConfig),
             cost: parsed.data.cost === undefined ? current.cost : money(parsed.data.cost),
             marginPercent: parsed.data.marginPercent ?? current.marginPercent,
             hasTax: parsed.data.hasTax ?? current.hasTax,
@@ -1914,6 +1940,7 @@ export function registerBackofficeIpcHandlers({
         internalCode: customer.internalCode,
         name: customer.name,
         document: customer.document,
+        segment: customer.segment,
         phone: customer.phone,
         email: customer.email,
         address: customer.address,
@@ -1994,6 +2021,7 @@ export function registerBackofficeIpcHandlers({
           internalCode,
           name: buildFullName(parsed.data.firstName, parsed.data.lastName),
           document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
+          segment: parsed.data.segment,
           phone: parsed.data.phone || null,
           email: parsed.data.email || null,
           address: parsed.data.address || null,
@@ -2049,6 +2077,7 @@ export function registerBackofficeIpcHandlers({
         internalCode,
         name: buildFullName(parsed.data.firstName, parsed.data.lastName),
         document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
+        segment: parsed.data.segment ?? current.segment,
         phone: parsed.data.phone || null,
         email: parsed.data.email || null,
         address: parsed.data.address || null,
