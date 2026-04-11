@@ -49,7 +49,6 @@ const baseUserProfileSchema = z.object({
   phone: phoneSchema,
   address: z.string().trim().max(180).optional().nullable(),
   birthDate: birthDateSchema,
-  role: roleSchema.optional().default("EMPLOYEE"),
   roleProfileId: z.string().uuid().optional().nullable(),
   isActive: z.boolean().optional().default(true),
 });

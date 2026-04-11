@@ -17,7 +17,56 @@ export type RoleDefinition = {
   sections: PermissionSection[];
 };
 
+const interfaceAccessSection: PermissionSection = {
+  title: "Acceso a interfaces",
+  groups: [
+    {
+      title: "Operacion comercial",
+      permissions: [
+        "Acceder a Facturar",
+        "Acceder a Historial ventas",
+        "Acceder a Clientes",
+        "Acceder a Compras",
+        "Acceder a Proveedores",
+      ],
+    },
+    {
+      title: "Caja y corresponsal",
+      permissions: [
+        "Acceder a Caja general",
+        "Acceder a Corresponsal transacciones",
+        "Acceder a Corresponsal historial",
+        "Acceder a Corresponsal resumen diario",
+        "Acceder a Corresponsal configuracion",
+      ],
+    },
+    {
+      title: "Inventario",
+      permissions: [
+        "Acceder a Productos",
+        "Acceder a Movimientos de inventario",
+      ],
+    },
+    {
+      title: "Control financiero",
+      permissions: [
+        "Acceder a Centro contable",
+        "Acceder a Reportes",
+      ],
+    },
+    {
+      title: "Gestion y sistema",
+      permissions: [
+        "Acceder a Usuarios",
+        "Acceder a Roles y permisos",
+        "Acceder a Configuracion",
+      ],
+    },
+  ],
+};
+
 const adminSections: PermissionSection[] = [
+  interfaceAccessSection,
   {
     title: "Contabilidad",
     groups: [
@@ -407,12 +456,30 @@ const adminSections: PermissionSection[] = [
         ],
       },
       {
-        title: "Negocio y sistema",
+        title: "Interfaz del sistema",
         permissions: [
-          "Editar configuracion general del negocio",
+          "Cambiar tema del sistema",
+        ],
+      },
+      {
+        title: "Datos del negocio",
+        permissions: [
+          "Editar datos del negocio",
+        ],
+      },
+      {
+        title: "Facturacion e impresion",
+        permissions: [
+          "Configurar factura e impresion",
           "Editar informacion fiscal",
           "Configurar numeraciones",
           "Configurar impuestos",
+        ],
+      },
+      {
+        title: "Inventario y operacion",
+        permissions: [
+          "Configurar inventario y comportamiento de venta",
           "Configurar listas de precios",
           "Configurar almacenes",
           "Sincronizar informacion",
@@ -423,6 +490,7 @@ const adminSections: PermissionSection[] = [
 ];
 
 const employeeSections: PermissionSection[] = [
+  interfaceAccessSection,
   {
     title: "POS",
     groups: [
@@ -453,6 +521,30 @@ const employeeSections: PermissionSection[] = [
   {
     title: "Configuraciones generales",
     groups: [
+      {
+        title: "Interfaz del sistema",
+        permissions: [
+          "Cambiar tema del sistema",
+        ],
+      },
+      {
+        title: "Datos del negocio",
+        permissions: [
+          "Editar datos del negocio",
+        ],
+      },
+      {
+        title: "Facturacion e impresion",
+        permissions: [
+          "Configurar factura e impresion",
+        ],
+      },
+      {
+        title: "Inventario y operacion",
+        permissions: [
+          "Configurar inventario y comportamiento de venta",
+        ],
+      },
       {
         title: "Restricciones",
         permissions: [

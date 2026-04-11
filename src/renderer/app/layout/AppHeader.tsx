@@ -252,6 +252,7 @@ export default function AppHeader({
               user={{
                 name: displayUserName,
                 role: user.role,
+                permissions: user.permissions,
               }}
               items={defaultUserMenuItems(basePath)}
               onLogout={handleLogout}

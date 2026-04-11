@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Outlet } from "react-router-dom";
 
 import Box from "@mui/material/Box";
-import CssBaseline from "@mui/material/CssBaseline";
 import Drawer from "@mui/material/Drawer";
 import Toolbar from "@mui/material/Toolbar";
 
@@ -83,8 +82,6 @@ export default function AppShell({
 
   return (
     <Box sx={{ display: "flex", height: "100vh" }}>
-      <CssBaseline />
-
       {/* HEADER */}
       <AppHeader
         title={title}

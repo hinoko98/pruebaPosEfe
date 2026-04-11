@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { alpha, useTheme } from "@mui/material/styles";
 
 const SearchIcon = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -22,6 +23,8 @@ export default function SearchBar({
   onScan: (barcode: string) => void;
   onSearchChange: (query: string) => void;
 }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
   const [mode, setMode] = useState<Mode>("search");
   const [query, setQuery] = useState("");
   const [barcodeValue, setBarcodeValue] = useState("");
@@ -61,8 +64,8 @@ export default function SearchBar({
     <div
       style={{
         padding: "12px 14px",
-        background: "white",
-        borderBottom: "1px solid #e2e8f0",
+        background: theme.palette.background.paper,
+        borderBottom: `1px solid ${theme.palette.divider}`,
         display: "flex",
         gap: 10,
         alignItems: "center",
@@ -72,7 +75,7 @@ export default function SearchBar({
       <div
         style={{
           display: "flex",
-          border: "1.5px solid #e2e8f0",
+          border: `1.5px solid ${theme.palette.divider}`,
           borderRadius: 10,
           overflow: "hidden",
           flexShrink: 0,
@@ -88,8 +91,8 @@ export default function SearchBar({
                 width: 42,
                 height: 40,
                 border: "none",
-                background: active ? "#0ea5e9" : "white",
-                color: active ? "white" : "#94a3b8",
+                background: active ? theme.palette.primary.main : theme.palette.background.paper,
+                color: active ? theme.palette.primary.contrastText : theme.palette.text.secondary,
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
@@ -112,7 +115,7 @@ export default function SearchBar({
                 left: 12,
                 top: "50%",
                 transform: "translateY(-50%)",
-                color: "#94a3b8",
+                color: theme.palette.text.secondary,
                 pointerEvents: "none",
               }}
             >
@@ -140,11 +143,11 @@ export default function SearchBar({
                 paddingLeft: 40,
                 paddingRight: 14,
                 borderRadius: 12,
-                border: "2px solid #bae6fd",
+                border: `2px solid ${alpha(theme.palette.primary.main, isDark ? 0.45 : 0.25)}`,
                 fontSize: 14,
                 outline: "none",
-                background: "#f0f9ff",
-                color: "#0f172a",
+                background: isDark ? alpha(theme.palette.primary.main, 0.12) : alpha(theme.palette.primary.main, 0.08),
+                color: theme.palette.text.primary,
                 boxSizing: "border-box",
                 fontFamily: "inherit",
               }}
@@ -158,7 +161,7 @@ export default function SearchBar({
                 left: 12,
                 top: "50%",
                 transform: "translateY(-50%)",
-                color: "#94a3b8",
+                color: theme.palette.text.secondary,
                 pointerEvents: "none",
               }}
             >
@@ -176,11 +179,11 @@ export default function SearchBar({
                 paddingLeft: 40,
                 paddingRight: 14,
                 borderRadius: 12,
-                border: "2px solid #e2e8f0",
+                border: `2px solid ${theme.palette.divider}`,
                 fontSize: 14,
                 outline: "none",
-                background: "white",
-                color: "#1e293b",
+                background: theme.palette.background.paper,
+                color: theme.palette.text.primary,
                 boxSizing: "border-box",
                 fontFamily: "inherit",
               }}

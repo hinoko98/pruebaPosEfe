@@ -1,19 +1,43 @@
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FormEvent } from "react";
 
-// Componentes MUI
-import TextField from "@mui/material/TextField";
-import IconButton from "@mui/material/IconButton";
-import InputAdornment from "@mui/material/InputAdornment";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
+import IconButton from "@mui/material/IconButton";
+import InputAdornment from "@mui/material/InputAdornment";
 import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
 
-// Componentes propios
 import ButtonUI from "@/components/ui/Button";
-
 import { useAuth } from "@/features/auth/hooks/useAuth";
+
+const loginFieldSx = {
+  "& .MuiInputLabel-root": {
+    color: "#000000",
+  },
+  "& .MuiInputLabel-root.Mui-focused": {
+    color: "#000000",
+  },
+  "& .MuiInputBase-input": {
+    color: "#000000",
+  },
+  "& .MuiOutlinedInput-root": {
+    color: "#000000",
+    backgroundColor: "#ffffff",
+  },
+  "& .MuiOutlinedInput-root .MuiOutlinedInput-notchedOutline": {
+    borderColor: "#cbd5e1",
+  },
+  "& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline": {
+    borderColor: "#94a3b8",
+  },
+  "& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline": {
+    borderColor: "#000000",
+  },
+  "& .MuiFormHelperText-root": {
+    color: "#000000",
+  },
+};
 
 export default function Login() {
   const [user, setUser] = useState("");
@@ -26,7 +50,7 @@ export default function Login() {
 
   const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setError(""); // Limpia errores previos
+    setError("");
 
     if (!user.trim() || !password.trim()) {
       setError("Campos requeridos");
@@ -34,39 +58,34 @@ export default function Login() {
     }
 
     try {
-      const response = await (window as any).api.login({
+      const response = await window.api.login({
         username: user,
         password,
       });
 
       if (response.success) {
-        login(response.user); // Guarda el usuario en tu contexto/auth (incluye role)
+        login(response.user);
         navigate("/", { replace: true });
       } else {
-        setError(response.message || "Error al iniciar sesión");
+        setError(response.message || "Error al iniciar sesion");
       }
     } catch (err) {
       console.error("Error en login:", err);
-      setError("Error de conexión con el sistema");
+      setError("Error de conexion con el sistema");
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-12">
-      <div className="w-full min-h-full max-w-md bg-white rounded-2xl shadow-2xl">
+      <div className="w-full min-h-full max-w-md rounded-2xl bg-white text-black shadow-2xl">
         <br />
-        {/* Título */}
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900">Bienvenido</h1>
-          <p className="text-sm text-gray-600">
-            Ingresa tus credenciales para continuar
-          </p>
+          <h1 className="text-3xl font-bold text-black">Bienvenido</h1>
+          <p className="text-sm text-black/70">Ingresa tus credenciales para continuar</p>
         </div>
-        {/* Formulario con MUI */}
         <div>
           <form onSubmit={handleLogin} noValidate>
             <Stack spacing={2} p={3}>
-              {/* Campo Email */}
               <TextField
                 label="Usuario"
                 type="text"
@@ -77,22 +96,19 @@ export default function Login() {
                 autoFocus
                 required
                 error={!user.trim() && !!error}
-                helperText={
-                  !user.trim() && error ? "El usuario es obligatorio" : ""
-                }
-                // El label sube automáticamente al escribir o al tener valor
+                helperText={!user.trim() && error ? "El usuario es obligatorio" : ""}
+                sx={loginFieldSx}
               />
 
-              {/* Campo Contraseña con ojo */}
               <TextField
-                label="Contraseña"
+                label="Contrasena"
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 variant="outlined"
                 fullWidth
                 required
-                // El label sube automáticamente
+                sx={loginFieldSx}
                 slotProps={{
                   input: {
                     endAdornment: (
@@ -101,6 +117,7 @@ export default function Login() {
                           onClick={() => setShowPassword(!showPassword)}
                           edge="end"
                           aria-label="toggle password visibility"
+                          sx={{ color: "#000000" }}
                         >
                           {showPassword ? <VisibilityOff /> : <Visibility />}
                         </IconButton>
@@ -109,23 +126,11 @@ export default function Login() {
                   },
                 }}
               />
-              {error && (
-                <p className="text-red-600 text-center font-medium mt-2">
-                  {error}
-                </p>
-              )}
+              {error ? <p className="mt-2 text-center font-medium text-red-600">{error}</p> : null}
 
-              {/* Botones */}
               <div className="space-y-4 pt-4">
-                <ButtonUI
-                  type="submit"
-                  variant="primary"
-                  color="primary" // o "success" si prefieres verde
-                  fullWidth
-                  size="lg"
-                  // sx={{ py: 1.8 }} // un poco más alto como tu botón original
-                >
-                  Iniciar Sesión
+                <ButtonUI type="submit" variant="primary" color="primary" fullWidth size="lg">
+                  Iniciar sesion
                 </ButtonUI>
               </div>
             </Stack>

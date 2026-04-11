@@ -21,3 +21,9 @@ export const updateRoleProfileInputSchema = z.object({
 });
 
 export type UpdateRoleProfileInput = z.infer<typeof updateRoleProfileInputSchema>;
+
+export const deleteRoleProfileInputSchema = z.object({
+  id: z.string().uuid("ID de rol invalido"),
+});
+
+export type DeleteRoleProfileInput = z.infer<typeof deleteRoleProfileInputSchema>;

@@ -28,8 +28,8 @@ import {
   updateCorrespondentPlatformSchema,
   updateCorrespondentTransactionTypeSchema,
   updateCorrespondentTransactionSchema,
-} from "../ipc/schemas/correspondent.schema";
-import { isValidCode, normalizeCodeInput, resolveLooseCode } from "../../../shared/internalCodes";
+} from "../../ipc/schemas/correspondent.schema";
+import { isValidCode, normalizeCodeInput, resolveLooseCode } from "../../../../shared/internalCodes";
 
 type CurrentSessionUser = {
   id: string;
@@ -701,6 +701,31 @@ async function getCorrespondentTransactionsForDay(
       performedAt: {
         gte: startOfDay(businessDate),
         lt: endOfDay(businessDate),
+      },
+    },
+    include: {
+      platform: true,
+      type: true,
+      evidences: { select: { id: true } },
+      registeredBy: { select: { id: true, username: true, name: true } },
+      dailyClosure: { select: { id: true, businessDate: true, status: true } },
+    },
+    orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }],
+  });
+}
+
+async function getCorrespondentTransactionsForRange(
+  prisma: PrismaClient,
+  dateFrom: Date,
+  dateTo: Date,
+  platformId?: string
+) {
+  return prisma.correspondentTransaction.findMany({
+    where: {
+      platformId,
+      performedAt: {
+        gte: startOfDay(dateFrom),
+        lt: endOfDay(dateTo),
       },
     },
     include: {
@@ -1669,24 +1694,42 @@ export function registerCorrespondentIpcHandlers({
       return { success: false, message: "Fecha de cierre invalida", closures: [] };
     }
 
-    const businessDate = normalizeBusinessDate(parsed.data.businessDate);
+    const hasRange = Boolean(parsed.data.dateFrom || parsed.data.dateTo);
+    const dateFrom = normalizeBusinessDate(parsed.data.dateFrom ?? parsed.data.businessDate);
+    const dateTo = normalizeBusinessDate(parsed.data.dateTo ?? parsed.data.dateFrom ?? parsed.data.businessDate);
+    const businessDate = normalizeBusinessDate(parsed.data.businessDate ?? parsed.data.dateFrom);
     const [platforms, closures, transactions] = await Promise.all([
       prisma.correspondentPlatform.findMany({
         where: { isActive: true },
         orderBy: [{ createdAt: "asc" }, { name: "asc" }],
       }),
       prisma.correspondentDailyClosure.findMany({
-        where: { businessDate },
+        where: hasRange
+          ? {
+              businessDate: {
+                gte: startOfDay(dateFrom),
+                lt: endOfDay(dateTo),
+              },
+            }
+          : { businessDate },
         include: {
           platform: true,
           closedBy: { select: { username: true, name: true } },
         },
         orderBy: { closedAt: "desc" },
       }),
-      getCorrespondentTransactionsForDay(prisma, businessDate),
+      hasRange
+        ? getCorrespondentTransactionsForRange(prisma, dateFrom, dateTo)
+        : getCorrespondentTransactionsForDay(prisma, businessDate),
     ]);
 
-    const closureByPlatform = new Map(closures.map((closure) => [closure.platformId, closure]));
+    const closureByPlatform = new Map(
+      closures.map((closure) => [closure.platformId, closure] as const)
+    );
+    const closuresCountByPlatform = closures.reduce<Record<string, number>>((acc, closure) => {
+      acc[closure.platformId] = (acc[closure.platformId] ?? 0) + 1;
+      return acc;
+    }, {});
     const transactionsByPlatform = transactions.reduce<Record<string, typeof transactions>>((acc, transaction) => {
       acc[transaction.platformId] = [...(acc[transaction.platformId] ?? []), transaction];
       return acc;
@@ -1695,7 +1738,10 @@ export function registerCorrespondentIpcHandlers({
 
     return {
       success: true,
+      mode: hasRange ? "range" : "day",
       businessDate: businessDate.toISOString(),
+      dateFrom: startOfDay(dateFrom).toISOString(),
+      dateTo: startOfDay(dateTo).toISOString(),
       totals: {
         totalIn: totals.totalIn,
         totalOut: totals.totalOut,
@@ -1744,8 +1790,9 @@ export function registerCorrespondentIpcHandlers({
           expectedBalance: summary.totalIn - summary.totalOut + summary.totalCommission,
           transactionsCount: summary.transactionsCount,
           pendingTransactions: summary.pendingClosureCount,
+          closuresCount: closuresCountByPlatform[platform.id] ?? 0,
           breakdown: Object.values(breakdownMap).sort((a, b) => a.type.localeCompare(b.type, "es")),
-          closure: closure
+          closure: !hasRange && closure
             ? {
                 id: closure.id,
                 expectedBalance: closure.expectedBalance,

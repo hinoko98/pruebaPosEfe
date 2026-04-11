@@ -138,6 +138,7 @@ export type CorrespondentClosureItem = {
   expectedBalance: number;
   transactionsCount: number;
   pendingTransactions: number;
+  closuresCount: number;
   breakdown: Array<{
     typeId: string;
     type: string;

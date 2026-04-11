@@ -16,6 +16,7 @@ import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { alpha, useTheme } from "@mui/material/styles";
 
 import type { Payment, PaymentMethod } from "../types";
 import { fmt } from "../views/PosView";
@@ -76,10 +77,27 @@ export default function PaymentDialog({
   onClose: () => void;
   onConfirm: (payload: PaymentDialogSubmit) => Promise<void> | void;
 }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
   const [mode, setMode] = useState<CheckoutMode | null>(null);
   const [payments, setPayments] = useState<DraftPayment[]>([createDraftPayment()]);
   const [registerDebt, setRegisterDebt] = useState(false);
   const [dueDate, setDueDate] = useState("");
+  const colors = useMemo(
+    () => ({
+      muted: theme.palette.text.secondary,
+      text: theme.palette.text.primary,
+      primary: theme.palette.primary.main,
+      success: theme.palette.success.main,
+      warning: theme.palette.warning.main,
+      danger: theme.palette.error.main,
+      border: theme.palette.divider,
+      soft: isDark ? alpha(theme.palette.common.white, 0.04) : alpha(theme.palette.primary.main, 0.04),
+      warningSoft: isDark ? alpha(theme.palette.warning.main, 0.16) : "#fff8e6",
+      warningBorder: isDark ? alpha(theme.palette.warning.main, 0.35) : "#f1e1ae",
+    }),
+    [isDark, theme]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -178,8 +196,8 @@ export default function PaymentDialog({
       <DialogContent sx={{ pt: 1 }}>
         <Stack spacing={3}>
           <Stack spacing={0.5} alignItems="center">
-            <Typography sx={{ color: "#94a3b8", fontWeight: 800, letterSpacing: 0.4 }}>TOTAL</Typography>
-            <Typography sx={{ fontSize: 32, fontWeight: 900, color: "#334155" }}>{fmt(total)}</Typography>
+            <Typography sx={{ color: colors.muted, fontWeight: 800, letterSpacing: 0.4 }}>TOTAL</Typography>
+            <Typography sx={{ fontSize: 32, fontWeight: 900, color: colors.text }}>{fmt(total)}</Typography>
           </Stack>
 
           {mode ? (
@@ -188,21 +206,21 @@ export default function PaymentDialog({
                 <Button
                   variant="text"
                   onClick={() => setMode(null)}
-                  sx={{ textTransform: "none", fontWeight: 800, color: "#1da4b8" }}
+                  sx={{ textTransform: "none", fontWeight: 800, color: colors.primary }}
                 >
                   Cambiar metodo
                 </Button>
               </Box>
 
               <Stack spacing={0.5} alignItems="center" sx={{ mt: -2 }}>
-                <Typography sx={{ fontSize: 14, fontWeight: 700, color: "#64748b" }}>
+                <Typography sx={{ fontSize: 14, fontWeight: 700, color: colors.muted }}>
                   Total recibido {fmt(totalReceived)}
                 </Typography>
                 <Typography
                   sx={{
                     fontSize: 14,
                     fontWeight: 800,
-                    color: change > 0 ? "#0f766e" : debtEnabled ? "#b45309" : remaining > 0 ? "#e11d48" : "#475569",
+                    color: change > 0 ? colors.success : debtEnabled ? colors.warning : remaining > 0 ? colors.danger : colors.muted,
                   }}
                 >
                   {change > 0
@@ -228,14 +246,14 @@ export default function PaymentDialog({
               {mode === "TRANSFER" ? (
                 <Box
                   sx={{
-                    border: "1px solid #e2e8f0",
+                    border: `1px solid ${colors.border}`,
                     borderRadius: 3,
                     p: 2,
                     display: "grid",
                     gap: 1.5,
                   }}
                 >
-                  <Typography sx={{ fontSize: 13, fontWeight: 800, color: "#64748b" }}>Metodo de pago</Typography>
+                  <Typography sx={{ fontSize: 13, fontWeight: 800, color: colors.muted }}>Metodo de pago</Typography>
                   <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                     <TextField value="Transferencia" fullWidth InputProps={{ readOnly: true }} />
                     <TextField value={fmt(total)} fullWidth InputProps={{ readOnly: true }} />
@@ -253,8 +271,8 @@ export default function PaymentDialog({
                       px: 1.5,
                       py: 1.25,
                       borderRadius: 2,
-                      background: "#f8fafc",
-                      color: "#475569",
+                      background: colors.soft,
+                      color: colors.muted,
                       fontSize: 13,
                       fontWeight: 800,
                     }}
@@ -300,7 +318,7 @@ export default function PaymentDialog({
                         onClick={() => handleRemovePayment(payment.id)}
                         disabled={payments.length === 1}
                         sx={{
-                          border: "1px solid #e2e8f0",
+                          border: `1px solid ${colors.border}`,
                           borderRadius: 2,
                           width: 42,
                           height: 42,
@@ -315,7 +333,7 @@ export default function PaymentDialog({
                     <Button
                       onClick={handleAddPayment}
                       variant="text"
-                      sx={{ textTransform: "none", fontWeight: 800, color: "#1da4b8" }}
+                      sx={{ textTransform: "none", fontWeight: 800, color: colors.primary }}
                     >
                       + Agregar metodo
                     </Button>
@@ -340,8 +358,8 @@ export default function PaymentDialog({
                   sx={{
                     p: 2,
                     borderRadius: 3,
-                    border: "1px solid #f1e1ae",
-                    background: "#fff8e6",
+                    border: `1px solid ${colors.warningBorder}`,
+                    background: colors.warningSoft,
                     display: "grid",
                     gap: 1.25,
                   }}
@@ -422,6 +440,8 @@ function MethodCard({
   icon: ReactNode;
   onClick: () => void;
 }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
   return (
     <Button
       onClick={onClick}
@@ -429,14 +449,20 @@ function MethodCard({
       sx={{
         height: 150,
         borderRadius: 3,
-        borderColor: "#cbd5e1",
-        color: "#64748b",
+        borderColor: theme.palette.divider,
+        color: theme.palette.text.secondary,
         display: "flex",
         flexDirection: "column",
         gap: 1.5,
         textTransform: "none",
         fontSize: 17,
         fontWeight: 800,
+        backgroundColor: theme.palette.background.paper,
+        "&:hover": {
+          borderColor: theme.palette.primary.main,
+          color: theme.palette.primary.main,
+          backgroundColor: isDark ? alpha(theme.palette.primary.main, 0.1) : alpha(theme.palette.primary.main, 0.05),
+        },
       }}
     >
       {icon}

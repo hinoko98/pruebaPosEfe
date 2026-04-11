@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -11,6 +14,7 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
+import IconButton from "@mui/material/IconButton";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import Table from "@mui/material/Table";
@@ -20,6 +24,7 @@ import TableHead from "@mui/material/TableHead";
 import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 import FloatingAlert from "@/components/feedback/FloatingAlert";
@@ -29,10 +34,12 @@ import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
 import { useTablePagination } from "@/hooks/useTablePagination";
 import { copyText } from "@/lib/clipboard";
-import { buildSuggestedManagedCode, normalizePrefixedCode } from "@/lib/internal-code";
+import { estadoVentaLabel } from "@/lib/display";
 
 type CustomerRow = Awaited<ReturnType<typeof window.api.listCustomers>>["customers"][number];
+type CustomerSalesRow = Awaited<ReturnType<typeof window.api.listCustomerSalesHistory>>["sales"][number];
 type CustomerDocumentType = NonNullable<Parameters<typeof window.api.createCustomer>[0]["documentType"]>;
+type DialogMode = "create" | "view" | "edit";
 
 type CustomerFormState = {
   internalCode: string;
@@ -55,6 +62,20 @@ const DOCUMENT_TYPES: CustomerDocumentType[] = [
 ];
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function currency(value: number) {
+  return new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function paymentMethodLabel(method: CustomerSalesRow["paymentMethod"]) {
+  if (method === "CARD") return "Tarjeta";
+  if (method === "TRANSFER") return "Transferencia";
+  return "Efectivo";
+}
 
 function emptyForm(): CustomerFormState {
   return {
@@ -129,10 +150,14 @@ export default function CustomersView() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingCustomer, setEditingCustomer] = useState<CustomerRow | null>(null);
+  const [dialogMode, setDialogMode] = useState<DialogMode>("create");
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerRow | null>(null);
   const [form, setForm] = useState<CustomerFormState>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ severity: "success" | "error" | "info"; message: string } | null>(null);
+  const [salesHistoryOpen, setSalesHistoryOpen] = useState(false);
+  const [salesHistoryLoading, setSalesHistoryLoading] = useState(false);
+  const [salesHistory, setSalesHistory] = useState<CustomerSalesRow[]>([]);
 
   const loadCustomers = async () => {
     setLoading(true);
@@ -174,31 +199,54 @@ export default function CustomersView() {
   const activeCount = customers.filter((customer) => customer.isActive).length;
   const withSalesCount = customers.filter((customer) => customer.salesCount > 0).length;
   const withCreditsCount = customers.filter((customer) => customer.creditsCount > 0).length;
-  const canCreateCustomers = hasPermission(user, APP_PERMISSION_KEYS.customersCreate);
+  const canViewCustomers = hasPermission(user, APP_PERMISSION_KEYS.customersView);
   const canEditCustomers = hasPermission(user, APP_PERMISSION_KEYS.customersEdit);
+  const canCreateCustomers = hasPermission(user, APP_PERMISSION_KEYS.customersCreate);
+  const canViewCustomerSales = hasPermission(user, APP_PERMISSION_KEYS.salesHistory);
   const customersPagination = useTablePagination(filteredCustomers);
 
+  const isCreateMode = dialogMode === "create";
+  const isViewMode = dialogMode === "view";
+  const isEditMode = dialogMode === "edit";
+
+  const resetSalesHistory = () => {
+    setSalesHistoryOpen(false);
+    setSalesHistoryLoading(false);
+    setSalesHistory([]);
+  };
+
   const openCreate = () => {
-    setEditingCustomer(null);
-    setForm({
-      ...emptyForm(),
-      internalCode: buildSuggestedManagedCode(customers.map((customer) => customer.internalCode), "CLI", 4),
-    });
+    setDialogMode("create");
+    setSelectedCustomer(null);
+    setForm(emptyForm());
     setFormError(null);
+    resetSalesHistory();
+    setDialogOpen(true);
+  };
+
+  const openView = (customer: CustomerRow) => {
+    setDialogMode("view");
+    setSelectedCustomer(customer);
+    setForm(customerToForm(customer));
+    setFormError(null);
+    resetSalesHistory();
     setDialogOpen(true);
   };
 
   const openEdit = (customer: CustomerRow) => {
-    setEditingCustomer(customer);
+    setDialogMode("edit");
+    setSelectedCustomer(customer);
     setForm(customerToForm(customer));
     setFormError(null);
+    resetSalesHistory();
     setDialogOpen(true);
   };
 
   const closeDialog = () => {
     setDialogOpen(false);
-    setEditingCustomer(null);
+    setSelectedCustomer(null);
     setFormError(null);
+    resetSalesHistory();
   };
 
   const handleCopyCode = async (value: string | null) => {
@@ -212,6 +260,32 @@ export default function CustomersView() {
     }
   };
 
+  const toggleSalesHistory = async () => {
+    if (!selectedCustomer) return;
+
+    if (salesHistoryOpen) {
+      setSalesHistoryOpen(false);
+      return;
+    }
+
+    if (salesHistory.length > 0) {
+      setSalesHistoryOpen(true);
+      return;
+    }
+
+    setSalesHistoryLoading(true);
+    const response = await window.api.listCustomerSalesHistory(selectedCustomer.id);
+    setSalesHistoryLoading(false);
+
+    if (!response.success) {
+      setFeedback({ severity: "error", message: response.message || "No se pudo cargar el historial del cliente" });
+      return;
+    }
+
+    setSalesHistory(response.sales);
+    setSalesHistoryOpen(true);
+  };
+
   const handleSave = async () => {
     const validationError = validateForm(form);
     if (validationError) {
@@ -219,8 +293,7 @@ export default function CustomersView() {
       return;
     }
 
-    const payload = {
-      internalCode: form.internalCode.trim() || undefined,
+    const basePayload = {
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim() || undefined,
       documentType: form.documentType,
@@ -228,12 +301,12 @@ export default function CustomersView() {
       phone: form.phone.trim() || undefined,
       email: form.email.trim() || undefined,
       address: form.address.trim() || undefined,
-      isActive: form.isActive,
     };
 
-    const response = editingCustomer
-      ? await window.api.updateCustomer({ id: editingCustomer.id, ...payload })
-      : await window.api.createCustomer(payload);
+    const response =
+      isEditMode && selectedCustomer
+        ? await window.api.updateCustomer({ id: selectedCustomer.id, ...basePayload, isActive: form.isActive })
+        : await window.api.createCustomer(basePayload);
 
     if (!response.success) {
       setFeedback({ severity: "error", message: response.message || "No se pudo guardar el cliente" });
@@ -242,7 +315,7 @@ export default function CustomersView() {
 
     setFeedback({
       severity: "success",
-      message: editingCustomer ? "Cliente actualizado correctamente." : "Cliente creado correctamente.",
+      message: isEditMode ? "Cliente actualizado correctamente." : "Cliente creado correctamente.",
     });
     closeDialog();
     await loadCustomers();
@@ -253,7 +326,7 @@ export default function CustomersView() {
       <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
         <Box display="flex" alignItems="center" gap={0.5}>
           <Typography variant="h4">Clientes</Typography>
-          <HelpHint title="Mantiene una base limpia de clientes con código interno, contacto y búsqueda rápida para operación y seguimiento." />
+          <HelpHint title="Mantiene una base limpia de clientes con codigo interno, contacto y busqueda rapida para operacion y seguimiento." />
         </Box>
 
         {canCreateCustomers ? (
@@ -364,15 +437,27 @@ export default function CustomersView() {
                       </TableCell>
                       <TableCell>{customer.createdBy || "Sin registro"}</TableCell>
                       <TableCell align="right">
-                        {canEditCustomers ? (
-                          <Button size="small" onClick={() => openEdit(customer)}>
-                            Ver / editar
-                          </Button>
-                        ) : (
-                          <Typography variant="body2" color="text.secondary">
-                            Sin acciones
-                          </Typography>
-                        )}
+                        <Box display="inline-flex" alignItems="center" gap={0.5}>
+                          {(canViewCustomers || canEditCustomers) ? (
+                            <Tooltip title="Ver cliente">
+                              <IconButton size="small" onClick={() => openView(customer)}>
+                                <VisibilityOutlinedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          ) : null}
+                          {canEditCustomers ? (
+                            <Tooltip title="Editar cliente">
+                              <IconButton size="small" onClick={() => openEdit(customer)}>
+                                <EditOutlinedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          ) : null}
+                          {!canViewCustomers && !canEditCustomers ? (
+                            <Typography variant="body2" color="text.secondary">
+                              Sin acciones
+                            </Typography>
+                          ) : null}
+                        </Box>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -401,29 +486,32 @@ export default function CustomersView() {
       </Card>
 
       <Dialog open={dialogOpen} onClose={closeDialog} fullWidth maxWidth="md">
-        <DialogTitle>{editingCustomer ? "Editar cliente" : "Nuevo cliente"}</DialogTitle>
+        <DialogTitle>
+          {isCreateMode ? "Nuevo cliente" : isEditMode ? "Editar cliente" : "Ver cliente"}
+        </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "1fr 1fr" }} gap={2}>
-              <TextField
-                label="Codigo interno"
-                value={form.internalCode}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, internalCode: normalizePrefixedCode(event.target.value, "CLI") }))
-                }
-                helperText="Visible en tabla y busqueda. Si lo dejas vacio, el sistema genera uno."
-              />
-              <Box />
+              {!isCreateMode ? (
+                <TextField
+                  label="Codigo interno"
+                  value={form.internalCode || "Generado automaticamente"}
+                  InputProps={{ readOnly: true }}
+                />
+              ) : null}
+
               <TextField
                 label="Nombres"
                 value={form.firstName}
                 onChange={(event) => setForm((prev) => ({ ...prev, firstName: event.target.value }))}
                 required
+                disabled={isViewMode}
               />
               <TextField
                 label="Apellidos"
                 value={form.lastName}
                 onChange={(event) => setForm((prev) => ({ ...prev, lastName: event.target.value }))}
+                disabled={isViewMode}
               />
               <TextField
                 select
@@ -432,6 +520,7 @@ export default function CustomersView() {
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, documentType: event.target.value as CustomerDocumentType }))
                 }
+                disabled={isViewMode}
               >
                 {DOCUMENT_TYPES.map((type) => (
                   <MenuItem key={type} value={type}>
@@ -443,6 +532,7 @@ export default function CustomersView() {
                 label="Documento"
                 value={form.documentNumber}
                 onChange={(event) => setForm((prev) => ({ ...prev, documentNumber: event.target.value }))}
+                disabled={isViewMode}
               />
               <TextField
                 label="Telefono"
@@ -451,12 +541,14 @@ export default function CustomersView() {
                   setForm((prev) => ({ ...prev, phone: event.target.value.replace(/\D/g, "").slice(0, 10) }))
                 }
                 helperText="Debe tener 10 numeros"
+                disabled={isViewMode}
               />
               <TextField
                 label="Correo"
                 value={form.email}
                 onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
                 type="email"
+                disabled={isViewMode}
               />
               <TextField
                 label="Direccion"
@@ -465,24 +557,97 @@ export default function CustomersView() {
                 multiline
                 minRows={2}
                 sx={{ gridColumn: { md: "1 / -1" } }}
+                disabled={isViewMode}
               />
-              <TextField
-                select
-                label="Estado"
-                value={form.isActive ? "ACTIVO" : "INACTIVO"}
-                onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.value === "ACTIVO" }))}
-              >
-                <MenuItem value="ACTIVO">Activo</MenuItem>
-                <MenuItem value="INACTIVO">Inactivo</MenuItem>
-              </TextField>
+              {isEditMode ? (
+                <TextField
+                  select
+                  label="Estado"
+                  value={form.isActive ? "ACTIVO" : "INACTIVO"}
+                  onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.value === "ACTIVO" }))}
+                >
+                  <MenuItem value="ACTIVO">Activo</MenuItem>
+                  <MenuItem value="INACTIVO">Inactivo</MenuItem>
+                </TextField>
+              ) : null}
+              {isViewMode ? (
+                <TextField
+                  label="Estado"
+                  value={form.isActive ? "Activo" : "Inactivo"}
+                  InputProps={{ readOnly: true }}
+                />
+              ) : null}
             </Box>
+
+            {isViewMode && selectedCustomer && canViewCustomerSales ? (
+              <Stack spacing={1.5}>
+                <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
+                  <Box>
+                    <Typography variant="h6">Facturas POS registradas</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Consulta aqui mismo el historial de ventas del cliente.
+                    </Typography>
+                  </Box>
+                  <Button
+                    variant="outlined"
+                    startIcon={<ReceiptLongOutlinedIcon />}
+                    onClick={() => void toggleSalesHistory()}
+                  >
+                    {salesHistoryOpen ? "Ocultar facturas" : "Mostrar facturas"}
+                  </Button>
+                </Box>
+
+                {salesHistoryLoading ? (
+                  <Alert severity="info">Cargando facturas del cliente...</Alert>
+                ) : null}
+
+                {salesHistoryOpen ? (
+                  salesHistory.length > 0 ? (
+                    <Box sx={{ overflowX: "auto" }}>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Factura</TableCell>
+                            <TableCell>Fecha</TableCell>
+                            <TableCell>Cajero</TableCell>
+                            <TableCell>Pago</TableCell>
+                            <TableCell>Estado</TableCell>
+                            <TableCell align="right">Items</TableCell>
+                            <TableCell align="right">Total</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {salesHistory.map((sale) => (
+                            <TableRow key={sale.id}>
+                              <TableCell>{sale.invoiceNumber}</TableCell>
+                              <TableCell>{new Date(sale.createdAt).toLocaleString("es-CO")}</TableCell>
+                              <TableCell>{sale.cashier}</TableCell>
+                              <TableCell>{paymentMethodLabel(sale.paymentMethod)}</TableCell>
+                              <TableCell>
+                                <Chip size="small" label={estadoVentaLabel(sale.status)} variant="outlined" />
+                              </TableCell>
+                              <TableCell align="right">{sale.itemsCount}</TableCell>
+                              <TableCell align="right">{currency(sale.total)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </Box>
+                  ) : (
+                    <Alert severity="info">Este cliente aun no tiene facturas POS registradas.</Alert>
+                  )
+                ) : null}
+              </Stack>
+            ) : null}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeDialog}>Cancelar</Button>
-          <Button variant="contained" onClick={() => void handleSave()}>
-            Guardar
-          </Button>
+          <Button onClick={closeDialog}>{isViewMode ? "Cerrar" : "Cancelar"}</Button>
+          {!isViewMode ? (
+            <Button variant="contained" onClick={() => void handleSave()}>
+              Guardar
+            </Button>
+          ) : null}
         </DialogActions>
       </Dialog>
     </Stack>

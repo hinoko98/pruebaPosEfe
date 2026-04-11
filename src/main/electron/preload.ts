@@ -30,7 +30,7 @@ import type {
   UpdateCorrespondentTransactionInput,
 } from "./ipc/schemas/correspondent.schema";
 import type { CreateProductInput, UpdateProductInput } from "./ipc/schemas/product.schema";
-import type { CreateRoleProfileInput, UpdateRoleProfileInput } from "./ipc/schemas/roles.schema";
+import type { CreateRoleProfileInput, DeleteRoleProfileInput, UpdateRoleProfileInput } from "./ipc/schemas/roles.schema";
 import type { CreateSaleInput, CreateSaleResult } from "./ipc/schemas/sales.schema";
 
 contextBridge.exposeInMainWorld("api", {
@@ -126,16 +126,24 @@ contextBridge.exposeInMainWorld("api", {
 
   getAppStatus: () => ipcRenderer.invoke("app:status"),
   getBusinessSettings: () => ipcRenderer.invoke("settings:get"),
-  updateBusinessSettings: (payload: {
+  updateSystemThemeSettings: (payload: {
+    themeMode: "LIGHT" | "DARK";
+  }) => ipcRenderer.invoke("settings:update-theme", payload),
+  updateBusinessIdentitySettings: (payload: {
     businessName?: string | null;
     taxId?: string | null;
     address?: string | null;
     city?: string | null;
+  }) => ipcRenderer.invoke("settings:update-business", payload),
+  updateBillingSettings: (payload: {
     invoicePrefix?: string | null;
+    defaultReceiptTemplate?: "NORMAL" | "THERMAL_80" | "THERMAL_50";
+    receiptFooter?: string | null;
+  }) => ipcRenderer.invoke("settings:update-billing", payload),
+  updateInventorySettings: (payload: {
     defaultTaxRate?: number;
     allowNegativeStock?: boolean;
-    receiptFooter?: string | null;
-  }) => ipcRenderer.invoke("settings:update", payload),
+  }) => ipcRenderer.invoke("settings:update-inventory", payload),
 
   getCashSummary: () => ipcRenderer.invoke("cash:summary"),
   openCashSession: (payload: {
@@ -158,6 +166,7 @@ contextBridge.exposeInMainWorld("api", {
   listRoleProfiles: () => ipcRenderer.invoke("roles:list"),
   createRoleProfile: (payload: CreateRoleProfileInput) => ipcRenderer.invoke("roles:create", payload),
   updateRoleProfile: (payload: UpdateRoleProfileInput) => ipcRenderer.invoke("roles:update", payload),
+  deleteRoleProfile: (payload: DeleteRoleProfileInput) => ipcRenderer.invoke("roles:delete", payload),
 
   listProductsAdmin: () => ipcRenderer.invoke("products:list-admin"),
   listProductCategories: () => ipcRenderer.invoke("products:categories:list"),
@@ -171,6 +180,7 @@ contextBridge.exposeInMainWorld("api", {
   deleteProductSubcategory: (id: string) => ipcRenderer.invoke("products:subcategory:delete", { id }),
 
   listCustomers: () => ipcRenderer.invoke("customers:list"),
+  listCustomerSalesHistory: (customerId: string) => ipcRenderer.invoke("customers:sales-history", { id: customerId }),
   createCustomer: (payload: {
     internalCode?: string | null;
     firstName: string;
@@ -247,7 +257,8 @@ contextBridge.exposeInMainWorld("api", {
     search?: string;
   }) => ipcRenderer.invoke("sales:list", payload),
   getSaleDetail: (saleId: string) => ipcRenderer.invoke("sales:get-detail", { saleId }),
-  printSaleInvoice: (saleId: string) => ipcRenderer.invoke("sales:print-invoice", { saleId }),
+  printSaleInvoice: (payload: { saleId: string; template?: "NORMAL" | "THERMAL_80" | "THERMAL_50" }) =>
+    ipcRenderer.invoke("sales:print-invoice", payload),
 
   getAccountingSummary: (payload?: AccountingRangeInput) => ipcRenderer.invoke("accounting:summary", payload),
   createAccountingCredit: (payload: CreateAccountingCreditInput) => ipcRenderer.invoke("accounting:credit:create", payload),

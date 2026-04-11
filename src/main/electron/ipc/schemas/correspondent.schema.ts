@@ -66,7 +66,19 @@ export type ListCorrespondentTransactionsInput = z.infer<typeof listCorresponden
 export const listCorrespondentClosuresSchema = z
   .object({
     businessDate: z.string().datetime().optional(),
+    dateFrom: z.string().datetime().optional(),
+    dateTo: z.string().datetime().optional(),
   })
+  .refine(
+    (value) =>
+      !value.dateFrom ||
+      !value.dateTo ||
+      new Date(value.dateFrom).getTime() <= new Date(value.dateTo).getTime(),
+    {
+      message: "El rango de fechas es invalido",
+      path: ["dateTo"],
+    }
+  )
   .optional()
   .default({});
 

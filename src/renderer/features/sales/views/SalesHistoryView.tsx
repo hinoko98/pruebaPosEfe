@@ -18,7 +18,7 @@ import Typography from "@mui/material/Typography";
 
 import FloatingAlert from "@/components/feedback/FloatingAlert";
 import HelpHint from "@/components/ui/HelpHint";
-import SaleReceiptDialog from "@/features/sales/components/SaleReceiptDialog";
+import SaleReceiptDialog, { type ReceiptPrintTemplate } from "@/features/sales/components/SaleReceiptDialog";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
@@ -88,10 +88,10 @@ export default function SalesHistoryView() {
     setSelectedSale(response.sale);
   };
 
-  const handlePrint = async () => {
+  const handlePrint = async (template: ReceiptPrintTemplate) => {
     if (!selectedSale) return;
     setPrinting(true);
-    const response = await window.api.printSaleInvoice(selectedSale.id);
+    const response = await window.api.printSaleInvoice({ saleId: selectedSale.id, template });
     setPrinting(false);
     if (!response.success) {
       setFeedback({ severity: "error", message: response.message || "No se pudo imprimir la factura" });
@@ -177,7 +177,7 @@ export default function SalesHistoryView() {
         open={Boolean(selectedSale)}
         sale={selectedSale}
         onClose={() => setSelectedSale(null)}
-        onPrint={() => void handlePrint()}
+        onPrint={(template) => void handlePrint(template)}
         printing={printing}
         canPrint={canPrintSales}
       />

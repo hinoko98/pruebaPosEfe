@@ -77,63 +77,74 @@ export default function AppRoutes() {
                   children: [{ path: "pos", element: <PosView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.salesHistory} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.salesAccess} />,
                   children: [{ path: "sales", element: <SalesHistoryView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.cashView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.cashAccess} />,
                   children: [{ path: "cash", element: <CashView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.productsView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.productsAccess} />,
                   children: [{ path: "products", element: <ProductListView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.stockMovesView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.stockMovesAccess} />,
                   children: [{ path: "stock-moves", element: <InventoryMovesView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.purchasesView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.purchasesAccess} />,
                   children: [{ path: "purchases", element: <PurchasesView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.suppliersView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.suppliersAccess} />,
                   children: [{ path: "suppliers", element: <SuppliersView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.usersView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.usersAccess} />,
                   children: [{ path: "users", element: <UserView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.rolesView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.rolesAccess} />,
                   children: [{ path: "roles", element: <RolePermissionsView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.customersView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.customersAccess} />,
                   children: [{ path: "customers", element: <CustomersView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.correspondentView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.correspondentAccess} />,
                   children: [{ path: "correspondent", element: <CorrespondentView /> }],
                 },
-                { path: "correspondent/history", element: <CorrespondentHistoryView /> },
-                { path: "correspondent/closures", element: <CorrespondentClosuresView /> },
                 {
-                  element: <RoleRoute allow={["ADMIN"]} />,
-                  children: [{ path: "correspondent/settings", element: <CorrespondentSettingsView /> }],
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.correspondentHistoryAccess} />,
+                  children: [{ path: "correspondent/history", element: <CorrespondentHistoryView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.reportsView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.correspondentClosuresAccess} />,
+                  children: [{ path: "correspondent/closures", element: <CorrespondentClosuresView /> }],
+                },
+                {
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.correspondentSettingsAccess} />,
+                  children: [
+                    {
+                      element: <RoleRoute allow={["ADMIN"]} />,
+                      children: [{ path: "correspondent/settings", element: <CorrespondentSettingsView /> }],
+                    },
+                  ],
+                },
+                {
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.accountingAccess} />,
                   children: [{ path: "accounting", element: <AccountingView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.reportsView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.reportsAccess} />,
                   children: [{ path: "reports", element: <ReportsView /> }],
                 },
                 { path: "profile", element: <ProfileView /> },
                 { path: "security", element: <SecurityView /> },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.settingsView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.settingsAccess} />,
                   children: [{ path: "settings", element: <SettingsView /> }],
                 },
               ],
@@ -153,34 +164,52 @@ export default function AppRoutes() {
                   children: [{ path: "pos", element: <PosView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.salesHistory} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.salesAccess} />,
                   children: [{ path: "sales", element: <SalesHistoryView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.cashView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.cashAccess} />,
                   children: [{ path: "cash", element: <CashView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.customersView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.customersAccess} />,
                   children: [{ path: "customers", element: <CustomersView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.correspondentView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.correspondentAccess} />,
                   children: [{ path: "correspondent", element: <CorrespondentView /> }],
                 },
-                { path: "correspondent/history", element: <CorrespondentHistoryView /> },
-                { path: "correspondent/closures", element: <CorrespondentClosuresView /> },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.productsView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.correspondentHistoryAccess} />,
+                  children: [{ path: "correspondent/history", element: <CorrespondentHistoryView /> }],
+                },
+                {
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.correspondentClosuresAccess} />,
+                  children: [{ path: "correspondent/closures", element: <CorrespondentClosuresView /> }],
+                },
+                {
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.productsAccess} />,
                   children: [{ path: "products", element: <ProductListView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.stockMovesView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.stockMovesAccess} />,
                   children: [{ path: "stock-moves", element: <InventoryMovesView /> }],
                 },
                 {
-                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.suppliersView} />,
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.suppliersAccess} />,
                   children: [{ path: "suppliers", element: <SuppliersView /> }],
+                },
+                {
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.purchasesAccess} />,
+                  children: [{ path: "purchases", element: <PurchasesView /> }],
+                },
+                {
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.accountingAccess} />,
+                  children: [{ path: "accounting", element: <AccountingView /> }],
+                },
+                {
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.settingsAccess} />,
+                  children: [{ path: "settings", element: <SettingsView /> }],
                 },
                 { path: "profile", element: <ProfileView /> },
                 { path: "security", element: <SecurityView /> },

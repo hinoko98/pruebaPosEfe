@@ -7,6 +7,7 @@ import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import { alpha, useTheme } from "@mui/material/styles";
 
 import HelpHint from "@/components/ui/HelpHint";
 import { useAuth } from "@/features/auth/hooks/useAuth";
@@ -18,6 +19,8 @@ type NavItem = {
 };
 
 export function CorrespondentModuleNav() {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
@@ -43,7 +46,14 @@ export function CorrespondentModuleNav() {
   );
 
   return (
-    <Card>
+    <Card
+      sx={{
+        borderRadius: 1.25,
+        border: `1px solid ${theme.palette.divider}`,
+        boxShadow: "none",
+        bgcolor: isDark ? alpha(theme.palette.common.white, 0.02) : theme.palette.background.paper,
+      }}
+    >
       <CardContent>
         <Stack spacing={2}>
           <Box display="flex" alignItems="center" gap={0.5}>
@@ -61,6 +71,9 @@ export function CorrespondentModuleNav() {
                     key={item.path}
                     variant={selected ? "contained" : "outlined"}
                     onClick={() => navigate(item.path)}
+                    sx={{
+                      borderRadius: 1,
+                    }}
                   >
                     {item.label}
                   </Button>

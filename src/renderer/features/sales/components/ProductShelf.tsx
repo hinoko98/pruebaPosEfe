@@ -1,5 +1,6 @@
 import type { Product } from "../types";
 import { fmt } from "../views/PosView";
+import { alpha, useTheme } from "@mui/material/styles";
 
 export default function ProductShelf({
   products,
@@ -10,12 +11,15 @@ export default function ProductShelf({
   onPick: (product: Product) => void;
   searchQuery?: string;
 }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+
   if (products.length === 0) {
     return (
       <div
         style={{
-          background: "white",
-          borderBottom: "1px solid #e2e8f0",
+          background: theme.palette.background.paper,
+          borderBottom: `1px solid ${theme.palette.divider}`,
           padding: "24px 14px",
           flex: 1,
           minHeight: 0,
@@ -23,15 +27,15 @@ export default function ProductShelf({
       >
         <div
           style={{
-            border: "1px dashed #cbd5e1",
             borderRadius: 16,
             padding: "28px 18px",
             textAlign: "center",
-            color: "#64748b",
-            background: "#f8fafc",
+            color: theme.palette.text.secondary,
+            background: isDark ? alpha(theme.palette.common.white, 0.02) : alpha(theme.palette.primary.main, 0.03),
+            border: `1px dashed ${alpha(theme.palette.text.primary, 0.18)}`,
           }}
         >
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: theme.palette.text.primary, marginBottom: 6 }}>
             No hay articulos para mostrar
           </div>
           <div style={{ fontSize: 13 }}>
@@ -47,8 +51,8 @@ export default function ProductShelf({
   return (
     <div
       style={{
-        background: "white",
-        borderBottom: "1px solid #e2e8f0",
+        background: theme.palette.background.paper,
+        borderBottom: `1px solid ${theme.palette.divider}`,
         padding: "12px 14px",
         display: "grid",
         gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))",
@@ -64,9 +68,9 @@ export default function ProductShelf({
           key={product.id}
           onClick={() => onPick(product)}
           style={{
-            border: "1px solid #e2e8f0",
+            border: `1px solid ${theme.palette.divider}`,
             borderRadius: 14,
-            background: "#ffffff",
+            background: theme.palette.background.paper,
             padding: "12px",
             textAlign: "left",
             cursor: "pointer",
@@ -76,33 +80,35 @@ export default function ProductShelf({
             fontFamily: "inherit",
           }}
           onMouseEnter={(event) => {
-            event.currentTarget.style.borderColor = "#38bdf8";
-            event.currentTarget.style.background = "#f0f9ff";
+            event.currentTarget.style.borderColor = theme.palette.primary.main;
+            event.currentTarget.style.background = isDark
+              ? alpha(theme.palette.primary.main, 0.1)
+              : alpha(theme.palette.primary.main, 0.06);
           }}
           onMouseLeave={(event) => {
-            event.currentTarget.style.borderColor = "#e2e8f0";
-            event.currentTarget.style.background = "#ffffff";
+            event.currentTarget.style.borderColor = theme.palette.divider;
+            event.currentTarget.style.background = theme.palette.background.paper;
           }}
         >
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{product.name}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: theme.palette.text.primary }}>{product.name}</div>
             {product.sku ? (
-              <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>SKU: {product.sku}</div>
+              <div style={{ fontSize: 11, color: theme.palette.text.secondary, marginTop: 3 }}>SKU: {product.sku}</div>
             ) : null}
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#0284c7" }}>{fmt(product.price)}</div>
-              <div style={{ fontSize: 11, color: "#64748b" }}>Stock: {product.stock ?? 0}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: theme.palette.primary.main }}>{fmt(product.price)}</div>
+              <div style={{ fontSize: 11, color: theme.palette.text.secondary }}>Stock: {product.stock ?? 0}</div>
             </div>
             <div
               style={{
                 minWidth: 62,
                 height: 30,
                 borderRadius: 999,
-                background: "#0ea5e9",
-                color: "white",
+                background: theme.palette.primary.main,
+                color: theme.palette.primary.contrastText,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

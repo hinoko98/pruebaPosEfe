@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
+import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
@@ -25,12 +26,13 @@ import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { alpha, useTheme } from "@mui/material/styles";
 
 import FloatingAlert from "@/components/feedback/FloatingAlert";
 import HelpHint from "@/components/ui/HelpHint";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { hasPermission } from "@/features/auth/permissions";
-import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
+import { APP_PERMISSION_KEYS, expandPermissionKeys } from "@/features/user/app-permissions";
 import {
   flattenRolePermissionCatalog,
   getRoleDefinition,
@@ -57,13 +59,15 @@ const emptyDraft: RoleDraft = {
 };
 
 export function RolePermissionsView() {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
   const { user } = useAuth();
   const [roles, setRoles] = useState<RoleProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [selectedRoleId, setSelectedRoleId] = useState("");
   const [activeSection, setActiveSection] = useState(0);
-  const [editMode, setEditMode] = useState(false);
+  const [editingSectionTitle, setEditingSectionTitle] = useState<string | null>(null);
   const [draftRole, setDraftRole] = useState<RoleDraft | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createDraft, setCreateDraft] = useState<RoleDraft>(emptyDraft);
@@ -81,7 +85,12 @@ export function RolePermissionsView() {
       return;
     }
 
-    setRoles(response.roles);
+    setRoles(
+      response.roles.map((role) => ({
+        ...role,
+        permissionKeys: expandPermissionKeys(role.permissionKeys),
+      }))
+    );
     const nextSelected =
       preferredRoleId && response.roles.some((role) => role.id === preferredRoleId)
         ? preferredRoleId
@@ -99,9 +108,9 @@ export function RolePermissionsView() {
   const permissionCatalog = useMemo(() => flattenRolePermissionCatalog(selectedDefinition), [selectedDefinition]);
 
   const effectivePermissionKeys = useMemo(() => {
-    if (editMode && draftRole) return draftRole.permissionKeys;
-    return selectedRole?.permissionKeys ?? [];
-  }, [draftRole, editMode, selectedRole]);
+    if (editingSectionTitle && draftRole) return expandPermissionKeys(draftRole.permissionKeys);
+    return expandPermissionKeys(selectedRole?.permissionKeys ?? []);
+  }, [draftRole, editingSectionTitle, selectedRole]);
 
   const filteredSections = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -145,22 +154,33 @@ export function RolePermissionsView() {
 
   const activeSectionData = filteredSections[activeSection] ?? filteredSections[0] ?? null;
   const canManageRoles = hasPermission(user, APP_PERMISSION_KEYS.rolesManage);
+  const isAdminRoleSelected = selectedRole?.baseRole === "ADMIN";
+  const canEditSelectedRolePermissions = canManageRoles && !isAdminRoleSelected;
+  const isEditingActiveSection = Boolean(activeSectionData && editingSectionTitle === activeSectionData.title);
+  const canDeleteSelectedRole = Boolean(selectedRole && !selectedRole.isSystem && canManageRoles);
+  const colors = {
+    checkedBg: isDark ? alpha(theme.palette.success.main, 0.18) : "#eefbf3",
+    checkedBorder: isDark ? alpha(theme.palette.success.main, 0.4) : "#b7ebc6",
+    idleBg: isDark ? alpha(theme.palette.common.white, 0.04) : "#f8fafc",
+    idleBorder: theme.palette.divider,
+    sectionBg: isDark ? alpha(theme.palette.common.white, 0.03) : theme.palette.background.paper,
+  };
 
-  const startEditing = () => {
-    if (!selectedRole) return;
+  const startEditingSection = (sectionTitle: string) => {
+    if (!selectedRole || isAdminRoleSelected) return;
     setDraftRole({
       id: selectedRole.id,
       name: selectedRole.name,
       description: selectedRole.description ?? "",
       baseRole: selectedRole.baseRole as AppRoleKey,
       isActive: selectedRole.isActive,
-      permissionKeys: selectedRole.permissionKeys,
+      permissionKeys: expandPermissionKeys(selectedRole.permissionKeys),
     });
-    setEditMode(true);
+    setEditingSectionTitle(sectionTitle);
   };
 
-  const cancelEditing = () => {
-    setEditMode(false);
+  const cancelEditingSection = () => {
+    setEditingSectionTitle(null);
     setDraftRole(null);
   };
 
@@ -209,8 +229,8 @@ export function RolePermissionsView() {
     }));
   };
 
-  const saveRoleChanges = async () => {
-    if (!draftRole?.id) return;
+  const saveSectionChanges = async () => {
+    if (!draftRole?.id || !editingSectionTitle) return;
 
     const response = await window.api.updateRoleProfile({
       id: draftRole.id,
@@ -225,8 +245,8 @@ export function RolePermissionsView() {
       return;
     }
 
-    setFeedback({ severity: "success", message: "Rol actualizado correctamente." });
-    setEditMode(false);
+    setFeedback({ severity: "success", message: `Modulo ${editingSectionTitle} actualizado correctamente.` });
+    setEditingSectionTitle(null);
     setDraftRole(null);
     await loadRoles(draftRole.id);
   };
@@ -238,7 +258,7 @@ export function RolePermissionsView() {
         description: source.description ?? "",
         baseRole: source.baseRole as AppRoleKey,
         isActive: source.isActive,
-        permissionKeys: source.permissionKeys,
+        permissionKeys: expandPermissionKeys(source.permissionKeys),
       });
     } else {
       const baseRole: AppRoleKey = "EMPLOYEE";
@@ -255,6 +275,7 @@ export function RolePermissionsView() {
     () => flattenRolePermissionCatalog(getRoleDefinition(createDraft.baseRole)),
     [createDraft.baseRole]
   );
+  const isAdminCreateBase = createDraft.baseRole === "ADMIN";
 
   const createSections = useMemo(() => {
     const allowed = new Set(createDraft.permissionKeys);
@@ -291,6 +312,23 @@ export function RolePermissionsView() {
     await loadRoles(response.roleId);
   };
 
+  const deleteSelectedRole = async () => {
+    if (!selectedRole || selectedRole.isSystem) return;
+
+    const confirmed = window.confirm(`Se eliminara el rol ${selectedRole.name}. Esta accion no se puede deshacer.`);
+    if (!confirmed) return;
+
+    const response = await window.api.deleteRoleProfile({ id: selectedRole.id });
+    if (!response.success) {
+      setFeedback({ severity: "error", message: response.message || "No se pudo eliminar el rol" });
+      return;
+    }
+
+    setFeedback({ severity: "success", message: "Rol eliminado correctamente." });
+    cancelEditingSection();
+    await loadRoles();
+  };
+
   return (
     <Stack spacing={3}>
       <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={2} flexWrap="wrap">
@@ -317,25 +355,6 @@ export function RolePermissionsView() {
               Duplicar
             </Button>
           ) : null}
-          {editMode ? (
-            <>
-              <Button variant="outlined" onClick={cancelEditing}>
-                Cancelar
-              </Button>
-              <Button variant="contained" startIcon={<SaveOutlinedIcon />} onClick={() => void saveRoleChanges()}>
-                Guardar
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="contained"
-              startIcon={<EditOutlinedIcon />}
-              onClick={startEditing}
-              disabled={!selectedRole || !canManageRoles}
-            >
-              Editar
-            </Button>
-          )}
         </Stack>
       </Box>
 
@@ -355,7 +374,7 @@ export function RolePermissionsView() {
                     value={selectedRole.id}
                     onChange={(event) => {
                       setSelectedRoleId(event.target.value);
-                      cancelEditing();
+                      cancelEditingSection();
                     }}
                   >
                     {roles.map((entry) => (
@@ -374,30 +393,21 @@ export function RolePermissionsView() {
                   />
                 </Box>
 
-                {editMode && draftRole ? (
-                  <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "1.5fr 1fr 1fr" }} gap={2}>
-                    <TextField
-                      label="Nombre del rol"
-                      value={draftRole.name}
-                      onChange={(event) => setDraftRole({ ...draftRole, name: event.target.value })}
-                    />
-                    <TextField
-                      label="Descripcion"
-                      value={draftRole.description}
-                      onChange={(event) => setDraftRole({ ...draftRole, description: event.target.value })}
-                    />
-                    <TextField
-                      select
-                      label="Estado"
-                      value={draftRole.isActive ? "ACTIVE" : "INACTIVE"}
-                      onChange={(event) =>
-                        setDraftRole({ ...draftRole, isActive: event.target.value === "ACTIVE" })
-                      }
-                    >
-                      <MenuItem value="ACTIVE">Activo</MenuItem>
-                      <MenuItem value="INACTIVE">Inactivo</MenuItem>
-                    </TextField>
-                  </Box>
+                <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "1.5fr 1fr 1fr" }} gap={2}>
+                  <TextField label="Nombre del rol" value={selectedRole.name} disabled />
+                  <TextField label="Descripcion" value={selectedRole.description ?? ""} disabled />
+                  <TextField label="Estado" value={selectedRole.isActive ? "Activo" : "Inactivo"} disabled />
+                </Box>
+
+                <Alert severity="info">
+                  El acceso a cada interfaz se configura en su propia seccion. Luego, en los modulos operativos,
+                  defines exactamente que puede hacer ese rol dentro de esa interfaz.
+                </Alert>
+
+                {isAdminRoleSelected ? (
+                  <Alert severity="warning">
+                    El rol administrador no se edita desde esta pantalla. Siempre conserva acceso total a todo el sistema.
+                  </Alert>
                 ) : null}
               </Stack>
             </CardContent>
@@ -407,9 +417,25 @@ export function RolePermissionsView() {
             <CardContent>
               <Tabs
                 value={Math.min(activeSection, Math.max(filteredSections.length - 1, 0))}
-                onChange={(_, value) => setActiveSection(value)}
+                onChange={(_, value) => {
+                  if (editingSectionTitle) {
+                    cancelEditingSection();
+                  }
+                  setActiveSection(value);
+                }}
                 variant="scrollable"
                 scrollButtons="auto"
+                sx={{
+                  "& .MuiTab-root": {
+                    color: theme.palette.text.secondary,
+                  },
+                  "& .Mui-selected": {
+                    color: `${theme.palette.primary.main} !important`,
+                  },
+                  "& .MuiTabs-indicator": {
+                    backgroundColor: theme.palette.primary.main,
+                  },
+                }}
               >
                 {filteredSections.map((section) => (
                   <Tab key={section.title} label={section.title} />
@@ -420,8 +446,69 @@ export function RolePermissionsView() {
 
           {activeSectionData ? (
             <Stack spacing={2}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
+                    <Box>
+                      <Typography variant="h6" fontWeight={800}>
+                        {activeSectionData.title}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Edita y guarda solo este modulo. El resto del rol se conserva sin cambios.
+                      </Typography>
+                    </Box>
+                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                      {isEditingActiveSection ? (
+                        <>
+                          <Button variant="outlined" onClick={cancelEditingSection}>
+                            Cancelar modulo
+                          </Button>
+                          <Button
+                            variant="contained"
+                            startIcon={<SaveOutlinedIcon />}
+                            onClick={() => void saveSectionChanges()}
+                          >
+                            Guardar modulo
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="contained"
+                          startIcon={<EditOutlinedIcon />}
+                          onClick={() => startEditingSection(activeSectionData.title)}
+                          disabled={!canEditSelectedRolePermissions}
+                        >
+                          {isAdminRoleSelected ? "Administrador bloqueado" : "Editar modulo"}
+                        </Button>
+                      )}
+                      {canDeleteSelectedRole ? (
+                        <Button
+                          color="error"
+                          variant="outlined"
+                          startIcon={<DeleteOutlineOutlinedIcon />}
+                          onClick={() => void deleteSelectedRole()}
+                        >
+                          Eliminar rol
+                        </Button>
+                      ) : null}
+                    </Stack>
+                  </Box>
+                </CardContent>
+              </Card>
               {activeSectionData.groups.map((group) => (
-                <Accordion key={group.title} defaultExpanded>
+                <Accordion
+                  key={group.title}
+                  defaultExpanded
+                  sx={{
+                    backgroundColor: colors.sectionBg,
+                    color: theme.palette.text.primary,
+                    border: `1px solid ${theme.palette.divider}`,
+                    boxShadow: "none",
+                    "&::before": {
+                      display: "none",
+                    },
+                  }}
+                >
                   <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                     <Box display="flex" justifyContent="space-between" alignItems="center" width="100%" gap={2}>
                       <Typography fontWeight={800}>{group.title}</Typography>
@@ -433,7 +520,7 @@ export function RolePermissionsView() {
                         <Checkbox
                           checked={group.permissions.every((permission) => permission.checked)}
                           onChange={(_, checked) => toggleEditGroupPermissions(group, checked)}
-                          disabled={!editMode}
+                          disabled={!isEditingActiveSection || isAdminRoleSelected}
                         />
                         <Typography variant="body2" fontWeight={700}>
                           Seleccionar todos
@@ -453,14 +540,16 @@ export function RolePermissionsView() {
                             px: 1.25,
                             py: 0.75,
                             borderRadius: 2,
-                            bgcolor: permission.checked ? "#eefbf3" : "#f8fafc",
-                            border: permission.checked ? "1px solid #b7ebc6" : "1px solid #e2e8f0",
+                            bgcolor: permission.checked ? colors.checkedBg : colors.idleBg,
+                            border: permission.checked
+                              ? `1px solid ${colors.checkedBorder}`
+                              : `1px solid ${colors.idleBorder}`,
                           }}
                         >
                           <Checkbox
                             checked={permission.checked}
                             onChange={() => toggleDraftPermission(permission.key)}
-                            disabled={!editMode}
+                            disabled={!isEditingActiveSection || isAdminRoleSelected}
                           />
                           <Typography variant="body2">{permission.label}</Typography>
                         </Box>
@@ -530,72 +619,94 @@ export function RolePermissionsView() {
               </TextField>
             </Box>
 
-            {createSections.map((section) => (
-              <Accordion key={section.title} defaultExpanded>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Box display="flex" justifyContent="space-between" alignItems="center" width="100%" gap={2}>
-                    <Typography fontWeight={800}>{section.title}</Typography>
-                    <Chip size="small" label={`${section.selectedCount} permisos`} />
-                  </Box>
-                </AccordionSummary>
-                <AccordionDetails>
-                  <Stack spacing={2}>
-                    {section.groups.map((group) => (
-                      <Box key={group.title}>
-                        <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} sx={{ mb: 1 }}>
-                          <Typography fontWeight={700}>{group.title}</Typography>
-                          <Box display="flex" alignItems="center" gap={1}>
-                            <Checkbox
-                              checked={group.permissions.every((permission) =>
-                                createDraft.permissionKeys.includes(permission.key)
-                              )}
-                              onChange={(_, checked) => toggleCreateGroupPermissions(group, checked)}
-                            />
-                            <Typography variant="body2" fontWeight={700}>
-                              Seleccionar todos
-                            </Typography>
+            {isAdminCreateBase ? (
+              <Alert severity="info">
+                Los roles basados en administrador heredan acceso completo. No se configuran permisos manuales en esta pantalla.
+              </Alert>
+            ) : (
+              createSections.map((section) => (
+                <Accordion
+                  key={section.title}
+                  defaultExpanded
+                  sx={{
+                    backgroundColor: colors.sectionBg,
+                    color: theme.palette.text.primary,
+                    border: `1px solid ${theme.palette.divider}`,
+                    boxShadow: "none",
+                    "&::before": {
+                      display: "none",
+                    },
+                  }}
+                >
+                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Box display="flex" justifyContent="space-between" alignItems="center" width="100%" gap={2}>
+                      <Typography fontWeight={800}>{section.title}</Typography>
+                      <Chip size="small" label={`${section.selectedCount} permisos`} />
+                    </Box>
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <Stack spacing={2}>
+                      {section.groups.map((group) => (
+                        <Box key={group.title}>
+                          <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} sx={{ mb: 1 }}>
+                            <Typography fontWeight={700}>{group.title}</Typography>
+                            <Box display="flex" alignItems="center" gap={1}>
+                              <Checkbox
+                                checked={group.permissions.every((permission) =>
+                                  createDraft.permissionKeys.includes(permission.key)
+                                )}
+                                onChange={(_, checked) => toggleCreateGroupPermissions(group, checked)}
+                              />
+                              <Typography variant="body2" fontWeight={700}>
+                                Seleccionar todos
+                              </Typography>
+                            </Box>
+                          </Box>
+                          <Box
+                            display="grid"
+                            gridTemplateColumns={{ xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }}
+                            gap={1}
+                          >
+                            {group.permissions.map((permission) => (
+                              <Box
+                                key={permission.key}
+                                display="flex"
+                                alignItems="center"
+                                gap={1}
+                                sx={{
+                                  px: 1.25,
+                                  py: 0.75,
+                                  borderRadius: 2,
+                                  bgcolor: createDraft.permissionKeys.includes(permission.key)
+                                    ? colors.checkedBg
+                                    : colors.idleBg,
+                                  border: createDraft.permissionKeys.includes(permission.key)
+                                    ? `1px solid ${colors.checkedBorder}`
+                                    : `1px solid ${colors.idleBorder}`,
+                                }}
+                              >
+                                <Checkbox
+                                  checked={createDraft.permissionKeys.includes(permission.key)}
+                                  onChange={() =>
+                                    setCreateDraft((prev) => ({
+                                      ...prev,
+                                      permissionKeys: prev.permissionKeys.includes(permission.key)
+                                        ? prev.permissionKeys.filter((item) => item !== permission.key)
+                                        : [...prev.permissionKeys, permission.key],
+                                    }))
+                                  }
+                                />
+                                <Typography variant="body2">{permission.label}</Typography>
+                              </Box>
+                            ))}
                           </Box>
                         </Box>
-                        <Box
-                          display="grid"
-                          gridTemplateColumns={{ xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }}
-                          gap={1}
-                        >
-                          {group.permissions.map((permission) => (
-                            <Box
-                              key={permission.key}
-                              display="flex"
-                              alignItems="center"
-                              gap={1}
-                              sx={{
-                                px: 1.25,
-                                py: 0.75,
-                                borderRadius: 2,
-                                bgcolor: "#f8fafc",
-                                border: "1px solid #e2e8f0",
-                              }}
-                            >
-                              <Checkbox
-                                checked={createDraft.permissionKeys.includes(permission.key)}
-                                onChange={() =>
-                                  setCreateDraft((prev) => ({
-                                    ...prev,
-                                    permissionKeys: prev.permissionKeys.includes(permission.key)
-                                      ? prev.permissionKeys.filter((item) => item !== permission.key)
-                                      : [...prev.permissionKeys, permission.key],
-                                  }))
-                                }
-                              />
-                              <Typography variant="body2">{permission.label}</Typography>
-                            </Box>
-                          ))}
-                        </Box>
-                      </Box>
-                    ))}
-                  </Stack>
-                </AccordionDetails>
-              </Accordion>
-            ))}
+                      ))}
+                    </Stack>
+                  </AccordionDetails>
+                </Accordion>
+              ))
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>

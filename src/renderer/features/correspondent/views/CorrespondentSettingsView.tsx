@@ -66,6 +66,7 @@ export default function CorrespondentSettingsView() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const [newPlatform, setNewPlatform] = useState<PlatformFormState>(emptyPlatformForm);
   const [newType, setNewType] = useState<TypeFormState>(emptyTypeForm);
   const [viewPlatform, setViewPlatform] = useState<CorrespondentPlatform | null>(null);
@@ -267,13 +268,43 @@ export default function CorrespondentSettingsView() {
       <Card>
         <CardContent>
           <Stack spacing={2}>
-            <Box>
-              <Typography variant="h5">Configuracion de corresponsales</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Gestiona corresponsales y tipos desde tablas limpias. La auditoria completa queda dentro del boton ver.
-              </Typography>
+            <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={2} flexWrap="wrap">
+              <Box>
+                <Typography variant="h5">Configuracion de corresponsales</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Gestiona corresponsales y tipos desde tablas limpias. La auditoria completa queda dentro del boton ver.
+                </Typography>
+              </Box>
+              <Button variant="contained" onClick={() => setCreateOpen(true)}>
+                Agregar corresponsal o tipo
+              </Button>
             </Box>
 
+            <Box
+              sx={{
+                px: 2,
+                py: 1.5,
+                borderRadius: 2,
+                border: (theme) => `1px dashed ${theme.palette.divider}`,
+                bgcolor: "background.default",
+              }}
+            >
+              <Typography variant="subtitle1">Captura centralizada</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Usa el boton superior para abrir el modal de creacion y registrar nuevos corresponsales o tipos sin recargar la vista.
+              </Typography>
+            </Box>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} fullWidth maxWidth="lg">
+        <DialogTitle>Agregar corresponsales y tipos</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1} sx={{ pt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Registra corresponsales nuevos y crea sus tipos operativos desde un solo modal.
+            </Typography>
             <Box display="grid" gridTemplateColumns={{ xs: "1fr", xl: "repeat(2, 1fr)" }} gap={2}>
               <Card variant="outlined">
                 <CardContent>
@@ -285,7 +316,11 @@ export default function CorrespondentSettingsView() {
                       onChange={(event) => setNewPlatform({ name: event.target.value })}
                       fullWidth
                     />
-                    <Button variant="contained" onClick={() => void handleCreatePlatform()} disabled={saving}>
+                    <Button
+                      variant="contained"
+                      onClick={() => void handleCreatePlatform()}
+                      disabled={saving || !newPlatform.name.trim()}
+                    >
                       {saving ? "Guardando..." : "Agregar corresponsal"}
                     </Button>
                   </Stack>
@@ -337,7 +372,11 @@ export default function CorrespondentSettingsView() {
                       <MenuItem value="IN">Entrada</MenuItem>
                       <MenuItem value="OUT">Salida</MenuItem>
                     </TextField>
-                    <Button variant="contained" onClick={() => void handleCreateType()} disabled={saving || !newType.platformId}>
+                    <Button
+                      variant="contained"
+                      onClick={() => void handleCreateType()}
+                      disabled={saving || !newType.platformId || !newType.name.trim()}
+                    >
                       {saving ? "Guardando..." : "Agregar tipo"}
                     </Button>
                   </Stack>
@@ -345,8 +384,11 @@ export default function CorrespondentSettingsView() {
               </Card>
             </Box>
           </Stack>
-        </CardContent>
-      </Card>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateOpen(false)}>Cerrar</Button>
+        </DialogActions>
+      </Dialog>
 
       <Stack spacing={2}>
         {sortedPlatforms.map((platform) => (

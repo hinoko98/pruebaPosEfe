@@ -16,13 +16,16 @@ import FloatingAlert from "@/components/feedback/FloatingAlert";
 import HelpHint from "@/components/ui/HelpHint";
 import { CorrespondentModuleNav } from "@/features/correspondent/components/CorrespondentModuleNav";
 import type { CorrespondentClosureItem } from "@/features/correspondent/types";
-import { formatCurrency, toDateInputValue } from "@/features/correspondent/utils";
+import { formatCurrency, formatDate, toDateInputValue } from "@/features/correspondent/utils";
 
 type FeedbackState = { severity: "success" | "error" | "info"; message: string } | null;
+type SummaryMode = "day" | "range";
 
 export default function CorrespondentClosuresView() {
   const navigate = useNavigate();
-  const [businessDate, setBusinessDate] = useState(toDateInputValue());
+  const [dateFrom, setDateFrom] = useState(toDateInputValue());
+  const [dateTo, setDateTo] = useState(toDateInputValue());
+  const [summaryMode, setSummaryMode] = useState<SummaryMode>("day");
   const [closures, setClosures] = useState<CorrespondentClosureItem[]>([]);
   const [totals, setTotals] = useState({
     totalIn: 0,
@@ -30,58 +33,56 @@ export default function CorrespondentClosuresView() {
     netTotal: 0,
     transactionsCount: 0,
   });
-  const [reportedValues, setReportedValues] = useState<Record<string, string>>({});
-  const [openingBalances, setOpeningBalances] = useState<Record<string, string>>({});
-  const [notes, setNotes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   const cashRoute = useMemo(() => (window.location.pathname.startsWith("/admin") ? "/admin/cash" : "/app/cash"), []);
 
-  const loadClosures = useCallback(async (dateValue = businessDate) => {
-    setLoading(true);
-    try {
-      const response = await window.api.listCorrespondentClosures({
-        businessDate: new Date(`${dateValue}T00:00:00`).toISOString(),
-      });
-
-      if (!response.success) {
-        throw new Error(response.message || "No se pudieron cargar los cierres");
+  const loadClosures = useCallback(
+    async (fromValue = dateFrom, toValue = dateTo) => {
+      if (fromValue > toValue) {
+        setFeedback({ severity: "error", message: "La fecha inicial no puede ser mayor que la fecha final." });
+        return;
       }
 
-      setTotals(response.totals);
-      setClosures(response.closures);
-      setReportedValues(
-        Object.fromEntries(
-          response.closures.map((closure) => [
-            closure.platformId,
-            String(closure.closure?.reportedBalance ?? closure.expectedBalance),
-          ])
-        )
-      );
-      setOpeningBalances(
-        Object.fromEntries(
-          response.closures.map((closure) => [
-            closure.platformId,
-            String((closure.closure?.expectedBalance ?? closure.expectedBalance) - closure.expectedBalance),
-          ])
-        )
-      );
-      setNotes(
-        Object.fromEntries(response.closures.map((closure) => [closure.platformId, closure.closure?.note ?? ""]))
-      );
-    } catch (error) {
-      setFeedback({
-        severity: "error",
-        message: error instanceof Error ? error.message : "No se pudieron cargar los cierres",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [businessDate]);
+      setLoading(true);
+      try {
+        const isRange = fromValue !== toValue;
+        const response = await window.api.listCorrespondentClosures(
+          isRange
+            ? {
+                dateFrom: new Date(`${fromValue}T00:00:00`).toISOString(),
+                dateTo: new Date(`${toValue}T00:00:00`).toISOString(),
+              }
+            : {
+                businessDate: new Date(`${fromValue}T00:00:00`).toISOString(),
+              }
+        );
+
+        if (!response.success) {
+          throw new Error(response.message || "No se pudieron cargar los cierres");
+        }
+
+        setSummaryMode(response.mode);
+        setTotals(response.totals);
+        setClosures(response.closures);
+      } catch (error) {
+        setFeedback({
+          severity: "error",
+          message: error instanceof Error ? error.message : "No se pudieron cargar los cierres",
+        });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [dateFrom, dateTo]
+  );
 
   useEffect(() => {
     void loadClosures();
   }, [loadClosures]);
+
+  const periodLabel = summaryMode === "range" ? "Neto del periodo" : "Neto del dia";
+  const operationsLabel = summaryMode === "range" ? "Operaciones del periodo" : "Operaciones";
 
   if (loading) {
     return (
@@ -102,21 +103,40 @@ export default function CorrespondentClosuresView() {
           <Stack spacing={2}>
             <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
               <Box display="flex" alignItems="center" gap={0.5}>
-                <Typography variant="h5">Resumen diario del corresponsal</Typography>
-                <HelpHint title="Consulta por plataforma lo que movio el corresponsal, pero el cuadre operativo diario ahora se realiza desde Caja general." />
+                <Typography variant="h5">Resumen del corresponsal</Typography>
+                <HelpHint title="Consulta por plataforma lo que movio el corresponsal en un dia puntual o acumulado por rango. El cuadre operativo sigue registrandose desde Caja general." />
               </Box>
-              <Stack direction="row" spacing={1}>
+              <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
                 <TextField
-                  label="Fecha"
+                  label="Desde"
                   type="date"
-                  value={businessDate}
-                  onChange={(event) => setBusinessDate(event.target.value)}
+                  value={dateFrom}
+                  onChange={(event) => setDateFrom(event.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                />
+                <TextField
+                  label="Hasta"
+                  type="date"
+                  value={dateTo}
+                  onChange={(event) => setDateTo(event.target.value)}
                   InputLabelProps={{ shrink: true }}
                 />
                 <Button variant="outlined" onClick={() => void loadClosures()}>
                   Consultar
                 </Button>
               </Stack>
+            </Box>
+
+            <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+              <Chip
+                label={
+                  summaryMode === "range"
+                    ? `Rango: ${formatDate(`${dateFrom}T00:00:00`)} al ${formatDate(`${dateTo}T00:00:00`)}`
+                    : `Fecha: ${formatDate(`${dateFrom}T00:00:00`)}`
+                }
+                color="primary"
+                variant="outlined"
+              />
             </Box>
 
             <Alert
@@ -150,7 +170,7 @@ export default function CorrespondentClosuresView() {
               <Card variant="outlined">
                 <CardContent>
                   <Typography variant="body2" color="text.secondary">
-                    Neto del dia
+                    {periodLabel}
                   </Typography>
                   <Typography variant="h6">{formatCurrency(totals.netTotal)}</Typography>
                 </CardContent>
@@ -158,7 +178,7 @@ export default function CorrespondentClosuresView() {
               <Card variant="outlined">
                 <CardContent>
                   <Typography variant="body2" color="text.secondary">
-                    Operaciones
+                    {operationsLabel}
                   </Typography>
                   <Typography variant="h6">{totals.transactionsCount}</Typography>
                 </CardContent>
@@ -173,14 +193,6 @@ export default function CorrespondentClosuresView() {
           <Card key={item.platformId}>
             <CardContent>
               <Stack spacing={2}>
-                {(() => {
-                  const openingBalance = Number(openingBalances[item.platformId] || 0);
-                  const expectedPlatformBalance = item.closure?.expectedBalance ?? openingBalance + item.expectedBalance;
-                  const countedValue = Number(reportedValues[item.platformId] || 0);
-                  const currentDifference = countedValue - expectedPlatformBalance;
-
-                  return (
-                    <>
                 <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={2}>
                   <Box>
                     <Typography variant="h6">{item.platform}</Typography>
@@ -188,13 +200,20 @@ export default function CorrespondentClosuresView() {
                       {item.transactionsCount} transacciones registradas
                     </Typography>
                   </Box>
-                  {item.closure ? (
-                    <Chip
-                      label={item.closure.status === "CLOSED" ? "Cerrada" : "Con diferencia"}
-                      color={item.closure.status === "CLOSED" ? "success" : "warning"}
-                    />
+                  {summaryMode === "day" ? (
+                    item.closure ? (
+                      <Chip
+                        label={item.closure.status === "CLOSED" ? "Cerrada" : "Con diferencia"}
+                        color={item.closure.status === "CLOSED" ? "success" : "warning"}
+                      />
+                    ) : (
+                      <Chip label="Pendiente" variant="outlined" />
+                    )
                   ) : (
-                    <Chip label="Pendiente" variant="outlined" />
+                    <Chip
+                      label={item.closuresCount > 0 ? `${item.closuresCount} cierres en rango` : "Sin cierres en rango"}
+                      variant="outlined"
+                    />
                   )}
                 </Box>
 
@@ -202,82 +221,17 @@ export default function CorrespondentClosuresView() {
                   <TextField label="Entradas" value={formatCurrency(item.totalIn)} InputProps={{ readOnly: true }} />
                   <TextField label="Salidas" value={formatCurrency(item.totalOut)} InputProps={{ readOnly: true }} />
                   <TextField
-                    label="Movimiento del dia"
+                    label={summaryMode === "range" ? "Movimiento del periodo" : "Movimiento del dia"}
                     value={formatCurrency(item.expectedBalance)}
                     InputProps={{ readOnly: true }}
                   />
                   <TextField
-                    label="Comisiones"
-                    value={formatCurrency(item.totalCommission)}
+                    label="Total transacciones"
+                    value={String(item.transactionsCount)}
+                    type="number"
                     InputProps={{ readOnly: true }}
                   />
                 </Box>
-
-                <Box>
-                  <Typography variant="subtitle2">Desglose por tipo</Typography>
-                  <Box display="flex" gap={1} flexWrap="wrap" mt={1}>
-                    {item.breakdown.map((row) => (
-                      <Chip
-                        key={row.typeId}
-                        label={`${row.type}: ${formatCurrency(row.total)} (${row.count})`}
-                        color={row.direction === "OUT" ? "warning" : row.direction === "IN" ? "success" : "default"}
-                        variant="outlined"
-                      />
-                    ))}
-                    {item.breakdown.length === 0 ? <Chip label="Sin movimientos" variant="outlined" /> : null}
-                  </Box>
-                </Box>
-
-                <Typography variant="body2" color="text.secondary">
-                  Pendientes por cerrar: {item.pendingTransactions}
-                </Typography>
-
-                <TextField
-                  label="Saldo base en plataforma"
-                  type="number"
-                  value={openingBalances[item.platformId] ?? ""}
-                  InputProps={{ readOnly: true }}
-                  disabled
-                  inputProps={{ step: "100" }}
-                />
-                <TextField
-                  label="Saldo esperado en plataforma"
-                  value={formatCurrency(expectedPlatformBalance)}
-                  InputProps={{ readOnly: true }}
-                />
-                <TextField
-                  label="Saldo actual en plataforma"
-                  type="number"
-                  value={reportedValues[item.platformId] ?? ""}
-                  InputProps={{ readOnly: true }}
-                  disabled
-                  inputProps={{ step: "100" }}
-                />
-                <TextField
-                  label="Observacion"
-                  value={notes[item.platformId] ?? ""}
-                  InputProps={{ readOnly: true }}
-                  disabled
-                  multiline
-                  minRows={2}
-                />
-
-                {item.closure ? (
-                  <Alert severity={item.closure.status === "CLOSED" ? "success" : "warning"}>
-                    Cerrado por {item.closure.closedBy} con diferencia de {formatCurrency(item.closure.differenceAmount)}.
-                  </Alert>
-                ) : currentDifference !== 0 ? (
-                  <Alert severity={currentDifference < 0 ? "warning" : "info"}>
-                    Diferencia actual: {formatCurrency(currentDifference)}.
-                  </Alert>
-                ) : null}
-
-                <Button variant="outlined" onClick={() => navigate(cashRoute)}>
-                  Registrar cuadre en caja general
-                </Button>
-                    </>
-                  );
-                })()}
               </Stack>
             </CardContent>
           </Card>
