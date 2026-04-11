@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import CssBaseline from "@mui/material/CssBaseline";
 import { ThemeProvider, alpha, createTheme } from "@mui/material/styles";
 
+import { useAuth } from "@/features/auth/hooks/useAuth";
+
 export type AppThemeMode = "LIGHT" | "DARK";
 
 type AppThemeContextValue = {
@@ -168,11 +170,32 @@ function buildTheme(themeMode: AppThemeMode) {
 }
 
 export function AppThemeProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [themeMode, setThemeModeState] = useState<AppThemeMode>(() => readStoredThemeMode());
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, themeMode);
   }, [themeMode]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function syncThemeFromSettings() {
+      if (!user) return;
+
+      const response = await window.api.getBusinessSettings();
+      if (!active || !response.success || !response.settings) return;
+
+      const nextTheme = response.settings.themeMode === "DARK" ? "DARK" : "LIGHT";
+      setThemeModeState(nextTheme);
+    }
+
+    void syncThemeFromSettings();
+
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
 
   const value = useMemo<AppThemeContextValue>(
     () => ({

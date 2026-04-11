@@ -20,21 +20,29 @@ import {
   updateOwnProfileInputSchema,
   updateUserInputSchema,
 } from "./ipc/schemas/auth.schema";
-import { createRoleProfileInputSchema, updateRoleProfileInputSchema } from "./ipc/schemas/roles.schema";
+import {
+  createRoleProfileInputSchema,
+  deleteRoleProfileInputSchema,
+  updateRoleProfileInputSchema,
+} from "./ipc/schemas/roles.schema";
 import { createSaleSchema } from "./ipc/schemas/sales.schema";
 import {
   ensureCorrespondentSchemaIfNeeded,
   registerCorrespondentIpcHandlers,
   seedCorrespondentCatalogIfNeeded,
 } from "./modules/correspondent";
-import { ensureBackofficeSchemaIfNeeded, registerBackofficeIpcHandlers } from "./modules/backoffice";
+import { ensureBackofficeSchemaIfNeeded, registerBackofficeIpcHandlers } from "./modules/pos";
 import {
   ROLE_DEFINITIONS,
   flattenRolePermissionCatalog,
   getPermissionCatalogItem,
   type AppRoleKey,
 } from "../../renderer/features/user/roles.catalog";
-import { APP_PERMISSION_KEYS, hasPermissionKey } from "../../renderer/features/user/app-permissions";
+import {
+  APP_PERMISSION_KEYS,
+  hasPermissionKey,
+  normalizeStoredPermissionKeys,
+} from "../../renderer/features/user/app-permissions";
 import { resolveManagedCode } from "../../shared/internalCodes";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -299,7 +307,7 @@ async function loadPermissionKeysForRoleProfile(prismaClient: PrismaClient, role
     orderBy: { permissionKey: "asc" },
   });
 
-  return records.map((record) => record.permissionKey);
+  return normalizeStoredPermissionKeys(records.map((record) => record.permissionKey));
 }
 
 async function resolveRoleProfileForUser(prismaClient: PrismaClient, userId: string) {
@@ -319,7 +327,7 @@ async function resolveRoleProfileForUser(prismaClient: PrismaClient, userId: str
 
   if (!user) return null;
 
-  const permissions =
+  const permissions = normalizeStoredPermissionKeys(
     user.roleProfile?.permissions.map((permission) => permission.permissionKey) ??
     (
       await prismaClient.roleProfile.findUnique({
@@ -332,7 +340,8 @@ async function resolveRoleProfileForUser(prismaClient: PrismaClient, userId: str
         },
       })
     )?.permissions.map((permission) => permission.permissionKey) ??
-    [];
+    []
+  );
 
   return {
     roleProfileId: user.roleProfile?.id ?? null,
@@ -541,13 +550,23 @@ async function seedRoleProfilesIfNeeded(prismaClient: PrismaClient) {
           },
         });
 
-    const existingPermissionCount = await prismaClient.rolePermission.count({
-      where: { roleProfileId: roleProfile.id },
+    const existingPermissions = await prismaClient.rolePermission.findMany({
+      where: {
+        roleProfileId: roleProfile.id,
+        allowed: true,
+      },
+      select: {
+        permissionKey: true,
+      },
     });
+    const existingPermissionKeys = new Set(existingPermissions.map((permission) => permission.permissionKey));
+    const missingPermissions = permissionCatalog.filter(
+      (permission) => !existingPermissionKeys.has(permission.key)
+    );
 
-    if (existingPermissionCount === 0 && permissionCatalog.length > 0) {
+    if (missingPermissions.length > 0) {
       await prismaClient.rolePermission.createMany({
-        data: permissionCatalog.map((permission) => ({
+        data: missingPermissions.map((permission) => ({
           roleProfileId: roleProfile.id,
           permissionKey: permission.key,
           allowed: true,
@@ -707,7 +726,6 @@ ipcMain.handle("auth:createUser", async (_event: IpcMainInvokeEvent, payload) =>
     address,
     birthDate,
     newPassword,
-    role,
     roleProfileId,
     isActive,
   } = parsed.data;
@@ -730,7 +748,7 @@ ipcMain.handle("auth:createUser", async (_event: IpcMainInvokeEvent, payload) =>
           select: { id: true, baseRole: true, isActive: true },
         })
       : await prisma.roleProfile.findUnique({
-          where: { key: roleProfileSystemKey((role ?? Role.EMPLOYEE) as AppRoleKey) },
+          where: { key: roleProfileSystemKey("EMPLOYEE") },
           select: { id: true, baseRole: true, isActive: true },
         });
 
@@ -805,7 +823,6 @@ ipcMain.handle("users:update", async (_event: IpcMainInvokeEvent, payload) => {
     address,
     birthDate,
     newPassword,
-    role,
     roleProfileId,
     isActive,
   } = parsed.data;
@@ -836,7 +853,7 @@ ipcMain.handle("users:update", async (_event: IpcMainInvokeEvent, payload) => {
         select: { id: true, baseRole: true, isActive: true, name: true },
       })
     : await prisma.roleProfile.findUnique({
-        where: { key: roleProfileSystemKey((role ?? existingUser.role) as AppRoleKey) },
+        where: { key: roleProfileSystemKey((existingUser.role as AppRoleKey) ?? "EMPLOYEE") },
         select: { id: true, baseRole: true, isActive: true, name: true },
       });
 
@@ -1140,7 +1157,9 @@ ipcMain.handle("roles:list", async () => {
       baseRole: roleProfile.baseRole,
       isSystem: roleProfile.isSystem,
       isActive: roleProfile.isActive,
-      permissionKeys: roleProfile.permissions.map((permission) => permission.permissionKey),
+      permissionKeys: normalizeStoredPermissionKeys(
+        roleProfile.permissions.map((permission) => permission.permissionKey)
+      ),
       usersCount: roleProfile._count.users,
       createdAt: roleProfile.createdAt.toISOString(),
       updatedAt: roleProfile.updatedAt.toISOString(),
@@ -1151,6 +1170,7 @@ ipcMain.handle("roles:list", async () => {
 ipcMain.handle("roles:create", async (_event: IpcMainInvokeEvent, payload) => {
   const parsed = createRoleProfileInputSchema.safeParse(payload);
   if (!parsed.success) return { success: false, message: "Datos invalidos para el rol" };
+  const normalizedPermissionKeys = normalizeStoredPermissionKeys(parsed.data.permissionKeys);
 
   if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
     return { success: false, message: "Solo admins pueden crear roles" };
@@ -1159,8 +1179,8 @@ ipcMain.handle("roles:create", async (_event: IpcMainInvokeEvent, payload) => {
     return { success: false, message: "Tu rol no puede crear roles" };
   }
 
-  if (parsed.data.permissionKeys.length > 0) {
-    const invalidPermission = parsed.data.permissionKeys.find(
+  if (normalizedPermissionKeys.length > 0) {
+    const invalidPermission = normalizedPermissionKeys.find(
       (permissionKey) => !getPermissionCatalogItem(parsed.data.baseRole as AppRoleKey, permissionKey)
     );
     if (invalidPermission) {
@@ -1177,7 +1197,7 @@ ipcMain.handle("roles:create", async (_event: IpcMainInvokeEvent, payload) => {
         isSystem: false,
         isActive: parsed.data.isActive ?? true,
         permissions: {
-          create: parsed.data.permissionKeys.map((permissionKey) => ({
+          create: normalizedPermissionKeys.map((permissionKey) => ({
             permissionKey,
             allowed: true,
           })),
@@ -1196,6 +1216,7 @@ ipcMain.handle("roles:create", async (_event: IpcMainInvokeEvent, payload) => {
 ipcMain.handle("roles:update", async (_event: IpcMainInvokeEvent, payload) => {
   const parsed = updateRoleProfileInputSchema.safeParse(payload);
   if (!parsed.success) return { success: false, message: "Datos invalidos para el rol" };
+  const normalizedPermissionKeys = normalizeStoredPermissionKeys(parsed.data.permissionKeys);
 
   if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
     return { success: false, message: "Solo admins pueden editar roles" };
@@ -1213,7 +1234,7 @@ ipcMain.handle("roles:update", async (_event: IpcMainInvokeEvent, payload) => {
     return { success: false, message: "El rol ya no existe" };
   }
 
-  const invalidPermission = parsed.data.permissionKeys.find(
+  const invalidPermission = normalizedPermissionKeys.find(
     (permissionKey) => !getPermissionCatalogItem(existing.baseRole as AppRoleKey, permissionKey)
   );
   if (invalidPermission) {
@@ -1233,7 +1254,7 @@ ipcMain.handle("roles:update", async (_event: IpcMainInvokeEvent, payload) => {
 
       await tx.rolePermission.deleteMany({ where: { roleProfileId: parsed.data.id } });
       await tx.rolePermission.createMany({
-        data: parsed.data.permissionKeys.map((permissionKey) => ({
+        data: normalizedPermissionKeys.map((permissionKey) => ({
           roleProfileId: parsed.data.id,
           permissionKey,
           allowed: true,
@@ -1245,7 +1266,7 @@ ipcMain.handle("roles:update", async (_event: IpcMainInvokeEvent, payload) => {
       currentSessionUser = {
         ...currentSessionUser,
         roleProfileName: parsed.data.name.trim(),
-        permissions: parsed.data.permissionKeys,
+        permissions: normalizedPermissionKeys,
       };
     }
 
@@ -1254,6 +1275,43 @@ ipcMain.handle("roles:update", async (_event: IpcMainInvokeEvent, payload) => {
     const message = error instanceof Error ? error.message : "No se pudo actualizar el rol";
     return { success: false, message };
   }
+});
+
+ipcMain.handle("roles:delete", async (_event: IpcMainInvokeEvent, payload) => {
+  const parsed = deleteRoleProfileInputSchema.safeParse(payload);
+  if (!parsed.success) return { success: false, message: "Datos invalidos para el rol" };
+
+  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
+    return { success: false, message: "Solo admins pueden eliminar roles" };
+  }
+  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.rolesManage)) {
+    return { success: false, message: "Tu rol no puede eliminar roles" };
+  }
+
+  const existing = await prisma.roleProfile.findUnique({
+    where: { id: parsed.data.id },
+    include: {
+      _count: {
+        select: {
+          users: true,
+        },
+      },
+    },
+  });
+
+  if (!existing) return { success: false, message: "El rol ya no existe" };
+  if (existing.isSystem) {
+    return { success: false, message: "Los roles del sistema no se pueden eliminar" };
+  }
+  if (existing._count.users > 0) {
+    return { success: false, message: "Reasigna los usuarios del rol antes de eliminarlo" };
+  }
+
+  await prisma.roleProfile.delete({
+    where: { id: parsed.data.id },
+  });
+
+  return { success: true, roleId: parsed.data.id };
 });
 
 ipcMain.handle("auth:logout", async () => {

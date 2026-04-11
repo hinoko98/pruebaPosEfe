@@ -456,12 +456,30 @@ const adminSections: PermissionSection[] = [
         ],
       },
       {
-        title: "Negocio y sistema",
+        title: "Interfaz del sistema",
         permissions: [
-          "Editar configuracion general del negocio",
+          "Cambiar tema del sistema",
+        ],
+      },
+      {
+        title: "Datos del negocio",
+        permissions: [
+          "Editar datos del negocio",
+        ],
+      },
+      {
+        title: "Facturacion e impresion",
+        permissions: [
+          "Configurar factura e impresion",
           "Editar informacion fiscal",
           "Configurar numeraciones",
           "Configurar impuestos",
+        ],
+      },
+      {
+        title: "Inventario y operacion",
+        permissions: [
+          "Configurar inventario y comportamiento de venta",
           "Configurar listas de precios",
           "Configurar almacenes",
           "Sincronizar informacion",
@@ -503,6 +521,30 @@ const employeeSections: PermissionSection[] = [
   {
     title: "Configuraciones generales",
     groups: [
+      {
+        title: "Interfaz del sistema",
+        permissions: [
+          "Cambiar tema del sistema",
+        ],
+      },
+      {
+        title: "Datos del negocio",
+        permissions: [
+          "Editar datos del negocio",
+        ],
+      },
+      {
+        title: "Facturacion e impresion",
+        permissions: [
+          "Configurar factura e impresion",
+        ],
+      },
+      {
+        title: "Inventario y operacion",
+        permissions: [
+          "Configurar inventario y comportamiento de venta",
+        ],
+      },
       {
         title: "Restricciones",
         permissions: [

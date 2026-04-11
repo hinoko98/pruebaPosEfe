@@ -126,4 +126,11 @@ export const employeeMenu: MenuItem[] = [
       { label: "Centro contable", path: "/app/accounting", permissionKey: APP_PERMISSION_KEYS.accountingAccess },
     ],
   },
+  {
+    type: "item",
+    label: "Configuracion",
+    path: "/app/settings",
+    icon: <SettingsIcon />,
+    permissionKey: APP_PERMISSION_KEYS.settingsAccess,
+  },
 ];

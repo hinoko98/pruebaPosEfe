@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
+import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
@@ -154,6 +155,7 @@ export function RolePermissionsView() {
   const activeSectionData = filteredSections[activeSection] ?? filteredSections[0] ?? null;
   const canManageRoles = hasPermission(user, APP_PERMISSION_KEYS.rolesManage);
   const isEditingActiveSection = Boolean(activeSectionData && editingSectionTitle === activeSectionData.title);
+  const canDeleteSelectedRole = Boolean(selectedRole && !selectedRole.isSystem && canManageRoles);
   const colors = {
     checkedBg: isDark ? alpha(theme.palette.success.main, 0.18) : "#eefbf3",
     checkedBorder: isDark ? alpha(theme.palette.success.main, 0.4) : "#b7ebc6",
@@ -307,6 +309,23 @@ export function RolePermissionsView() {
     await loadRoles(response.roleId);
   };
 
+  const deleteSelectedRole = async () => {
+    if (!selectedRole || selectedRole.isSystem) return;
+
+    const confirmed = window.confirm(`Se eliminara el rol ${selectedRole.name}. Esta accion no se puede deshacer.`);
+    if (!confirmed) return;
+
+    const response = await window.api.deleteRoleProfile({ id: selectedRole.id });
+    if (!response.success) {
+      setFeedback({ severity: "error", message: response.message || "No se pudo eliminar el rol" });
+      return;
+    }
+
+    setFeedback({ severity: "success", message: "Rol eliminado correctamente." });
+    cancelEditingSection();
+    await loadRoles();
+  };
+
   return (
     <Stack spacing={3}>
       <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={2} flexWrap="wrap">
@@ -376,6 +395,11 @@ export function RolePermissionsView() {
                   <TextField label="Descripcion" value={selectedRole.description ?? ""} disabled />
                   <TextField label="Estado" value={selectedRole.isActive ? "Activo" : "Inactivo"} disabled />
                 </Box>
+
+                <Alert severity="info">
+                  El acceso a cada interfaz se configura en su propia seccion. Luego, en los modulos operativos,
+                  defines exactamente que puede hacer ese rol dentro de esa interfaz.
+                </Alert>
               </Stack>
             </CardContent>
           </Card>
@@ -448,6 +472,16 @@ export function RolePermissionsView() {
                           Editar modulo
                         </Button>
                       )}
+                      {canDeleteSelectedRole ? (
+                        <Button
+                          color="error"
+                          variant="outlined"
+                          startIcon={<DeleteOutlineOutlinedIcon />}
+                          onClick={() => void deleteSelectedRole()}
+                        >
+                          Eliminar rol
+                        </Button>
+                      ) : null}
                     </Stack>
                   </Box>
                 </CardContent>

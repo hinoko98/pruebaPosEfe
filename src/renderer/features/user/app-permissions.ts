@@ -51,6 +51,10 @@ const ACTION_PERMISSION_KEYS = {
   correspondentView: buildPermissionKey("POS", "Operacion de tienda", "Gestionar corresponsal"),
   reportsView: buildPermissionKey("Contabilidad", "Reportes comerciales y financieros", "Ver reporte de ventas generales"),
   settingsView: buildPermissionKey("Configuraciones generales", "Negocio y sistema", "Editar configuracion general del negocio"),
+  settingsTheme: buildPermissionKey("Configuraciones generales", "Interfaz del sistema", "Cambiar tema del sistema"),
+  settingsBusiness: buildPermissionKey("Configuraciones generales", "Datos del negocio", "Editar datos del negocio"),
+  settingsBilling: buildPermissionKey("Configuraciones generales", "Facturacion e impresion", "Configurar factura e impresion"),
+  settingsInventory: buildPermissionKey("Configuraciones generales", "Inventario y operacion", "Configurar inventario y comportamiento de venta"),
 } as const;
 
 export const APP_PERMISSION_KEYS = {
@@ -115,12 +119,43 @@ const ACCESS_PERMISSION_ALIASES: Record<string, string[]> = {
     APP_PERMISSION_KEYS.rolesView,
     APP_PERMISSION_KEYS.rolesManage,
   ],
-  [APP_PERMISSION_KEYS.settingsAccess]: [APP_PERMISSION_KEYS.settingsView],
+  [APP_PERMISSION_KEYS.settingsAccess]: [
+    APP_PERMISSION_KEYS.settingsView,
+    APP_PERMISSION_KEYS.settingsTheme,
+    APP_PERMISSION_KEYS.settingsBusiness,
+    APP_PERMISSION_KEYS.settingsBilling,
+    APP_PERMISSION_KEYS.settingsInventory,
+  ],
 };
+
+const LEGACY_PERMISSION_FALLBACKS: Record<string, string[]> = {
+  [APP_PERMISSION_KEYS.settingsTheme]: [APP_PERMISSION_KEYS.settingsView],
+  [APP_PERMISSION_KEYS.settingsBusiness]: [APP_PERMISSION_KEYS.settingsView],
+  [APP_PERMISSION_KEYS.settingsBilling]: [APP_PERMISSION_KEYS.settingsView],
+  [APP_PERMISSION_KEYS.settingsInventory]: [APP_PERMISSION_KEYS.settingsView],
+};
+
+const LEGACY_PERMISSION_REPLACEMENTS: Record<string, string[]> = {
+  [APP_PERMISSION_KEYS.settingsView]: [
+    APP_PERMISSION_KEYS.settingsTheme,
+    APP_PERMISSION_KEYS.settingsBusiness,
+    APP_PERMISSION_KEYS.settingsBilling,
+    APP_PERMISSION_KEYS.settingsInventory,
+  ],
+};
+
+const EXPANDABLE_PERMISSION_KEYS = [
+  ...Object.keys(ACCESS_PERMISSION_ALIASES),
+  ...Object.keys(LEGACY_PERMISSION_FALLBACKS),
+];
 
 export function getCompatiblePermissionKeys(permissionKey?: string) {
   if (!permissionKey) return [];
-  return [permissionKey, ...(ACCESS_PERMISSION_ALIASES[permissionKey] ?? [])];
+  return [
+    permissionKey,
+    ...(ACCESS_PERMISSION_ALIASES[permissionKey] ?? []),
+    ...(LEGACY_PERMISSION_FALLBACKS[permissionKey] ?? []),
+  ];
 }
 
 export function hasPermissionKey(permissionKeys: string[] | null | undefined, permissionKey?: string) {
@@ -131,10 +166,28 @@ export function hasPermissionKey(permissionKeys: string[] | null | undefined, pe
 
 export function expandPermissionKeys(permissionKeys: string[] | null | undefined) {
   const expanded = new Set(permissionKeys ?? []);
-  for (const accessPermissionKey of Object.keys(ACCESS_PERMISSION_ALIASES)) {
-    if (hasPermissionKey(Array.from(expanded), accessPermissionKey)) {
-      expanded.add(accessPermissionKey);
+  for (const permissionKey of EXPANDABLE_PERMISSION_KEYS) {
+    if (hasPermissionKey(Array.from(expanded), permissionKey)) {
+      expanded.add(permissionKey);
     }
   }
   return Array.from(expanded);
+}
+
+export function normalizeStoredPermissionKeys(permissionKeys: string[] | null | undefined) {
+  const normalized = new Set<string>();
+
+  for (const permissionKey of permissionKeys ?? []) {
+    const replacements = LEGACY_PERMISSION_REPLACEMENTS[permissionKey];
+    if (replacements) {
+      for (const replacement of replacements) {
+        normalized.add(replacement);
+      }
+      continue;
+    }
+
+    normalized.add(permissionKey);
+  }
+
+  return Array.from(normalized);
 }

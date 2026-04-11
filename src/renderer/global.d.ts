@@ -29,7 +29,7 @@ import type {
   UpdateCorrespondentTransactionInput,
 } from "~/main/electron/ipc/schemas/correspondent.schema";
 import type { CreateProductInput, UpdateProductInput } from "~/main/electron/ipc/schemas/product.schema";
-import type { CreateRoleProfileInput, UpdateRoleProfileInput } from "~/main/electron/ipc/schemas/roles.schema";
+import type { CreateRoleProfileInput, DeleteRoleProfileInput, UpdateRoleProfileInput } from "~/main/electron/ipc/schemas/roles.schema";
 import type { CreateSaleInput, CreateSaleResult } from "~/main/electron/ipc/schemas/sales.schema";
 
 type PosProduct = {
@@ -227,7 +227,10 @@ type CorrespondentCreateTransactionResponse = {
 type CorrespondentClosuresResponse = {
   success: boolean;
   message?: string;
+  mode: "day" | "range";
   businessDate: string;
+  dateFrom: string;
+  dateTo: string;
   totals: {
     totalIn: number;
     totalOut: number;
@@ -243,6 +246,7 @@ type CorrespondentClosuresResponse = {
     expectedBalance: number;
     transactionsCount: number;
     pendingTransactions: number;
+    closuresCount: number;
     breakdown: Array<{
       typeId: string;
       type: string;
@@ -413,6 +417,8 @@ type AppStatusResponse = {
   now: string;
 };
 
+type ReceiptPrintTemplate = "NORMAL" | "THERMAL_80" | "THERMAL_50";
+
 type BusinessSettingsResponse = {
   success: boolean;
   message?: string;
@@ -421,9 +427,11 @@ type BusinessSettingsResponse = {
     taxId: string;
     address: string;
     city: string;
+    themeMode: "LIGHT" | "DARK";
     invoicePrefix: string;
     defaultTaxRate: number;
     allowNegativeStock: boolean;
+    defaultReceiptTemplate: ReceiptPrintTemplate;
     receiptFooter: string;
   };
 };
@@ -626,6 +634,21 @@ type CustomersListResponse = {
     creditsCount: number;
     createdAt: string;
     createdBy: string | null;
+  }>;
+};
+
+type CustomerSalesHistoryResponse = {
+  success: boolean;
+  message?: string;
+  sales: Array<{
+    id: string;
+    invoiceNumber: string;
+    total: number;
+    status: "COMPLETED" | "CANCELLED" | "PARTIALLY_RETURNED" | "RETURNED" | "CREDIT";
+    paymentMethod: "CASH" | "CARD" | "TRANSFER";
+    createdAt: string;
+    cashier: string;
+    itemsCount: number;
   }>;
 };
 
@@ -832,15 +855,23 @@ declare global {
       ) => Promise<CorrespondentPlatformMutationResponse>;
       getAppStatus: () => Promise<AppStatusResponse>;
       getBusinessSettings: () => Promise<BusinessSettingsResponse>;
-      updateBusinessSettings: (payload: {
+      updateSystemThemeSettings: (payload: {
+        themeMode: "LIGHT" | "DARK";
+      }) => Promise<GenericMutationResponse>;
+      updateBusinessIdentitySettings: (payload: {
         businessName?: string | null;
         taxId?: string | null;
         address?: string | null;
         city?: string | null;
+      }) => Promise<GenericMutationResponse>;
+      updateBillingSettings: (payload: {
         invoicePrefix?: string | null;
+        defaultReceiptTemplate?: ReceiptPrintTemplate;
+        receiptFooter?: string | null;
+      }) => Promise<GenericMutationResponse>;
+      updateInventorySettings: (payload: {
         defaultTaxRate?: number;
         allowNegativeStock?: boolean;
-        receiptFooter?: string | null;
       }) => Promise<GenericMutationResponse>;
       getCashSummary: () => Promise<CashSummaryResponse>;
       openCashSession: (payload: {
@@ -862,6 +893,7 @@ declare global {
       listRoleProfiles: () => Promise<RoleProfilesResponse>;
       createRoleProfile: (payload: CreateRoleProfileInput) => Promise<{ success: boolean; message?: string; roleId?: string }>;
       updateRoleProfile: (payload: UpdateRoleProfileInput) => Promise<{ success: boolean; message?: string; roleId?: string }>;
+      deleteRoleProfile: (payload: DeleteRoleProfileInput) => Promise<{ success: boolean; message?: string; roleId?: string }>;
       listProductsAdmin: () => Promise<ProductsAdminResponse>;
       listProductCategories: () => Promise<ProductCategoriesResponse>;
       createProductRecord: (payload: CreateProductInput) => Promise<GenericMutationResponse>;
@@ -872,6 +904,7 @@ declare global {
       createProductSubcategory: (payload: { categoryId: string; name: string }) => Promise<GenericMutationResponse>;
       deleteProductSubcategory: (id: string) => Promise<GenericMutationResponse>;
       listCustomers: () => Promise<CustomersListResponse>;
+      listCustomerSalesHistory: (customerId: string) => Promise<CustomerSalesHistoryResponse>;
       createCustomer: (payload: {
         internalCode?: string | null;
         firstName: string;
@@ -944,7 +977,10 @@ declare global {
         search?: string;
       }) => Promise<SalesListResponse>;
       getSaleDetail: (saleId: string) => Promise<SaleDetailResponse>;
-      printSaleInvoice: (saleId: string) => Promise<{ success: boolean; message?: string }>;
+      printSaleInvoice: (payload: {
+        saleId: string;
+        template?: ReceiptPrintTemplate;
+      }) => Promise<{ success: boolean; message?: string }>;
       getAccountingSummary: (payload?: AccountingRangeInput) => Promise<AccountingSummaryResponse>;
       createAccountingCredit: (payload: CreateAccountingCreditInput) => Promise<AccountingMutationResponse>;
       createAccountingPayment: (payload: CreateAccountingPaymentInput) => Promise<AccountingMutationResponse>;

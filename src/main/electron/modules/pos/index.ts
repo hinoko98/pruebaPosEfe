@@ -21,10 +21,10 @@ import {
   createAccountingCreditSchema,
   createAccountingExpenseSchema,
   createAccountingPaymentSchema,
-} from "../ipc/schemas/accounting.schema";
-import { createProductSchema, updateProductSchema } from "../ipc/schemas/product.schema";
-import { APP_PERMISSION_KEYS, hasPermissionKey } from "../../../renderer/features/user/app-permissions";
-import { resolveManagedCode } from "../../../shared/internalCodes";
+} from "../../ipc/schemas/accounting.schema";
+import { createProductSchema, updateProductSchema } from "../../ipc/schemas/product.schema";
+import { APP_PERMISSION_KEYS, hasPermissionKey } from "../../../../renderer/features/user/app-permissions";
+import { resolveManagedCode } from "../../../../shared/internalCodes";
 
 type CurrentSessionUser = {
   id: string;
@@ -135,15 +135,29 @@ const closeCashSessionSchema = z.object({
   correspondentBalances: z.array(cashPlatformAmountSchema).optional().default([]),
 });
 
-const businessSettingsSchema = z.object({
+const themeModeSchema = z.enum(["LIGHT", "DARK"]);
+const receiptPrintTemplateSchema = z.enum(["NORMAL", "THERMAL_80", "THERMAL_50"]);
+
+const businessIdentitySettingsSchema = z.object({
   businessName: z.string().trim().max(120).optional().nullable(),
   taxId: z.string().trim().max(40).optional().nullable(),
   address: z.string().trim().max(180).optional().nullable(),
   city: z.string().trim().max(80).optional().nullable(),
+});
+
+const systemThemeSettingsSchema = z.object({
+  themeMode: themeModeSchema,
+});
+
+const billingSettingsSchema = z.object({
   invoicePrefix: z.string().trim().max(10).optional().nullable(),
+  defaultReceiptTemplate: receiptPrintTemplateSchema.optional().default("NORMAL"),
+  receiptFooter: z.string().trim().max(400).optional().nullable(),
+});
+
+const inventorySettingsSchema = z.object({
   defaultTaxRate: z.number().min(0).max(1).optional(),
   allowNegativeStock: z.boolean().optional(),
-  receiptFooter: z.string().trim().max(400).optional().nullable(),
 });
 
 const salesListFilterSchema = z
@@ -159,6 +173,10 @@ const salesListFilterSchema = z
 
 const saleByIdSchema = z.object({
   saleId: z.string().uuid(),
+});
+
+const salePrintSchema = saleByIdSchema.extend({
+  template: receiptPrintTemplateSchema.optional().default("NORMAL"),
 });
 
 function money(value: number) {
@@ -219,6 +237,8 @@ function buildInvoiceHtml(sale: {
   cashier: { username: string; name: string | null };
   items: Array<{ name: string; qty: number; price: number; lineTotal: number }>;
 }) {
+  const cashierName = buildCashierDisplayName(sale.cashier);
+  const legalNotes = buildInvoiceLegalNotes(sale.receiptFooter);
   const rows = sale.items
     .map(
       (item) => `
@@ -250,6 +270,8 @@ function buildInvoiceHtml(sale: {
           .totals { margin-top: 18px; width: 260px; margin-left: auto; }
           .totals-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; }
           .totals-row.total { border-top: 1px solid #d1d5db; padding-top: 8px; font-weight: 700; font-size: 14px; }
+          .legal-notes { margin-top: 20px; padding-top: 12px; border-top: 1px solid #e5e7eb; display: grid; gap: 6px; }
+          .legal-notes p { font-size: 11px; color: #4b5563; line-height: 1.5; }
         </style>
       </head>
       <body>
@@ -261,7 +283,7 @@ function buildInvoiceHtml(sale: {
             <div>Factura: ${sale.invoiceNumber}</div>
             <div>Fecha: ${sale.createdAt.toLocaleString("es-CO")}</div>
             <div>Cliente: ${sale.customer}</div>
-            <div>Cajero: ${sale.cashier.name ?? sale.cashier.username}</div>
+            <div>Cajero: ${cashierName}</div>
             <div>Pago: ${sale.paymentSummary}</div>
           </div>
         </div>
@@ -283,7 +305,121 @@ function buildInvoiceHtml(sale: {
           <div class="totals-row"><span>IVA</span><strong>$${sale.tax.toLocaleString("es-CO")}</strong></div>
           <div class="totals-row total"><span>Total</span><strong>$${sale.total.toLocaleString("es-CO")}</strong></div>
         </div>
-        ${sale.receiptFooter ? `<p style="margin-top: 20px; font-size: 12px; color: #4b5563;">${sale.receiptFooter}</p>` : ""}
+        <div class="legal-notes">${legalNotes.map((note) => `<p>${note}</p>`).join("")}</div>
+      </body>
+    </html>
+  `;
+}
+
+type ReceiptPrintTemplate = z.infer<typeof receiptPrintTemplateSchema>;
+
+type InvoicePrintPayload = {
+  invoiceNumber: string;
+  customer: string;
+  paymentSummary: string;
+  total: number;
+  subtotal: number;
+  tax: number;
+  createdAt: Date;
+  businessName?: string | null;
+  taxId?: string | null;
+  address?: string | null;
+  city?: string | null;
+  receiptFooter?: string | null;
+  cashier: { username: string; name: string | null };
+  items: Array<{ name: string; qty: number; price: number; lineTotal: number }>;
+};
+
+function buildInvoiceHtmlForTemplate(sale: InvoicePrintPayload, template: ReceiptPrintTemplate) {
+  if (template === "NORMAL") {
+    return buildInvoiceHtml(sale);
+  }
+
+  const paperWidth = template === "THERMAL_50" ? 50 : 80;
+  const businessAddress = [sale.address, sale.city].filter(Boolean).join(" - ");
+  const cashierName = buildCashierDisplayName(sale.cashier);
+  const legalNotes = buildInvoiceLegalNotes(sale.receiptFooter);
+  const rows = sale.items
+    .map(
+      (item) => `
+        <div class="item">
+          <div class="item-name">${item.name}</div>
+          <div class="item-meta">
+            <span>${item.qty} x $${item.price.toLocaleString("es-CO")}</span>
+            <strong>$${item.lineTotal.toLocaleString("es-CO")}</strong>
+          </div>
+        </div>
+      `
+    )
+    .join("");
+
+  return `
+    <!doctype html>
+    <html lang="es">
+      <head>
+        <meta charset="utf-8" />
+        <title>${sale.invoiceNumber}</title>
+        <style>
+          @page { size: ${paperWidth}mm auto; margin: 4mm; }
+          body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            color: #111827;
+            margin: 0;
+            width: ${paperWidth - 8}mm;
+            font-size: ${template === "THERMAL_50" ? 10 : 11}px;
+            line-height: 1.35;
+          }
+          h1, p { margin: 0; }
+          .receipt { display: flex; flex-direction: column; gap: 10px; }
+          .header { text-align: center; border-bottom: 1px dashed #9ca3af; padding-bottom: 8px; }
+          .header h1 { font-size: ${template === "THERMAL_50" ? 14 : 16}px; margin-bottom: 4px; }
+          .muted { color: #4b5563; }
+          .meta { display: grid; gap: 2px; }
+          .section-title {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #6b7280;
+          }
+          .items { display: grid; gap: 8px; }
+          .item { border-bottom: 1px dashed #d1d5db; padding-bottom: 6px; }
+          .item-name { font-weight: 700; margin-bottom: 3px; }
+          .item-meta { display: flex; justify-content: space-between; gap: 8px; }
+          .totals { border-top: 1px dashed #9ca3af; padding-top: 8px; display: grid; gap: 4px; }
+          .total-row { display: flex; justify-content: space-between; }
+          .total-row.total { font-size: 13px; font-weight: 800; }
+          .footer { text-align: center; border-top: 1px dashed #d1d5db; padding-top: 8px; display: grid; gap: 6px; }
+        </style>
+      </head>
+      <body>
+        <div class="receipt">
+          <div class="header">
+            <h1>${sale.businessName || "Factura de venta"}</h1>
+            ${sale.taxId ? `<p class="muted">NIT: ${sale.taxId}</p>` : ""}
+            ${businessAddress ? `<p class="muted">${businessAddress}</p>` : ""}
+          </div>
+
+          <div class="meta">
+            <div><strong>Factura:</strong> ${sale.invoiceNumber}</div>
+            <div><strong>Fecha:</strong> ${sale.createdAt.toLocaleString("es-CO")}</div>
+            <div><strong>Cliente:</strong> ${sale.customer}</div>
+            <div><strong>Cajero:</strong> ${cashierName}</div>
+            <div><strong>Pago:</strong> ${sale.paymentSummary}</div>
+          </div>
+
+          <div>
+            <div class="section-title">Detalle</div>
+            <div class="items">${rows}</div>
+          </div>
+
+          <div class="totals">
+            <div class="total-row"><span>Subtotal</span><strong>$${sale.subtotal.toLocaleString("es-CO")}</strong></div>
+            <div class="total-row"><span>IVA</span><strong>$${sale.tax.toLocaleString("es-CO")}</strong></div>
+            <div class="total-row total"><span>Total</span><strong>$${sale.total.toLocaleString("es-CO")}</strong></div>
+          </div>
+          <div class="footer">${legalNotes.map((note) => `<p class="muted">${note}</p>`).join("")}</div>
+        </div>
       </body>
     </html>
   `;
@@ -304,6 +440,25 @@ function hasSessionPermission(currentSessionUser: CurrentSessionUser, permission
 
 function actorLabel(currentSessionUser: CurrentSessionUser) {
   return currentSessionUser?.name?.trim() || currentSessionUser?.username || "Sistema";
+}
+
+function buildCashierDisplayName(cashier: { username: string; name: string | null }) {
+  const candidate = cashier.name?.trim() || cashier.username;
+  const [firstName] = candidate.split(/\s+/).filter(Boolean);
+  return firstName || candidate;
+}
+
+function buildInvoiceLegalNotes(receiptFooter?: string | null) {
+  const notes = [
+    "Esta factura de venta podra constituirse como titulo valor conforme a la legislacion comercial aplicable y cuando se cumplan los requisitos legales.",
+    "En ventas a credito, la mora en el pago causara intereses a la tasa maxima legal vigente.",
+  ];
+
+  if (receiptFooter?.trim()) {
+    notes.push(receiptFooter.trim());
+  }
+
+  return notes;
 }
 
 function buildFullName(firstName: string, lastName?: string | null) {
@@ -658,6 +813,23 @@ function mapSaleStatusFromReturns(total: number, returnedTotal: number) {
 }
 
 export async function ensureBackofficeSchemaIfNeeded(prismaClient: PrismaClient) {
+  const businessSettingsColumns = await prismaClient.$queryRawUnsafe<Array<{ name: string }>>(
+    `PRAGMA table_info("BusinessSettings");`
+  );
+  const businessSettingsColumnSet = new Set(businessSettingsColumns.map((column) => column.name));
+
+  if (!businessSettingsColumnSet.has("themeMode")) {
+    await prismaClient.$executeRawUnsafe(
+      `ALTER TABLE "BusinessSettings" ADD COLUMN "themeMode" TEXT NOT NULL DEFAULT 'LIGHT';`
+    );
+  }
+
+  if (!businessSettingsColumnSet.has("defaultReceiptTemplate")) {
+    await prismaClient.$executeRawUnsafe(
+      `ALTER TABLE "BusinessSettings" ADD COLUMN "defaultReceiptTemplate" TEXT NOT NULL DEFAULT 'NORMAL';`
+    );
+  }
+
   const customerColumns = await prismaClient.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Customer");`);
   const supplierColumns = await prismaClient.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("Supplier");`);
   const customerColumnSet = new Set(customerColumns.map((column) => column.name));
@@ -809,21 +981,53 @@ export function registerBackofficeIpcHandlers({
         taxId: settings?.taxId || "",
         address: addressParts.address,
         city: addressParts.city,
+        themeMode: settings?.themeMode === "DARK" ? "DARK" : "LIGHT",
         invoicePrefix: settings?.invoicePrefix || "FV",
         defaultTaxRate: settings?.defaultTaxRate ?? 0.19,
         allowNegativeStock: settings?.allowNegativeStock ?? false,
+        defaultReceiptTemplate:
+          settings?.defaultReceiptTemplate === "THERMAL_80" || settings?.defaultReceiptTemplate === "THERMAL_50"
+            ? settings.defaultReceiptTemplate
+            : "NORMAL",
         receiptFooter: settings?.receiptFooter || "",
       },
     };
   });
 
-  ipcMain.handle("settings:update", async (_event, payload) => {
-    const currentSessionUser = await ensureAdminSession(getCurrentSessionUser);
-    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.settingsView)) {
-      return { success: false, message: "Tu rol no puede editar la configuracion general" };
+  ipcMain.handle("settings:update-theme", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.settingsTheme)) {
+      return { success: false, message: "Tu rol no puede cambiar el tema del sistema" };
     }
-    const parsed = businessSettingsSchema.safeParse(payload);
-    if (!parsed.success) return { success: false, message: "Configuracion invalida" };
+
+    const parsed = systemThemeSettingsSchema.safeParse(payload);
+    if (!parsed.success) return { success: false, message: "Configuracion de tema invalida" };
+
+    await prisma.businessSettings.upsert({
+      where: { id: "default" },
+      update: {
+        themeMode: parsed.data.themeMode,
+      },
+      create: {
+        id: "default",
+        themeMode: parsed.data.themeMode,
+      },
+    });
+
+    await logAudit(prisma, currentSessionUser, "settings", "update_theme", "BusinessSettings", "default", undefined, parsed.data);
+    return { success: true };
+  });
+
+  ipcMain.handle("settings:update-business", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.settingsBusiness)) {
+      return { success: false, message: "Tu rol no puede editar los datos del negocio" };
+    }
+
+    const parsed = businessIdentitySettingsSchema.safeParse(payload);
+    if (!parsed.success) return { success: false, message: "Datos del negocio invalidos" };
 
     const data = parsed.data;
     await prisma.businessSettings.upsert({
@@ -832,24 +1036,74 @@ export function registerBackofficeIpcHandlers({
         businessName: data.businessName || null,
         taxId: data.taxId || null,
         address: mergeBusinessAddress(data.address, data.city),
-        invoicePrefix: data.invoicePrefix || "FV",
-        defaultTaxRate: data.defaultTaxRate ?? 0.19,
-        allowNegativeStock: data.allowNegativeStock ?? false,
-        receiptFooter: data.receiptFooter || null,
       },
       create: {
         id: "default",
         businessName: data.businessName || null,
         taxId: data.taxId || null,
         address: mergeBusinessAddress(data.address, data.city),
+      },
+    });
+
+    await logAudit(prisma, currentSessionUser, "settings", "update_business", "BusinessSettings", "default", undefined, data);
+    return { success: true };
+  });
+
+  ipcMain.handle("settings:update-billing", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.settingsBilling)) {
+      return { success: false, message: "Tu rol no puede editar factura e impresion" };
+    }
+
+    const parsed = billingSettingsSchema.safeParse(payload);
+    if (!parsed.success) return { success: false, message: "Configuracion de factura invalida" };
+
+    const data = parsed.data;
+    await prisma.businessSettings.upsert({
+      where: { id: "default" },
+      update: {
         invoicePrefix: data.invoicePrefix || "FV",
-        defaultTaxRate: data.defaultTaxRate ?? 0.19,
-        allowNegativeStock: data.allowNegativeStock ?? false,
+        defaultReceiptTemplate: data.defaultReceiptTemplate,
+        receiptFooter: data.receiptFooter || null,
+      },
+      create: {
+        id: "default",
+        invoicePrefix: data.invoicePrefix || "FV",
+        defaultReceiptTemplate: data.defaultReceiptTemplate,
         receiptFooter: data.receiptFooter || null,
       },
     });
 
-    await logAudit(prisma, currentSessionUser, "settings", "update", "BusinessSettings", "default", undefined, data);
+    await logAudit(prisma, currentSessionUser, "settings", "update_billing", "BusinessSettings", "default", undefined, data);
+    return { success: true };
+  });
+
+  ipcMain.handle("settings:update-inventory", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.settingsInventory)) {
+      return { success: false, message: "Tu rol no puede editar inventario y operacion" };
+    }
+
+    const parsed = inventorySettingsSchema.safeParse(payload);
+    if (!parsed.success) return { success: false, message: "Configuracion operativa invalida" };
+
+    const data = parsed.data;
+    await prisma.businessSettings.upsert({
+      where: { id: "default" },
+      update: {
+        defaultTaxRate: data.defaultTaxRate ?? 0.19,
+        allowNegativeStock: data.allowNegativeStock ?? false,
+      },
+      create: {
+        id: "default",
+        defaultTaxRate: data.defaultTaxRate ?? 0.19,
+        allowNegativeStock: data.allowNegativeStock ?? false,
+      },
+    });
+
+    await logAudit(prisma, currentSessionUser, "settings", "update_inventory", "BusinessSettings", "default", undefined, data);
     return { success: true };
   });
 
@@ -1672,6 +1926,45 @@ export function registerBackofficeIpcHandlers({
     };
   });
 
+  ipcMain.handle("customers:sales-history", async (_event, payload) => {
+    const currentSessionUser = getCurrentSessionUser();
+    if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion", sales: [] };
+    if (!hasSessionPermission(currentSessionUser, APP_PERMISSION_KEYS.salesHistory)) {
+      return { success: false, message: "Tu rol no puede ver facturas del POS", sales: [] };
+    }
+
+    const parsed = deleteByIdSchema.safeParse(payload);
+    if (!parsed.success) return { success: false, message: "Cliente invalido", sales: [] };
+
+    const sales = await prisma.sale.findMany({
+      where: { customerId: parsed.data.id },
+      include: {
+        cashier: {
+          select: { username: true, name: true },
+        },
+        items: {
+          select: { qty: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+
+    return {
+      success: true,
+      sales: sales.map((sale) => ({
+        id: sale.id,
+        invoiceNumber: sale.invoiceNumber,
+        total: sale.total,
+        status: sale.status,
+        paymentMethod: sale.paymentMethod,
+        createdAt: sale.createdAt.toISOString(),
+        cashier: buildCashierDisplayName(sale.cashier),
+        itemsCount: sale.items.reduce((sum, item) => sum + item.qty, 0),
+      })),
+    };
+  });
+
   ipcMain.handle("customers:create", async (_event, payload) => {
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
@@ -1689,7 +1982,7 @@ export function registerBackofficeIpcHandlers({
         })
       ).map((customer) => customer.internalCode);
       const internalCode = resolveManagedCode({
-        desiredCode: parsed.data.internalCode,
+        desiredCode: null,
         existingCodes: existingInternalCodes,
         prefix: "CLI",
         digits: 4,
@@ -1706,7 +1999,7 @@ export function registerBackofficeIpcHandlers({
           address: parsed.data.address || null,
           creditLimit: 0,
           notes: null,
-          isActive: parsed.data.isActive ?? true,
+          isActive: true,
         },
       });
 
@@ -1745,7 +2038,7 @@ export function registerBackofficeIpcHandlers({
         })
       ).map((customer) => customer.internalCode);
       const internalCode = resolveManagedCode({
-        desiredCode: parsed.data.internalCode,
+        desiredCode: current.internalCode,
         existingCodes: existingInternalCodes,
         prefix: "CLI",
         digits: 4,
@@ -1832,7 +2125,7 @@ export function registerBackofficeIpcHandlers({
         })
       ).map((supplier) => supplier.internalCode);
       const internalCode = resolveManagedCode({
-        desiredCode: parsed.data.internalCode,
+        desiredCode: null,
         existingCodes: existingInternalCodes,
         prefix: "PRV",
         digits: 4,
@@ -1848,7 +2141,7 @@ export function registerBackofficeIpcHandlers({
           email: parsed.data.email || null,
           address: parsed.data.address || null,
           contactName: parsed.data.contactName || null,
-          isActive: parsed.data.isActive ?? true,
+          isActive: true,
         },
       });
 
@@ -1887,7 +2180,7 @@ export function registerBackofficeIpcHandlers({
         })
       ).map((supplier) => supplier.internalCode);
       const internalCode = resolveManagedCode({
-        desiredCode: parsed.data.internalCode,
+        desiredCode: current.internalCode,
         existingCodes: existingInternalCodes,
         prefix: "PRV",
         digits: 4,
@@ -2275,7 +2568,7 @@ export function registerBackofficeIpcHandlers({
         total: sale.total,
         status: sale.status,
         createdAt: sale.createdAt.toISOString(),
-        cashier: sale.cashier.name ?? sale.cashier.username,
+        cashier: buildCashierDisplayName(sale.cashier),
         itemsCount: sale.items.reduce((sum, item) => sum + item.qty, 0),
       })),
     };
@@ -2285,7 +2578,7 @@ export function registerBackofficeIpcHandlers({
     const currentSessionUser = getCurrentSessionUser();
     if (!currentSessionUser) return { success: false, message: "Debes iniciar sesion" };
 
-    const parsed = saleByIdSchema.safeParse(payload);
+    const parsed = salePrintSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Venta invalida" };
 
     const sale = await prisma.sale.findUnique({
@@ -2315,7 +2608,7 @@ export function registerBackofficeIpcHandlers({
         total: sale.total,
         status: sale.status,
         createdAt: sale.createdAt.toISOString(),
-        cashier: sale.cashier.name ?? sale.cashier.username,
+        cashier: buildCashierDisplayName(sale.cashier),
         items: sale.items.map((item) => ({
           id: item.id,
           name: item.name,
@@ -2343,7 +2636,7 @@ export function registerBackofficeIpcHandlers({
       return { success: false, message: "Tu rol no puede imprimir facturas" };
     }
 
-    const parsed = saleByIdSchema.safeParse(payload);
+    const parsed = salePrintSchema.safeParse(payload);
     if (!parsed.success) return { success: false, message: "Venta invalida" };
 
     const [sale, settings] = await Promise.all([
@@ -2363,7 +2656,7 @@ export function registerBackofficeIpcHandlers({
     if (!sale) return { success: false, message: "Venta no encontrada" };
     const addressParts = splitBusinessAddress(settings?.address);
 
-    const html = buildInvoiceHtml({
+    const html = buildInvoiceHtmlForTemplate({
       businessName: settings?.businessName,
       taxId: settings?.taxId,
       address: addressParts.address,
@@ -2383,7 +2676,7 @@ export function registerBackofficeIpcHandlers({
         price: item.price,
         lineTotal: item.lineTotal,
       })),
-    });
+    }, parsed.data.template);
 
     const printWindow = new BrowserWindow({
       show: false,

@@ -1,383 +1,343 @@
-import { BrowserWindow, app, ipcMain, Menu } from "electron";
-import bcrypt from "bcryptjs";
+import { BrowserWindow as qe, app as te, ipcMain as X, Menu as Bt } from "electron";
+import ce from "bcryptjs";
 import "dotenv/config";
-import os from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { CorrespondentDirection, CommissionMode, CorrespondentTransactionStatus, CorrespondentReconciliationStatus, CorrespondentOcrStatus, Role, CorrespondentClosureStatus, SaleStatus, CashSessionStatus, PaymentMethod, CashMovementType, InventoryMovementType, PurchaseStatus, CreditStatus, PrismaClient } from "@prisma/client";
-import { z } from "zod";
-import { mkdir, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
-const roleSchema = z.enum(["ADMIN", "EMPLOYEE"]);
-const loginInputSchema = z.object({
-  username: z.string().trim().min(1).max(50),
-  password: z.string().min(1).max(200)
+import Pe from "node:os";
+import H from "node:path";
+import { fileURLToPath as Ft } from "node:url";
+import { CorrespondentDirection as _, CommissionMode as Oe, CorrespondentTransactionStatus as ne, CorrespondentReconciliationStatus as $t, CorrespondentOcrStatus as Le, Role as F, CorrespondentClosureStatus as We, SaleStatus as me, CashSessionStatus as W, PaymentMethod as j, CashMovementType as B, InventoryMovementType as Te, PurchaseStatus as Qe, CreditStatus as fe, PrismaClient as kt } from "@prisma/client";
+import { z as o } from "zod";
+import { mkdir as Xt, writeFile as Vt } from "node:fs/promises";
+import { createHash as qt } from "node:crypto";
+const je = o.enum(["ADMIN", "EMPLOYEE"]), jt = o.object({
+  username: o.string().trim().min(1).max(50),
+  password: o.string().min(1).max(200)
 });
-z.object({
-  success: z.boolean(),
-  message: z.string().optional(),
-  user: z.object({
-    id: z.string(),
-    username: z.string(),
-    role: roleSchema,
-    name: z.string().optional(),
-    roleProfileId: z.string().nullable().optional(),
-    roleProfileName: z.string().nullable().optional(),
-    permissions: z.array(z.string()).optional()
+o.object({
+  success: o.boolean(),
+  message: o.string().optional(),
+  user: o.object({
+    id: o.string(),
+    username: o.string(),
+    role: je,
+    name: o.string().optional(),
+    roleProfileId: o.string().nullable().optional(),
+    roleProfileName: o.string().nullable().optional(),
+    permissions: o.array(o.string()).optional()
   }).optional()
 });
-const birthDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable();
-const phoneSchema = z.string().trim().regex(/^\d{10}$/).optional().nullable();
-const baseUserProfileSchema = z.object({
-  internalCode: z.string().trim().max(30).optional().nullable(),
-  firstName: z.string().trim().min(2).max(80),
-  lastName: z.string().trim().min(2).max(80),
-  documentNumber: z.string().trim().regex(/^\d{6,20}$/),
-  email: z.string().trim().email().max(120).optional().nullable(),
-  phone: phoneSchema,
-  address: z.string().trim().max(180).optional().nullable(),
-  birthDate: birthDateSchema,
-  role: roleSchema.optional().default("EMPLOYEE"),
-  roleProfileId: z.string().uuid().optional().nullable(),
-  isActive: z.boolean().optional().default(true)
+const ze = o.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(), Ge = o.string().trim().regex(/^\d{10}$/).optional().nullable(), ft = o.object({
+  internalCode: o.string().trim().max(30).optional().nullable(),
+  firstName: o.string().trim().min(2).max(80),
+  lastName: o.string().trim().min(2).max(80),
+  documentNumber: o.string().trim().regex(/^\d{6,20}$/),
+  email: o.string().trim().email().max(120).optional().nullable(),
+  phone: Ge,
+  address: o.string().trim().max(180).optional().nullable(),
+  birthDate: ze,
+  roleProfileId: o.string().uuid().optional().nullable(),
+  isActive: o.boolean().optional().default(!0)
+}), zt = ft.extend({
+  newPassword: o.string().min(6).max(200)
+}), Gt = ft.extend({
+  id: o.string().uuid(),
+  newPassword: o.string().min(6).max(200).optional().or(o.literal(""))
+}), Kt = o.object({
+  id: o.string(),
+  username: o.string(),
+  name: o.string().optional().nullable(),
+  firstName: o.string().optional().nullable(),
+  lastName: o.string().optional().nullable(),
+  email: o.string().trim().email().max(120).optional().nullable(),
+  phone: Ge,
+  birthDate: ze,
+  role: je
 });
-const createUserInputSchema = baseUserProfileSchema.extend({
-  newPassword: z.string().min(6).max(200)
+o.object({
+  success: o.boolean(),
+  message: o.string().optional(),
+  profile: Kt.optional()
 });
-const updateUserInputSchema = baseUserProfileSchema.extend({
-  id: z.string().uuid(),
-  newPassword: z.string().min(6).max(200).optional().or(z.literal(""))
+const Ht = o.object({
+  firstName: o.string().trim().min(2).max(80),
+  lastName: o.string().trim().min(2).max(80),
+  email: o.string().trim().email().max(120).optional().nullable(),
+  phone: Ge,
+  birthDate: ze
+}), Yt = o.object({
+  currentPassword: o.string().min(1).max(200),
+  newPassword: o.string().min(6).max(200),
+  confirmPassword: o.string().min(6).max(200)
+}), Jt = o.object({
+  name: o.string().trim().min(3, "Minimo 3 caracteres").max(80, "Maximo 80 caracteres"),
+  description: o.string().trim().max(240).optional().nullable(),
+  baseRole: je.default("EMPLOYEE"),
+  permissionKeys: o.array(o.string().trim().min(1)).min(1, "Debes seleccionar al menos un permiso"),
+  isActive: o.boolean().optional().default(!0)
+}), Wt = o.object({
+  id: o.string().uuid("ID de rol invalido"),
+  name: o.string().trim().min(3, "Minimo 3 caracteres").max(80, "Maximo 80 caracteres"),
+  description: o.string().trim().max(240).optional().nullable(),
+  permissionKeys: o.array(o.string().trim().min(1)).min(1, "Debes seleccionar al menos un permiso"),
+  isActive: o.boolean().optional().default(!0)
+}), Qt = o.object({
+  id: o.string().uuid("ID de rol invalido")
+}), Ke = o.enum(["CASH", "CARD", "TRANSFER"]), Zt = o.object({
+  method: Ke,
+  amount: o.number().min(0, "El monto del pago no puede ser negativo")
+}), ea = o.object({
+  productId: o.string().uuid("productId invalido"),
+  qty: o.number().int("La cantidad debe ser entera").positive("La cantidad debe ser mayor a 0")
+}), ta = o.object({
+  customer: o.string().trim().max(120).optional().default("Consumidor final"),
+  customerId: o.string().uuid("customerId invalido").optional().nullable(),
+  paymentMethod: Ke.optional().default("CASH"),
+  amountPaid: o.number().min(0).optional(),
+  payments: o.array(Zt).min(1, "Debes registrar al menos un pago").optional(),
+  items: o.array(ea).min(1, "La venta debe tener al menos un item"),
+  clientTotal: o.number().min(0).optional(),
+  allowDebt: o.boolean().optional().default(!1)
 });
-const ownProfileSchema = z.object({
-  id: z.string(),
-  username: z.string(),
-  name: z.string().optional().nullable(),
-  firstName: z.string().optional().nullable(),
-  lastName: z.string().optional().nullable(),
-  email: z.string().trim().email().max(120).optional().nullable(),
-  phone: phoneSchema,
-  birthDate: birthDateSchema,
-  role: roleSchema
-});
-z.object({
-  success: z.boolean(),
-  message: z.string().optional(),
-  profile: ownProfileSchema.optional()
-});
-const updateOwnProfileInputSchema = z.object({
-  firstName: z.string().trim().min(2).max(80),
-  lastName: z.string().trim().min(2).max(80),
-  phone: phoneSchema,
-  birthDate: birthDateSchema
-});
-const changeOwnPasswordInputSchema = z.object({
-  currentPassword: z.string().min(1).max(200),
-  newPassword: z.string().min(6).max(200),
-  confirmPassword: z.string().min(6).max(200)
-});
-const createRoleProfileInputSchema = z.object({
-  name: z.string().trim().min(3, "Minimo 3 caracteres").max(80, "Maximo 80 caracteres"),
-  description: z.string().trim().max(240).optional().nullable(),
-  baseRole: roleSchema.default("EMPLOYEE"),
-  permissionKeys: z.array(z.string().trim().min(1)).min(1, "Debes seleccionar al menos un permiso"),
-  isActive: z.boolean().optional().default(true)
-});
-const updateRoleProfileInputSchema = z.object({
-  id: z.string().uuid("ID de rol invalido"),
-  name: z.string().trim().min(3, "Minimo 3 caracteres").max(80, "Maximo 80 caracteres"),
-  description: z.string().trim().max(240).optional().nullable(),
-  permissionKeys: z.array(z.string().trim().min(1)).min(1, "Debes seleccionar al menos un permiso"),
-  isActive: z.boolean().optional().default(true)
-});
-const paymentMethodSchema = z.enum(["CASH", "CARD", "TRANSFER"]);
-const salePaymentInputSchema = z.object({
-  method: paymentMethodSchema,
-  amount: z.number().min(0, "El monto del pago no puede ser negativo")
-});
-const saleItemInputSchema = z.object({
-  productId: z.string().uuid("productId invalido"),
-  qty: z.number().int("La cantidad debe ser entera").positive("La cantidad debe ser mayor a 0")
-});
-const createSaleSchema = z.object({
-  customer: z.string().trim().max(120).optional().default("Consumidor final"),
-  customerId: z.string().uuid("customerId invalido").optional().nullable(),
-  paymentMethod: paymentMethodSchema.optional().default("CASH"),
-  amountPaid: z.number().min(0).optional(),
-  payments: z.array(salePaymentInputSchema).min(1, "Debes registrar al menos un pago").optional(),
-  items: z.array(saleItemInputSchema).min(1, "La venta debe tener al menos un item"),
-  clientTotal: z.number().min(0).optional(),
-  allowDebt: z.boolean().optional().default(false)
-});
-z.discriminatedUnion("success", [
-  z.object({
-    success: z.literal(true),
-    saleId: z.string().uuid(),
-    invoiceNumber: z.string(),
-    total: z.number(),
-    amountPaid: z.number(),
-    changeAmount: z.number()
+o.discriminatedUnion("success", [
+  o.object({
+    success: o.literal(!0),
+    saleId: o.string().uuid(),
+    invoiceNumber: o.string(),
+    total: o.number(),
+    amountPaid: o.number(),
+    changeAmount: o.number()
   }),
-  z.object({
-    success: z.literal(false),
-    message: z.string()
+  o.object({
+    success: o.literal(!1),
+    message: o.string()
   })
 ]);
-const correspondentTransactionStatusSchema = z.enum(["REGISTERED", "VOIDED"]);
-const correspondentTransactionSourceSchema = z.enum(["MANUAL", "IMAGE", "FILE_IMPORT", "API"]);
-const correspondentCatalogDirectionSchema = z.enum(["IN", "OUT"]);
-const correspondentEvidenceInputSchema = z.object({
-  fileName: z.string().trim().min(1).max(180),
-  mimeType: z.string().trim().max(120).optional(),
-  dataBase64: z.string().min(1),
-  ocrRawText: z.string().trim().max(1e4).optional()
-});
-const createCorrespondentTransactionSchema = z.object({
-  platformId: z.string().uuid("platformId invalido"),
-  typeId: z.string().uuid("typeId invalido"),
-  approvalCode: z.string().trim().min(4, "Ingresa el numero de aprobacion o ID interno").max(40).optional().nullable(),
-  amount: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
-  commissionAmount: z.number().int("La comision debe ser entera").min(0).optional(),
-  externalReference: z.string().trim().max(120).optional().nullable(),
-  customerName: z.string().trim().max(120).optional().nullable(),
-  customerDocument: z.string().trim().max(40).optional().nullable(),
-  targetAccount: z.string().trim().max(60).optional().nullable(),
-  targetPhone: z.string().trim().max(30).optional().nullable(),
-  performedAt: z.string().datetime("Fecha de operacion invalida"),
-  note: z.string().trim().max(300).optional().nullable(),
-  rawExtractedText: z.string().trim().max(1e4).optional().nullable(),
-  source: correspondentTransactionSourceSchema.optional().default("MANUAL"),
-  evidence: correspondentEvidenceInputSchema.optional()
-});
-const updateCorrespondentTransactionSchema = z.object({
-  transactionId: z.string().uuid("transactionId invalido"),
-  typeId: z.string().uuid("typeId invalido"),
-  approvalCode: z.string().trim().min(4, "Ingresa el numero de aprobacion o ID interno").max(40).optional().nullable(),
-  amount: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
-  performedAt: z.string().datetime("Fecha de operacion invalida")
-});
-const getCorrespondentTransactionDetailSchema = z.object({
-  transactionId: z.string().uuid("transactionId invalido")
-});
-const listCorrespondentTransactionsSchema = z.object({
-  dateFrom: z.string().datetime().optional(),
-  dateTo: z.string().datetime().optional(),
-  platformId: z.string().uuid().optional(),
-  userId: z.string().uuid().optional(),
-  status: correspondentTransactionStatusSchema.optional(),
-  search: z.string().trim().max(80).optional()
-}).optional().default({});
-const listCorrespondentClosuresSchema = z.object({
-  businessDate: z.string().datetime().optional()
-}).optional().default({});
-const createCorrespondentClosureSchema = z.object({
-  platformId: z.string().uuid("platformId invalido"),
-  businessDate: z.string().datetime("Fecha de cierre invalida"),
-  openingBalance: z.number().int("El saldo base debe ser entero").optional().default(0),
-  reportedBalance: z.number().int("El valor reportado debe ser entero"),
-  note: z.string().trim().max(300).optional().nullable()
-});
-const createCorrespondentPlatformSchema = z.object({
-  name: z.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
-  requiresEvidence: z.boolean().optional().default(false),
-  supportsOcr: z.boolean().optional().default(false),
-  supportsFileImport: z.boolean().optional().default(false)
-});
-const createCorrespondentTransactionTypeSchema = z.object({
-  platformId: z.string().uuid("platformId invalido"),
-  name: z.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
-  direction: correspondentCatalogDirectionSchema.default("IN")
-});
-const updateCorrespondentPlatformSchema = z.object({
-  platformId: z.string().uuid("platformId invalido"),
-  name: z.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
-  requiresEvidence: z.boolean().optional().default(false),
-  supportsOcr: z.boolean().optional().default(false),
-  supportsFileImport: z.boolean().optional().default(false)
-});
-const updateCorrespondentTransactionTypeSchema = z.object({
-  typeId: z.string().uuid("typeId invalido"),
-  name: z.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
-  direction: correspondentCatalogDirectionSchema.default("IN")
-});
-const deleteCorrespondentPlatformSchema = z.object({
-  platformId: z.string().uuid("platformId invalido")
-});
-const deleteCorrespondentTransactionTypeSchema = z.object({
-  typeId: z.string().uuid("typeId invalido")
-});
-const CODE_REGEX = /^[A-Z0-9]+(?:-[A-Z0-9]+)*$/;
-function stripDiacritics(value) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-}
-function normalizeCodeInput(value) {
-  return stripDiacritics(value).toUpperCase().replace(/[_\s]+/g, "-").replace(/[^A-Z0-9-]/g, "").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
-}
-function normalizePrefixedCode(value, prefix) {
-  const normalizedPrefix = normalizeCodeInput(prefix);
-  const normalizedValue = normalizeCodeInput(value);
-  if (!normalizedValue)
-    return `${normalizedPrefix}-`;
-  if (normalizedValue === normalizedPrefix)
-    return `${normalizedPrefix}-`;
-  if (normalizedValue.startsWith(`${normalizedPrefix}-`))
-    return normalizedValue;
-  const trimmedValue = normalizedValue.startsWith(normalizedPrefix) ? normalizedValue.slice(normalizedPrefix.length).replace(/^-+/, "") : normalizedValue;
-  return `${normalizedPrefix}-${trimmedValue}`;
-}
-function isValidCode(value, minLength = 4, maxLength = 40) {
-  return value.length >= minLength && value.length <= maxLength && CODE_REGEX.test(value);
-}
-function suggestNextCode(existingCodes, prefix, digits = 4) {
-  const normalizedPrefix = normalizeCodeInput(prefix);
-  const matcher = new RegExp(`^${normalizedPrefix}-(\\d+)$`);
-  let currentMax = 0;
-  for (const code of existingCodes) {
-    const normalizedCode = normalizeCodeInput(code || "");
-    const match = normalizedCode.match(matcher);
-    if (!match)
-      continue;
-    currentMax = Math.max(currentMax, Number(match[1] || 0));
+const aa = o.enum(["REGISTERED", "VOIDED"]), sa = o.enum(["MANUAL", "IMAGE", "FILE_IMPORT", "API"]), gt = o.enum(["IN", "OUT"]), ra = o.object({
+  fileName: o.string().trim().min(1).max(180),
+  mimeType: o.string().trim().max(120).optional(),
+  dataBase64: o.string().min(1),
+  ocrRawText: o.string().trim().max(1e4).optional()
+}), na = o.object({
+  platformId: o.string().uuid("platformId invalido"),
+  typeId: o.string().uuid("typeId invalido"),
+  approvalCode: o.string().trim().min(4, "Ingresa el numero de aprobacion o ID interno").max(40).optional().nullable(),
+  amount: o.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  commissionAmount: o.number().int("La comision debe ser entera").min(0).optional(),
+  externalReference: o.string().trim().max(120).optional().nullable(),
+  customerName: o.string().trim().max(120).optional().nullable(),
+  customerDocument: o.string().trim().max(40).optional().nullable(),
+  targetAccount: o.string().trim().max(60).optional().nullable(),
+  targetPhone: o.string().trim().max(30).optional().nullable(),
+  performedAt: o.string().datetime("Fecha de operacion invalida"),
+  note: o.string().trim().max(300).optional().nullable(),
+  rawExtractedText: o.string().trim().max(1e4).optional().nullable(),
+  source: sa.optional().default("MANUAL"),
+  evidence: ra.optional()
+}), oa = o.object({
+  transactionId: o.string().uuid("transactionId invalido"),
+  typeId: o.string().uuid("typeId invalido"),
+  approvalCode: o.string().trim().min(4, "Ingresa el numero de aprobacion o ID interno").max(40).optional().nullable(),
+  amount: o.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  performedAt: o.string().datetime("Fecha de operacion invalida")
+}), ia = o.object({
+  transactionId: o.string().uuid("transactionId invalido")
+}), ca = o.object({
+  dateFrom: o.string().datetime().optional(),
+  dateTo: o.string().datetime().optional(),
+  platformId: o.string().uuid().optional(),
+  userId: o.string().uuid().optional(),
+  status: aa.optional(),
+  search: o.string().trim().max(80).optional()
+}).optional().default({}), da = o.object({
+  businessDate: o.string().datetime().optional(),
+  dateFrom: o.string().datetime().optional(),
+  dateTo: o.string().datetime().optional()
+}).refine(
+  (e) => !e.dateFrom || !e.dateTo || new Date(e.dateFrom).getTime() <= new Date(e.dateTo).getTime(),
+  {
+    message: "El rango de fechas es invalido",
+    path: ["dateTo"]
   }
-  return `${normalizedPrefix}-${String(currentMax + 1).padStart(digits, "0")}`;
+).optional().default({}), ua = o.object({
+  platformId: o.string().uuid("platformId invalido"),
+  businessDate: o.string().datetime("Fecha de cierre invalida"),
+  openingBalance: o.number().int("El saldo base debe ser entero").optional().default(0),
+  reportedBalance: o.number().int("El valor reportado debe ser entero"),
+  note: o.string().trim().max(300).optional().nullable()
+}), la = o.object({
+  name: o.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
+  requiresEvidence: o.boolean().optional().default(!1),
+  supportsOcr: o.boolean().optional().default(!1),
+  supportsFileImport: o.boolean().optional().default(!1)
+}), ma = o.object({
+  platformId: o.string().uuid("platformId invalido"),
+  name: o.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
+  direction: gt.default("IN")
+}), pa = o.object({
+  platformId: o.string().uuid("platformId invalido"),
+  name: o.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
+  requiresEvidence: o.boolean().optional().default(!1),
+  supportsOcr: o.boolean().optional().default(!1),
+  supportsFileImport: o.boolean().optional().default(!1)
+}), fa = o.object({
+  typeId: o.string().uuid("typeId invalido"),
+  name: o.string().trim().min(2, "El nombre es obligatorio").max(80, "Nombre demasiado largo"),
+  direction: gt.default("IN")
+}), ga = o.object({
+  platformId: o.string().uuid("platformId invalido")
+}), Ea = o.object({
+  typeId: o.string().uuid("typeId invalido")
+}), Aa = /^[A-Z0-9]+(?:-[A-Z0-9]+)*$/;
+function Ta(e) {
+  return e.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
-function resolveManagedCode(params) {
-  var _a;
-  const candidate = ((_a = params.desiredCode) == null ? void 0 : _a.trim()) ? normalizePrefixedCode(params.desiredCode, params.prefix) : suggestNextCode(params.existingCodes, params.prefix, params.digits);
-  if (!isValidCode(candidate, params.minLength, params.maxLength)) {
-    throw new Error(`El codigo debe usar solo letras, numeros y guiones.`);
-  }
-  const normalizedExisting = new Set(
-    params.existingCodes.map((code) => normalizeCodeInput(code || "")).filter(Boolean)
-  );
-  if (normalizedExisting.has(candidate)) {
-    throw new Error(`El codigo ${candidate} ya existe.`);
-  }
-  return candidate;
+function re(e) {
+  return Ta(e).toUpperCase().replace(/[_\s]+/g, "-").replace(/[^A-Z0-9-]/g, "").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
 }
-function resolveLooseCode(params) {
-  var _a;
-  const candidate = ((_a = params.desiredCode) == null ? void 0 : _a.trim()) ? normalizeCodeInput(params.desiredCode) : suggestNextCode(params.existingCodes, params.generatedPrefix, params.digits);
-  if (!isValidCode(candidate, params.minLength, params.maxLength)) {
-    throw new Error(`El codigo debe usar solo letras, numeros y guiones.`);
-  }
-  const normalizedExisting = new Set(
-    params.existingCodes.map((code) => normalizeCodeInput(code || "")).filter(Boolean)
-  );
-  if (normalizedExisting.has(candidate)) {
-    throw new Error(`El codigo ${candidate} ya existe.`);
-  }
-  return candidate;
+function Ia(e, a) {
+  const r = re(a), l = re(e);
+  if (!l)
+    return `${r}-`;
+  if (l === r)
+    return `${r}-`;
+  if (l.startsWith(`${r}-`))
+    return l;
+  const m = l.startsWith(r) ? l.slice(r.length).replace(/^-+/, "") : l;
+  return `${r}-${m}`;
 }
-const sharedCorrespondentTypes = [
-  { code: "RETIRO", name: "Retiro", direction: CorrespondentDirection.OUT, requiresCustomerDocument: true, requiresExternalReference: true, sortOrder: 10 },
-  { code: "DEPOSITO", name: "Deposito", direction: CorrespondentDirection.IN, requiresCustomerDocument: true, requiresExternalReference: true, sortOrder: 20 },
-  { code: "CONSIGNACION", name: "Consignacion", direction: CorrespondentDirection.IN, requiresCustomerDocument: true, requiresExternalReference: true, sortOrder: 30 },
-  { code: "RECAUDO", name: "Recaudo", direction: CorrespondentDirection.IN, requiresExternalReference: true, sortOrder: 40 },
-  { code: "PAGO", name: "Pago", direction: CorrespondentDirection.IN, requiresExternalReference: true, sortOrder: 50 },
-  { code: "RECARGA", name: "Recarga", direction: CorrespondentDirection.IN, sortOrder: 60 },
-  { code: "CONSULTA", name: "Consulta", direction: CorrespondentDirection.NEUTRAL, sortOrder: 70 },
-  { code: "GIRO_ENVIO", name: "Giro envio", direction: CorrespondentDirection.IN, requiresCustomerDocument: true, requiresExternalReference: true, sortOrder: 80 },
-  { code: "GIRO_PAGO", name: "Giro pago", direction: CorrespondentDirection.OUT, requiresCustomerDocument: true, requiresExternalReference: true, sortOrder: 90 }
-];
-const correspondentSeedCatalog = [
+function He(e, a = 4, r = 40) {
+  return e.length >= a && e.length <= r && Aa.test(e);
+}
+function Et(e, a, r = 4) {
+  const l = re(a), m = new RegExp(`^${l}-(\\d+)$`);
+  let c = 0;
+  for (const n of e) {
+    const t = re(n || "").match(m);
+    t && (c = Math.max(c, Number(t[1] || 0)));
+  }
+  return `${l}-${String(c + 1).padStart(r, "0")}`;
+}
+function Z(e) {
+  var l;
+  const a = (l = e.desiredCode) != null && l.trim() ? Ia(e.desiredCode, e.prefix) : Et(e.existingCodes, e.prefix, e.digits);
+  if (!He(a, e.minLength, e.maxLength))
+    throw new Error("El codigo debe usar solo letras, numeros y guiones.");
+  if (new Set(
+    e.existingCodes.map((m) => re(m || "")).filter(Boolean)
+  ).has(a))
+    throw new Error(`El codigo ${a} ya existe.`);
+  return a;
+}
+function Fe(e) {
+  var l;
+  const a = (l = e.desiredCode) != null && l.trim() ? re(e.desiredCode) : Et(e.existingCodes, e.generatedPrefix, e.digits);
+  if (!He(a, e.minLength, e.maxLength))
+    throw new Error("El codigo debe usar solo letras, numeros y guiones.");
+  if (new Set(
+    e.existingCodes.map((m) => re(m || "")).filter(Boolean)
+  ).has(a))
+    throw new Error(`El codigo ${a} ya existe.`);
+  return a;
+}
+const ge = [
+  { code: "RETIRO", name: "Retiro", direction: _.OUT, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 10 },
+  { code: "DEPOSITO", name: "Deposito", direction: _.IN, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 20 },
+  { code: "CONSIGNACION", name: "Consignacion", direction: _.IN, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 30 },
+  { code: "RECAUDO", name: "Recaudo", direction: _.IN, requiresExternalReference: !0, sortOrder: 40 },
+  { code: "PAGO", name: "Pago", direction: _.IN, requiresExternalReference: !0, sortOrder: 50 },
+  { code: "RECARGA", name: "Recarga", direction: _.IN, sortOrder: 60 },
+  { code: "CONSULTA", name: "Consulta", direction: _.NEUTRAL, sortOrder: 70 },
+  { code: "GIRO_ENVIO", name: "Giro envio", direction: _.IN, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 80 },
+  { code: "GIRO_PAGO", name: "Giro pago", direction: _.OUT, requiresCustomerDocument: !0, requiresExternalReference: !0, sortOrder: 90 }
+], ya = [
   {
     code: "PUNTORED",
     name: "Puntored",
-    requiresEvidence: true,
-    supportsOcr: true,
-    supportsFileImport: true,
-    types: sharedCorrespondentTypes
+    requiresEvidence: !0,
+    supportsOcr: !0,
+    supportsFileImport: !0,
+    types: ge
   },
   {
     code: "PTM",
     name: "PTM",
-    requiresEvidence: true,
-    supportsOcr: true,
-    supportsFileImport: true,
-    types: sharedCorrespondentTypes
+    requiresEvidence: !0,
+    supportsOcr: !0,
+    supportsFileImport: !0,
+    types: ge
   },
   {
     code: "CBOGOTA",
     name: "Corresponsal Bogota",
-    requiresEvidence: true,
-    supportsOcr: true,
-    types: sharedCorrespondentTypes
+    requiresEvidence: !0,
+    supportsOcr: !0,
+    types: ge
   },
   {
     code: "BANCOLOMBIA",
     name: "Corresponsal Bancolombia",
-    requiresEvidence: true,
-    supportsOcr: true,
+    requiresEvidence: !0,
+    supportsOcr: !0,
     types: [
-      ...sharedCorrespondentTypes,
-      { code: "NEQUI_RETIRO", name: "Nequi retiro", direction: CorrespondentDirection.OUT, requiresExternalReference: true, sortOrder: 95 },
-      { code: "NEQUI_DEPOSITO", name: "Nequi deposito", direction: CorrespondentDirection.IN, requiresExternalReference: true, sortOrder: 96 }
+      ...ge,
+      { code: "NEQUI_RETIRO", name: "Nequi retiro", direction: _.OUT, requiresExternalReference: !0, sortOrder: 95 },
+      { code: "NEQUI_DEPOSITO", name: "Nequi deposito", direction: _.IN, requiresExternalReference: !0, sortOrder: 96 }
     ]
   },
   {
     code: "COOPENESSA",
     name: "Coopenessa",
-    requiresEvidence: true,
-    supportsOcr: false,
-    types: sharedCorrespondentTypes
+    requiresEvidence: !0,
+    supportsOcr: !1,
+    types: ge
   }
 ];
-function money$2(value) {
-  return Math.round(value);
+function Ze(e) {
+  return Math.round(e);
 }
-function startOfDay(date = /* @__PURE__ */ new Date()) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+function ee(e = /* @__PURE__ */ new Date()) {
+  return new Date(e.getFullYear(), e.getMonth(), e.getDate());
 }
-function endOfDay(date = /* @__PURE__ */ new Date()) {
-  const next = startOfDay(date);
-  next.setDate(next.getDate() + 1);
-  return next;
+function Re(e = /* @__PURE__ */ new Date()) {
+  const a = ee(e);
+  return a.setDate(a.getDate() + 1), a;
 }
-function normalizeBusinessDate(value) {
-  if (!value)
-    return startOfDay(/* @__PURE__ */ new Date());
-  return startOfDay(new Date(value));
+function Ce(e) {
+  return ee(e ? new Date(e) : /* @__PURE__ */ new Date());
 }
-function sanitizeFileName(value) {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "_");
+function Na(e) {
+  return e.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
-function serializeJson(value) {
-  return JSON.stringify(value ?? null);
+function he(e) {
+  return JSON.stringify(e ?? null);
 }
-function normalizeCode(value) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
+function At(e) {
+  return e.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
 }
-async function buildUniquePlatformCode(prisma2, name) {
-  const baseCode = normalizeCode(name) || "CORRESPONSAL";
-  let code = baseCode;
-  let counter = 2;
-  while (await prisma2.correspondentPlatform.findUnique({ where: { code }, select: { id: true } })) {
-    code = `${baseCode}_${counter}`;
-    counter += 1;
-  }
-  return code;
+async function Ca(e, a) {
+  const r = At(a) || "CORRESPONSAL";
+  let l = r, m = 2;
+  for (; await e.correspondentPlatform.findUnique({ where: { code: l }, select: { id: !0 } }); )
+    l = `${r}_${m}`, m += 1;
+  return l;
 }
-async function buildUniqueTypeCode(prisma2, platformId, name) {
-  const baseCode = normalizeCode(name) || "TIPO";
-  let code = baseCode;
-  let counter = 2;
-  while (await prisma2.correspondentTransactionType.findUnique({
-    where: { platformId_code: { platformId, code } },
-    select: { id: true }
-  })) {
-    code = `${baseCode}_${counter}`;
-    counter += 1;
-  }
-  return code;
+async function ha(e, a, r) {
+  const l = At(r) || "TIPO";
+  let m = l, c = 2;
+  for (; await e.correspondentTransactionType.findUnique({
+    where: { platformId_code: { platformId: a, code: m } },
+    select: { id: !0 }
+  }); )
+    m = `${l}_${c}`, c += 1;
+  return m;
 }
-function parseContextId(context, key) {
-  if (!context)
+function et(e, a) {
+  if (!e)
     return null;
-  const match = context.match(new RegExp(`${key}:([^;]+)`));
-  return (match == null ? void 0 : match[1]) ?? null;
+  const r = e.match(new RegExp(`${a}:([^;]+)`));
+  return (r == null ? void 0 : r[1]) ?? null;
 }
-async function buildCorrespondentCatalogAuditMaps(prisma2) {
-  const logs = await prisma2.correspondentAuditLog.findMany({
+async function va(e) {
+  const a = await e.correspondentAuditLog.findMany({
     where: {
       action: {
         in: ["create_platform", "update_platform", "create_transaction_type", "update_transaction_type"]
@@ -386,47 +346,30 @@ async function buildCorrespondentCatalogAuditMaps(prisma2) {
     include: {
       user: {
         select: {
-          username: true,
-          name: true
+          username: !0,
+          name: !0
         }
       }
     },
     orderBy: { createdAt: "asc" }
-  });
-  const platformCreatedBy = /* @__PURE__ */ new Map();
-  const platformUpdatedBy = /* @__PURE__ */ new Map();
-  const typeCreatedBy = /* @__PURE__ */ new Map();
-  const typeUpdatedBy = /* @__PURE__ */ new Map();
-  for (const log of logs) {
-    const actor = {
-      user: log.user ? log.user.name ?? log.user.username : null,
-      at: log.createdAt.toISOString()
-    };
-    const platformId = parseContextId(log.context, "platform");
-    const typeId = parseContextId(log.context, "type");
-    if (log.action === "create_platform" && platformId && !platformCreatedBy.has(platformId)) {
-      platformCreatedBy.set(platformId, actor);
-    }
-    if (log.action === "update_platform" && platformId) {
-      platformUpdatedBy.set(platformId, actor);
-    }
-    if (log.action === "create_transaction_type" && typeId && !typeCreatedBy.has(typeId)) {
-      typeCreatedBy.set(typeId, actor);
-    }
-    if (log.action === "update_transaction_type" && typeId) {
-      typeUpdatedBy.set(typeId, actor);
-    }
+  }), r = /* @__PURE__ */ new Map(), l = /* @__PURE__ */ new Map(), m = /* @__PURE__ */ new Map(), c = /* @__PURE__ */ new Map();
+  for (const n of a) {
+    const s = {
+      user: n.user ? n.user.name ?? n.user.username : null,
+      at: n.createdAt.toISOString()
+    }, t = et(n.context, "platform"), i = et(n.context, "type");
+    n.action === "create_platform" && t && !r.has(t) && r.set(t, s), n.action === "update_platform" && t && l.set(t, s), n.action === "create_transaction_type" && i && !m.has(i) && m.set(i, s), n.action === "update_transaction_type" && i && c.set(i, s);
   }
   return {
-    platformCreatedBy,
-    platformUpdatedBy,
-    typeCreatedBy,
-    typeUpdatedBy
+    platformCreatedBy: r,
+    platformUpdatedBy: l,
+    typeCreatedBy: m,
+    typeUpdatedBy: c
   };
 }
-async function ensureCorrespondentSchemaIfNeeded(prismaClient) {
-  const statements = [
-    `PRAGMA foreign_keys = ON;`,
+async function ba(e) {
+  const a = [
+    "PRAGMA foreign_keys = ON;",
     `CREATE TABLE IF NOT EXISTS "CorrespondentPlatform" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "code" TEXT NOT NULL,
@@ -438,8 +381,8 @@ async function ensureCorrespondentSchemaIfNeeded(prismaClient) {
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentPlatform_code_key" ON "CorrespondentPlatform"("code");`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentPlatform_name_key" ON "CorrespondentPlatform"("name");`,
+    'CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentPlatform_code_key" ON "CorrespondentPlatform"("code");',
+    'CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentPlatform_name_key" ON "CorrespondentPlatform"("name");',
     `CREATE TABLE IF NOT EXISTS "CorrespondentTransactionType" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "platformId" TEXT NOT NULL,
@@ -455,9 +398,9 @@ async function ensureCorrespondentSchemaIfNeeded(prismaClient) {
       "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "CorrespondentTransactionType_platformId_fkey" FOREIGN KEY ("platformId") REFERENCES "CorrespondentPlatform" ("id") ON DELETE CASCADE ON UPDATE CASCADE
     );`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentTransactionType_platformId_code_key" ON "CorrespondentTransactionType"("platformId", "code");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentTransactionType_platformId_idx" ON "CorrespondentTransactionType"("platformId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentTransactionType_isActive_idx" ON "CorrespondentTransactionType"("isActive");`,
+    'CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentTransactionType_platformId_code_key" ON "CorrespondentTransactionType"("platformId", "code");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentTransactionType_platformId_idx" ON "CorrespondentTransactionType"("platformId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentTransactionType_isActive_idx" ON "CorrespondentTransactionType"("isActive");',
     `CREATE TABLE IF NOT EXISTS "CorrespondentCommissionRule" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "platformId" TEXT NOT NULL,
@@ -474,9 +417,9 @@ async function ensureCorrespondentSchemaIfNeeded(prismaClient) {
       CONSTRAINT "CorrespondentCommissionRule_platformId_fkey" FOREIGN KEY ("platformId") REFERENCES "CorrespondentPlatform" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
       CONSTRAINT "CorrespondentCommissionRule_typeId_fkey" FOREIGN KEY ("typeId") REFERENCES "CorrespondentTransactionType" ("id") ON DELETE SET NULL ON UPDATE CASCADE
     );`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentCommissionRule_platformId_idx" ON "CorrespondentCommissionRule"("platformId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentCommissionRule_typeId_idx" ON "CorrespondentCommissionRule"("typeId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentCommissionRule_isActive_idx" ON "CorrespondentCommissionRule"("isActive");`,
+    'CREATE INDEX IF NOT EXISTS "CorrespondentCommissionRule_platformId_idx" ON "CorrespondentCommissionRule"("platformId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentCommissionRule_typeId_idx" ON "CorrespondentCommissionRule"("typeId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentCommissionRule_isActive_idx" ON "CorrespondentCommissionRule"("isActive");',
     `CREATE TABLE IF NOT EXISTS "CorrespondentDailyClosure" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "platformId" TEXT NOT NULL,
@@ -499,11 +442,11 @@ async function ensureCorrespondentSchemaIfNeeded(prismaClient) {
       CONSTRAINT "CorrespondentDailyClosure_cashSessionId_fkey" FOREIGN KEY ("cashSessionId") REFERENCES "CashSession" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
       CONSTRAINT "CorrespondentDailyClosure_closedByUserId_fkey" FOREIGN KEY ("closedByUserId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
     );`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentDailyClosure_platformId_businessDate_key" ON "CorrespondentDailyClosure"("platformId", "businessDate");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_platformId_idx" ON "CorrespondentDailyClosure"("platformId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_cashSessionId_idx" ON "CorrespondentDailyClosure"("cashSessionId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_businessDate_idx" ON "CorrespondentDailyClosure"("businessDate");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_closedByUserId_idx" ON "CorrespondentDailyClosure"("closedByUserId");`,
+    'CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentDailyClosure_platformId_businessDate_key" ON "CorrespondentDailyClosure"("platformId", "businessDate");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_platformId_idx" ON "CorrespondentDailyClosure"("platformId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_cashSessionId_idx" ON "CorrespondentDailyClosure"("cashSessionId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_businessDate_idx" ON "CorrespondentDailyClosure"("businessDate");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentDailyClosure_closedByUserId_idx" ON "CorrespondentDailyClosure"("closedByUserId");',
     `CREATE TABLE IF NOT EXISTS "CorrespondentTransaction" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "approvalCode" TEXT,
@@ -539,16 +482,16 @@ async function ensureCorrespondentSchemaIfNeeded(prismaClient) {
       CONSTRAINT "CorrespondentTransaction_reviewedByUserId_fkey" FOREIGN KEY ("reviewedByUserId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
       CONSTRAINT "CorrespondentTransaction_dailyClosureId_fkey" FOREIGN KEY ("dailyClosureId") REFERENCES "CorrespondentDailyClosure" ("id") ON DELETE SET NULL ON UPDATE CASCADE
     );`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_platformId_idx" ON "CorrespondentTransaction"("platformId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_typeId_idx" ON "CorrespondentTransaction"("typeId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_cashSessionId_idx" ON "CorrespondentTransaction"("cashSessionId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_cashRegisterId_idx" ON "CorrespondentTransaction"("cashRegisterId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_registeredByUserId_idx" ON "CorrespondentTransaction"("registeredByUserId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_reviewedByUserId_idx" ON "CorrespondentTransaction"("reviewedByUserId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_dailyClosureId_idx" ON "CorrespondentTransaction"("dailyClosureId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_performedAt_idx" ON "CorrespondentTransaction"("performedAt");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_status_idx" ON "CorrespondentTransaction"("status");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_reconciliationStatus_idx" ON "CorrespondentTransaction"("reconciliationStatus");`,
+    'CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_platformId_idx" ON "CorrespondentTransaction"("platformId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_typeId_idx" ON "CorrespondentTransaction"("typeId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_cashSessionId_idx" ON "CorrespondentTransaction"("cashSessionId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_cashRegisterId_idx" ON "CorrespondentTransaction"("cashRegisterId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_registeredByUserId_idx" ON "CorrespondentTransaction"("registeredByUserId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_reviewedByUserId_idx" ON "CorrespondentTransaction"("reviewedByUserId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_dailyClosureId_idx" ON "CorrespondentTransaction"("dailyClosureId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_performedAt_idx" ON "CorrespondentTransaction"("performedAt");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_status_idx" ON "CorrespondentTransaction"("status");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentTransaction_reconciliationStatus_idx" ON "CorrespondentTransaction"("reconciliationStatus");',
     `CREATE TABLE IF NOT EXISTS "CorrespondentEvidence" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "transactionId" TEXT NOT NULL,
@@ -563,8 +506,8 @@ async function ensureCorrespondentSchemaIfNeeded(prismaClient) {
       CONSTRAINT "CorrespondentEvidence_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "CorrespondentTransaction" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
       CONSTRAINT "CorrespondentEvidence_capturedByUserId_fkey" FOREIGN KEY ("capturedByUserId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
     );`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentEvidence_transactionId_idx" ON "CorrespondentEvidence"("transactionId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentEvidence_capturedByUserId_idx" ON "CorrespondentEvidence"("capturedByUserId");`,
+    'CREATE INDEX IF NOT EXISTS "CorrespondentEvidence_transactionId_idx" ON "CorrespondentEvidence"("transactionId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentEvidence_capturedByUserId_idx" ON "CorrespondentEvidence"("capturedByUserId");',
     `CREATE TABLE IF NOT EXISTS "CorrespondentAuditLog" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "transactionId" TEXT,
@@ -577,172 +520,129 @@ async function ensureCorrespondentSchemaIfNeeded(prismaClient) {
       CONSTRAINT "CorrespondentAuditLog_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "CorrespondentTransaction" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
       CONSTRAINT "CorrespondentAuditLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
     );`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentAuditLog_transactionId_idx" ON "CorrespondentAuditLog"("transactionId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentAuditLog_userId_idx" ON "CorrespondentAuditLog"("userId");`,
-    `CREATE INDEX IF NOT EXISTS "CorrespondentAuditLog_createdAt_idx" ON "CorrespondentAuditLog"("createdAt");`
+    'CREATE INDEX IF NOT EXISTS "CorrespondentAuditLog_transactionId_idx" ON "CorrespondentAuditLog"("transactionId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentAuditLog_userId_idx" ON "CorrespondentAuditLog"("userId");',
+    'CREATE INDEX IF NOT EXISTS "CorrespondentAuditLog_createdAt_idx" ON "CorrespondentAuditLog"("createdAt");'
   ];
-  for (const statement of statements) {
-    await prismaClient.$executeRawUnsafe(statement);
-  }
-  const transactionColumns = await prismaClient.$queryRawUnsafe(
-    `PRAGMA table_info("CorrespondentTransaction");`
+  for (const s of a)
+    await e.$executeRawUnsafe(s);
+  const r = await e.$queryRawUnsafe(
+    'PRAGMA table_info("CorrespondentTransaction");'
   );
-  const transactionColumnSet = new Set(transactionColumns.map((column) => column.name));
-  if (!transactionColumnSet.has("approvalCode")) {
-    await prismaClient.$executeRawUnsafe(`ALTER TABLE "CorrespondentTransaction" ADD COLUMN "approvalCode" TEXT;`);
-  }
-  const transactions = await prismaClient.correspondentTransaction.findMany({
+  new Set(r.map((s) => s.name)).has("approvalCode") || await e.$executeRawUnsafe('ALTER TABLE "CorrespondentTransaction" ADD COLUMN "approvalCode" TEXT;');
+  const m = await e.correspondentTransaction.findMany({
     select: {
-      id: true,
-      approvalCode: true
+      id: !0,
+      approvalCode: !0
     },
     orderBy: [{ createdAt: "asc" }, { performedAt: "asc" }]
-  });
-  const assignedApprovalCodes = [];
-  const assignedSet = /* @__PURE__ */ new Set();
-  for (const transaction of transactions) {
-    const normalizedCurrentCode = normalizeCodeInput(transaction.approvalCode || "");
-    const canKeepCurrentCode = Boolean(normalizedCurrentCode) && isValidCode(normalizedCurrentCode, 4, 40) && !assignedSet.has(normalizedCurrentCode);
-    const approvalCode = canKeepCurrentCode ? normalizedCurrentCode : resolveLooseCode({
-      existingCodes: assignedApprovalCodes,
+  }), c = [], n = /* @__PURE__ */ new Set();
+  for (const s of m) {
+    const t = re(s.approvalCode || ""), u = !!t && He(t, 4, 40) && !n.has(t) ? t : Fe({
+      existingCodes: c,
       generatedPrefix: "APR",
       digits: 6,
       maxLength: 40
     });
-    if (approvalCode !== transaction.approvalCode) {
-      await prismaClient.correspondentTransaction.update({
-        where: { id: transaction.id },
-        data: { approvalCode }
-      });
-    }
-    assignedApprovalCodes.push(approvalCode);
-    assignedSet.add(approvalCode);
+    u !== s.approvalCode && await e.correspondentTransaction.update({
+      where: { id: s.id },
+      data: { approvalCode: u }
+    }), c.push(u), n.add(u);
   }
-  await prismaClient.$executeRawUnsafe(
-    `CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentTransaction_approvalCode_key" ON "CorrespondentTransaction"("approvalCode");`
+  await e.$executeRawUnsafe(
+    'CREATE UNIQUE INDEX IF NOT EXISTS "CorrespondentTransaction_approvalCode_key" ON "CorrespondentTransaction"("approvalCode");'
   );
 }
-async function seedCorrespondentCatalogIfNeeded(prismaClient) {
-  for (const platformSeed of correspondentSeedCatalog) {
-    const platform = await prismaClient.correspondentPlatform.upsert({
-      where: { code: platformSeed.code },
+async function Sa(e) {
+  for (const a of ya) {
+    const r = await e.correspondentPlatform.upsert({
+      where: { code: a.code },
       update: {
-        name: platformSeed.name,
-        isActive: true,
-        requiresEvidence: platformSeed.requiresEvidence ?? false,
-        supportsOcr: platformSeed.supportsOcr ?? false,
-        supportsFileImport: platformSeed.supportsFileImport ?? false
+        name: a.name,
+        isActive: !0,
+        requiresEvidence: a.requiresEvidence ?? !1,
+        supportsOcr: a.supportsOcr ?? !1,
+        supportsFileImport: a.supportsFileImport ?? !1
       },
       create: {
-        code: platformSeed.code,
-        name: platformSeed.name,
-        isActive: true,
-        requiresEvidence: platformSeed.requiresEvidence ?? false,
-        supportsOcr: platformSeed.supportsOcr ?? false,
-        supportsFileImport: platformSeed.supportsFileImport ?? false
+        code: a.code,
+        name: a.name,
+        isActive: !0,
+        requiresEvidence: a.requiresEvidence ?? !1,
+        supportsOcr: a.supportsOcr ?? !1,
+        supportsFileImport: a.supportsFileImport ?? !1
       }
     });
-    for (const typeSeed of platformSeed.types) {
-      await prismaClient.correspondentTransactionType.upsert({
+    for (const m of a.types)
+      await e.correspondentTransactionType.upsert({
         where: {
           platformId_code: {
-            platformId: platform.id,
-            code: typeSeed.code
+            platformId: r.id,
+            code: m.code
           }
         },
         update: {
-          name: typeSeed.name,
-          direction: typeSeed.direction,
-          isActive: true,
-          requiresCustomerDocument: typeSeed.requiresCustomerDocument ?? false,
-          requiresExternalReference: typeSeed.requiresExternalReference ?? false,
-          allowsCommissionOverride: true,
-          sortOrder: typeSeed.sortOrder ?? 0
+          name: m.name,
+          direction: m.direction,
+          isActive: !0,
+          requiresCustomerDocument: m.requiresCustomerDocument ?? !1,
+          requiresExternalReference: m.requiresExternalReference ?? !1,
+          allowsCommissionOverride: !0,
+          sortOrder: m.sortOrder ?? 0
         },
         create: {
-          platformId: platform.id,
-          code: typeSeed.code,
-          name: typeSeed.name,
-          direction: typeSeed.direction,
-          isActive: true,
-          requiresCustomerDocument: typeSeed.requiresCustomerDocument ?? false,
-          requiresExternalReference: typeSeed.requiresExternalReference ?? false,
-          allowsCommissionOverride: true,
-          sortOrder: typeSeed.sortOrder ?? 0
+          platformId: r.id,
+          code: m.code,
+          name: m.name,
+          direction: m.direction,
+          isActive: !0,
+          requiresCustomerDocument: m.requiresCustomerDocument ?? !1,
+          requiresExternalReference: m.requiresExternalReference ?? !1,
+          allowsCommissionOverride: !0,
+          sortOrder: m.sortOrder ?? 0
         }
       });
-    }
-    const rulesCount = await prismaClient.correspondentCommissionRule.count({
-      where: { platformId: platform.id }
+    await e.correspondentCommissionRule.count({
+      where: { platformId: r.id }
+    }) === 0 && await e.correspondentCommissionRule.create({
+      data: {
+        platformId: r.id,
+        mode: Oe.NONE,
+        value: 0,
+        isActive: !0
+      }
     });
-    if (rulesCount === 0) {
-      await prismaClient.correspondentCommissionRule.create({
-        data: {
-          platformId: platform.id,
-          mode: CommissionMode.NONE,
-          value: 0,
-          isActive: true
-        }
-      });
-    }
   }
 }
-async function getActiveCashSessionForUser(prisma2, userId) {
-  return prisma2.cashSession.findFirst({
-    where: { userId, status: "OPEN" },
-    include: { register: true },
+async function tt(e, a) {
+  return e.cashSession.findFirst({
+    where: { userId: a, status: "OPEN" },
+    include: { register: !0 },
     orderBy: { openedAt: "desc" }
   });
 }
-async function resolveCommissionAmount(prisma2, platformId, typeId, amount, performedAt) {
-  const rules = await prisma2.correspondentCommissionRule.findMany({
+async function at(e, a, r, l, m) {
+  const n = (await e.correspondentCommissionRule.findMany({
     where: {
-      platformId,
-      isActive: true,
-      OR: [{ typeId }, { typeId: null }],
+      platformId: a,
+      isActive: !0,
+      OR: [{ typeId: r }, { typeId: null }],
       AND: [
-        { OR: [{ validFrom: null }, { validFrom: { lte: performedAt } }] },
-        { OR: [{ validTo: null }, { validTo: { gte: performedAt } }] },
-        { OR: [{ minAmount: null }, { minAmount: { lte: amount } }] },
-        { OR: [{ maxAmount: null }, { maxAmount: { gte: amount } }] }
+        { OR: [{ validFrom: null }, { validFrom: { lte: m } }] },
+        { OR: [{ validTo: null }, { validTo: { gte: m } }] },
+        { OR: [{ minAmount: null }, { minAmount: { lte: l } }] },
+        { OR: [{ maxAmount: null }, { maxAmount: { gte: l } }] }
       ]
     }
-  });
-  const bestRule = rules.sort((a, b) => {
-    var _a, _b;
-    if (a.typeId === typeId && b.typeId !== typeId)
-      return -1;
-    if (a.typeId !== typeId && b.typeId === typeId)
-      return 1;
-    return (((_a = b.validFrom) == null ? void 0 : _a.getTime()) ?? 0) - (((_b = a.validFrom) == null ? void 0 : _b.getTime()) ?? 0);
+  })).sort((s, t) => {
+    var i, u;
+    return s.typeId === r && t.typeId !== r ? -1 : s.typeId !== r && t.typeId === r ? 1 : (((i = t.validFrom) == null ? void 0 : i.getTime()) ?? 0) - (((u = s.validFrom) == null ? void 0 : u.getTime()) ?? 0);
   })[0] ?? null;
-  if (!bestRule)
-    return 0;
-  if (bestRule.mode === CommissionMode.FIXED)
-    return money$2(bestRule.value);
-  if (bestRule.mode === CommissionMode.PERCENTAGE)
-    return money$2(amount * bestRule.value / 100);
-  return 0;
+  return n ? n.mode === Oe.FIXED ? Ze(n.value) : n.mode === Oe.PERCENTAGE ? Ze(l * n.value / 100) : 0 : 0;
 }
-function summarizeCorrespondentTransactions(transactions) {
-  return transactions.reduce(
-    (acc, transaction) => {
-      if (transaction.status === CorrespondentTransactionStatus.VOIDED) {
-        acc.voidedCount += 1;
-        return acc;
-      }
-      acc.transactionsCount += 1;
-      acc.totalCommission += transaction.commissionAmount;
-      acc.withEvidenceCount += transaction.evidences.length > 0 ? 1 : 0;
-      acc.pendingClosureCount += transaction.dailyClosureId ? 0 : 1;
-      if (transaction.type.direction === CorrespondentDirection.IN)
-        acc.totalIn += transaction.amount;
-      if (transaction.type.direction === CorrespondentDirection.OUT)
-        acc.totalOut += transaction.amount;
-      if (transaction.type.direction === CorrespondentDirection.NEUTRAL)
-        acc.neutralCount += 1;
-      return acc;
-    },
+function ve(e) {
+  return e.reduce(
+    (a, r) => r.status === ne.VOIDED ? (a.voidedCount += 1, a) : (a.transactionsCount += 1, a.totalCommission += r.commissionAmount, a.withEvidenceCount += r.evidences.length > 0 ? 1 : 0, a.pendingClosureCount += r.dailyClosureId ? 0 : 1, r.type.direction === _.IN && (a.totalIn += r.amount), r.type.direction === _.OUT && (a.totalOut += r.amount), r.type.direction === _.NEUTRAL && (a.neutralCount += 1), a),
     {
       totalIn: 0,
       totalOut: 0,
@@ -755,1104 +655,981 @@ function summarizeCorrespondentTransactions(transactions) {
     }
   );
 }
-async function saveCorrespondentEvidence(params) {
-  const normalizedDate = /* @__PURE__ */ new Date();
-  const folder = path.join(
-    params.app.getPath("userData"),
+async function wa(e) {
+  const a = /* @__PURE__ */ new Date(), r = H.join(
+    e.app.getPath("userData"),
     "correspondent-evidence",
-    String(normalizedDate.getFullYear()),
-    String(normalizedDate.getMonth() + 1).padStart(2, "0"),
-    String(normalizedDate.getDate()).padStart(2, "0"),
-    params.platformCode.toLowerCase()
+    String(a.getFullYear()),
+    String(a.getMonth() + 1).padStart(2, "0"),
+    String(a.getDate()).padStart(2, "0"),
+    e.platformCode.toLowerCase()
   );
-  await mkdir(folder, { recursive: true });
-  const safeName = sanitizeFileName(params.evidence.fileName);
-  const targetPath = path.join(folder, `${Date.now()}-${safeName}`);
-  const base64Data = params.evidence.dataBase64.includes(",") ? params.evidence.dataBase64.split(",").pop() ?? "" : params.evidence.dataBase64;
-  const fileBuffer = Buffer.from(base64Data, "base64");
-  await writeFile(targetPath, fileBuffer);
-  return {
-    fileName: params.evidence.fileName,
-    filePath: targetPath,
-    mimeType: params.evidence.mimeType ?? null,
-    fileSize: fileBuffer.byteLength,
-    fileHash: createHash("sha256").update(fileBuffer).digest("hex"),
-    ocrRawText: params.evidence.ocrRawText ?? null
+  await Xt(r, { recursive: !0 });
+  const l = Na(e.evidence.fileName), m = H.join(r, `${Date.now()}-${l}`), c = e.evidence.dataBase64.includes(",") ? e.evidence.dataBase64.split(",").pop() ?? "" : e.evidence.dataBase64, n = Buffer.from(c, "base64");
+  return await Vt(m, n), {
+    fileName: e.evidence.fileName,
+    filePath: m,
+    mimeType: e.evidence.mimeType ?? null,
+    fileSize: n.byteLength,
+    fileHash: qt("sha256").update(n).digest("hex"),
+    ocrRawText: e.evidence.ocrRawText ?? null
   };
 }
-async function logCorrespondentAction(params) {
-  var _a, _b;
-  await params.prisma.correspondentAuditLog.create({
+async function Q(e) {
+  var a, r;
+  await e.prisma.correspondentAuditLog.create({
     data: {
-      transactionId: params.transactionId ?? null,
-      userId: ((_a = params.currentSessionUser) == null ? void 0 : _a.id) ?? null,
-      action: params.action,
-      context: params.context ?? null,
-      beforeJson: params.beforeJson === void 0 ? null : serializeJson(params.beforeJson),
-      afterJson: params.afterJson === void 0 ? null : serializeJson(params.afterJson)
+      transactionId: e.transactionId ?? null,
+      userId: ((a = e.currentSessionUser) == null ? void 0 : a.id) ?? null,
+      action: e.action,
+      context: e.context ?? null,
+      beforeJson: e.beforeJson === void 0 ? null : he(e.beforeJson),
+      afterJson: e.afterJson === void 0 ? null : he(e.afterJson)
     }
-  });
-  await params.prisma.auditLog.create({
+  }), await e.prisma.auditLog.create({
     data: {
-      userId: ((_b = params.currentSessionUser) == null ? void 0 : _b.id) ?? null,
+      userId: ((r = e.currentSessionUser) == null ? void 0 : r.id) ?? null,
       module: "correspondent",
-      action: params.action,
-      entity: params.transactionId ? "CorrespondentTransaction" : "CorrespondentDailyClosure",
-      entityId: params.transactionId ?? null,
-      beforeJson: params.beforeJson === void 0 ? null : serializeJson(params.beforeJson),
-      afterJson: params.afterJson === void 0 ? null : serializeJson(params.afterJson)
+      action: e.action,
+      entity: e.transactionId ? "CorrespondentTransaction" : "CorrespondentDailyClosure",
+      entityId: e.transactionId ?? null,
+      beforeJson: e.beforeJson === void 0 ? null : he(e.beforeJson),
+      afterJson: e.afterJson === void 0 ? null : he(e.afterJson)
     }
   });
 }
-async function getCorrespondentTransactionsForDay(prisma2, businessDate, platformId) {
-  return prisma2.correspondentTransaction.findMany({
+async function Ue(e, a, r) {
+  return e.correspondentTransaction.findMany({
     where: {
-      platformId,
+      platformId: r,
       performedAt: {
-        gte: startOfDay(businessDate),
-        lt: endOfDay(businessDate)
+        gte: ee(a),
+        lt: Re(a)
       }
     },
     include: {
-      platform: true,
-      type: true,
-      evidences: { select: { id: true } },
-      registeredBy: { select: { id: true, username: true, name: true } },
-      dailyClosure: { select: { id: true, businessDate: true, status: true } }
+      platform: !0,
+      type: !0,
+      evidences: { select: { id: !0 } },
+      registeredBy: { select: { id: !0, username: !0, name: !0 } },
+      dailyClosure: { select: { id: !0, businessDate: !0, status: !0 } }
     },
     orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }]
   });
 }
-async function getCorrespondentTransactionDetail(prisma2, transactionId) {
-  return prisma2.correspondentTransaction.findUnique({
-    where: { id: transactionId },
+async function Oa(e, a, r, l) {
+  return e.correspondentTransaction.findMany({
+    where: {
+      platformId: l,
+      performedAt: {
+        gte: ee(a),
+        lt: Re(r)
+      }
+    },
     include: {
-      platform: true,
-      type: true,
-      registeredBy: { select: { id: true, username: true, name: true } },
+      platform: !0,
+      type: !0,
+      evidences: { select: { id: !0 } },
+      registeredBy: { select: { id: !0, username: !0, name: !0 } },
+      dailyClosure: { select: { id: !0, businessDate: !0, status: !0 } }
+    },
+    orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }]
+  });
+}
+async function Ra(e, a) {
+  return e.correspondentTransaction.findUnique({
+    where: { id: a },
+    include: {
+      platform: !0,
+      type: !0,
+      registeredBy: { select: { id: !0, username: !0, name: !0 } },
       auditLogs: {
         include: {
           user: {
-            select: { id: true, username: true, name: true }
+            select: { id: !0, username: !0, name: !0 }
           }
         },
         orderBy: { createdAt: "desc" }
       },
       dailyClosure: {
         select: {
-          id: true,
-          businessDate: true
+          id: !0,
+          businessDate: !0
         }
       }
     }
   });
 }
-function registerCorrespondentIpcHandlers({
-  app: app2,
-  ipcMain: ipcMain2,
-  prisma: prisma2,
-  getCurrentSessionUser
+function Da({
+  app: e,
+  ipcMain: a,
+  prisma: r,
+  getCurrentSessionUser: l
 }) {
-  ipcMain2.handle("correspondent:catalog", async () => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2) {
-      return { success: false, message: "Debes iniciar sesion", platforms: [] };
-    }
-    const [platforms, auditMaps] = await Promise.all([
-      prisma2.correspondentPlatform.findMany({
-        where: { isActive: true },
+  a.handle("correspondent:catalog", async () => {
+    if (!l())
+      return { success: !1, message: "Debes iniciar sesion", platforms: [] };
+    const [c, n] = await Promise.all([
+      r.correspondentPlatform.findMany({
+        where: { isActive: !0 },
         include: {
           transactionTypes: {
-            where: { isActive: true },
+            where: { isActive: !0 },
             orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
           },
           commissionRules: {
-            where: { isActive: true },
+            where: { isActive: !0 },
             orderBy: [{ validFrom: "desc" }]
           }
         },
         orderBy: [{ createdAt: "asc" }, { name: "asc" }]
       }),
-      buildCorrespondentCatalogAuditMaps(prisma2)
+      va(r)
     ]);
     return {
-      success: true,
-      platforms: platforms.map((platform) => {
-        var _a, _b, _c;
+      success: !0,
+      platforms: c.map((s) => {
+        var t, i, u;
         return {
-          id: platform.id,
-          code: platform.code,
-          name: platform.name,
-          requiresEvidence: platform.requiresEvidence,
-          supportsOcr: platform.supportsOcr,
-          supportsFileImport: platform.supportsFileImport,
-          createdAt: platform.createdAt.toISOString(),
-          updatedAt: platform.updatedAt.toISOString(),
-          createdBy: ((_a = auditMaps.platformCreatedBy.get(platform.id)) == null ? void 0 : _a.user) ?? null,
-          updatedBy: ((_b = auditMaps.platformUpdatedBy.get(platform.id)) == null ? void 0 : _b.user) ?? ((_c = auditMaps.platformCreatedBy.get(platform.id)) == null ? void 0 : _c.user) ?? null,
-          types: platform.transactionTypes.map((type) => {
-            var _a2, _b2, _c2;
+          id: s.id,
+          code: s.code,
+          name: s.name,
+          requiresEvidence: s.requiresEvidence,
+          supportsOcr: s.supportsOcr,
+          supportsFileImport: s.supportsFileImport,
+          createdAt: s.createdAt.toISOString(),
+          updatedAt: s.updatedAt.toISOString(),
+          createdBy: ((t = n.platformCreatedBy.get(s.id)) == null ? void 0 : t.user) ?? null,
+          updatedBy: ((i = n.platformUpdatedBy.get(s.id)) == null ? void 0 : i.user) ?? ((u = n.platformCreatedBy.get(s.id)) == null ? void 0 : u.user) ?? null,
+          types: s.transactionTypes.map((f) => {
+            var g, T, I;
             return {
-              id: type.id,
-              code: type.code,
-              name: type.name,
-              direction: type.direction,
-              requiresCustomerDocument: type.requiresCustomerDocument,
-              requiresExternalReference: type.requiresExternalReference,
-              createdAt: type.createdAt.toISOString(),
-              updatedAt: type.updatedAt.toISOString(),
-              createdBy: ((_a2 = auditMaps.typeCreatedBy.get(type.id)) == null ? void 0 : _a2.user) ?? null,
-              updatedBy: ((_b2 = auditMaps.typeUpdatedBy.get(type.id)) == null ? void 0 : _b2.user) ?? ((_c2 = auditMaps.typeCreatedBy.get(type.id)) == null ? void 0 : _c2.user) ?? null
+              id: f.id,
+              code: f.code,
+              name: f.name,
+              direction: f.direction,
+              requiresCustomerDocument: f.requiresCustomerDocument,
+              requiresExternalReference: f.requiresExternalReference,
+              createdAt: f.createdAt.toISOString(),
+              updatedAt: f.updatedAt.toISOString(),
+              createdBy: ((g = n.typeCreatedBy.get(f.id)) == null ? void 0 : g.user) ?? null,
+              updatedBy: ((T = n.typeUpdatedBy.get(f.id)) == null ? void 0 : T.user) ?? ((I = n.typeCreatedBy.get(f.id)) == null ? void 0 : I.user) ?? null
             };
           }),
-          commissionRules: platform.commissionRules.map((rule) => ({
-            id: rule.id,
-            typeId: rule.typeId,
-            mode: rule.mode,
-            value: rule.value,
-            minAmount: rule.minAmount,
-            maxAmount: rule.maxAmount
+          commissionRules: s.commissionRules.map((f) => ({
+            id: f.id,
+            typeId: f.typeId,
+            mode: f.mode,
+            value: f.value,
+            minAmount: f.minAmount,
+            maxAmount: f.maxAmount
           }))
         };
       })
     };
-  });
-  ipcMain2.handle("correspondent:dashboard", async () => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2) {
-      return { success: false, message: "Debes iniciar sesion" };
-    }
-    const businessDate = startOfDay(/* @__PURE__ */ new Date());
-    const transactions = await getCorrespondentTransactionsForDay(prisma2, businessDate);
-    const summary = summarizeCorrespondentTransactions(transactions);
-    const perPlatformMap = transactions.reduce((acc, transaction) => {
-      const current = acc[transaction.platformId] ?? {
-        platformId: transaction.platformId,
-        platform: transaction.platform.name,
+  }), a.handle("correspondent:dashboard", async () => {
+    if (!l())
+      return { success: !1, message: "Debes iniciar sesion" };
+    const c = ee(/* @__PURE__ */ new Date()), n = await Ue(r, c), s = ve(n), t = n.reduce((i, u) => {
+      const f = i[u.platformId] ?? {
+        platformId: u.platformId,
+        platform: u.platform.name,
         totalIn: 0,
         totalOut: 0,
         totalCommission: 0,
         count: 0,
         pendingClosureCount: 0
       };
-      if (transaction.status !== CorrespondentTransactionStatus.VOIDED) {
-        current.count += 1;
-        current.totalCommission += transaction.commissionAmount;
-        current.pendingClosureCount += transaction.dailyClosureId ? 0 : 1;
-        if (transaction.type.direction === CorrespondentDirection.IN)
-          current.totalIn += transaction.amount;
-        if (transaction.type.direction === CorrespondentDirection.OUT)
-          current.totalOut += transaction.amount;
-      }
-      acc[transaction.platformId] = current;
-      return acc;
+      return u.status !== ne.VOIDED && (f.count += 1, f.totalCommission += u.commissionAmount, f.pendingClosureCount += u.dailyClosureId ? 0 : 1, u.type.direction === _.IN && (f.totalIn += u.amount), u.type.direction === _.OUT && (f.totalOut += u.amount)), i[u.platformId] = f, i;
     }, {});
     return {
-      success: true,
+      success: !0,
       totals: {
-        totalIn: summary.totalIn,
-        totalOut: summary.totalOut,
-        totalCommission: summary.totalCommission,
-        expectedBalance: summary.totalIn - summary.totalOut + summary.totalCommission,
-        transactionsCount: summary.transactionsCount,
-        withEvidenceCount: summary.withEvidenceCount,
-        pendingClosureCount: summary.pendingClosureCount,
-        voidedCount: summary.voidedCount
+        totalIn: s.totalIn,
+        totalOut: s.totalOut,
+        totalCommission: s.totalCommission,
+        expectedBalance: s.totalIn - s.totalOut + s.totalCommission,
+        transactionsCount: s.transactionsCount,
+        withEvidenceCount: s.withEvidenceCount,
+        pendingClosureCount: s.pendingClosureCount,
+        voidedCount: s.voidedCount
       },
-      perPlatform: Object.values(perPlatformMap).sort((a, b) => a.platform.localeCompare(b.platform, "es")),
-      recentTransactions: transactions.slice(0, 10).map((transaction) => ({
-        id: transaction.id,
-        approvalCode: transaction.approvalCode,
-        platform: transaction.platform.name,
-        type: transaction.type.name,
-        amount: transaction.amount,
-        commissionAmount: transaction.commissionAmount,
-        externalReference: transaction.externalReference,
-        customerName: transaction.customerName,
-        performedAt: transaction.performedAt.toISOString(),
-        status: transaction.status,
-        registeredBy: transaction.registeredBy.name ?? transaction.registeredBy.username,
-        hasEvidence: transaction.evidences.length > 0
+      perPlatform: Object.values(t).sort((i, u) => i.platform.localeCompare(u.platform, "es")),
+      recentTransactions: n.slice(0, 10).map((i) => ({
+        id: i.id,
+        approvalCode: i.approvalCode,
+        platform: i.platform.name,
+        type: i.type.name,
+        amount: i.amount,
+        commissionAmount: i.commissionAmount,
+        externalReference: i.externalReference,
+        customerName: i.customerName,
+        performedAt: i.performedAt.toISOString(),
+        status: i.status,
+        registeredBy: i.registeredBy.name ?? i.registeredBy.username,
+        hasEvidence: i.evidences.length > 0
       }))
     };
-  });
-  ipcMain2.handle("correspondent:transactions:list", async (_event, payload) => {
-    var _a;
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2) {
-      return { success: false, message: "Debes iniciar sesion", transactions: [] };
-    }
-    const parsed = listCorrespondentTransactionsSchema.safeParse(payload);
-    if (!parsed.success) {
-      return { success: false, message: "Filtros invalidos", transactions: [] };
-    }
-    const filters = parsed.data;
-    const search = (_a = filters.search) == null ? void 0 : _a.trim();
-    const transactions = await prisma2.correspondentTransaction.findMany({
-      where: {
-        platformId: filters.platformId,
-        registeredByUserId: filters.userId,
-        status: filters.status,
-        performedAt: filters.dateFrom || filters.dateTo ? {
-          ...filters.dateFrom ? { gte: new Date(filters.dateFrom) } : {},
-          ...filters.dateTo ? { lt: endOfDay(new Date(filters.dateTo)) } : {}
-        } : void 0,
-        OR: search ? [
-          { approvalCode: { contains: search } },
-          { externalReference: { contains: search } },
-          { customerName: { contains: search } },
-          { customerDocument: { contains: search } },
-          { targetAccount: { contains: search } },
-          { targetPhone: { contains: search } },
-          { note: { contains: search } },
-          { platform: { is: { name: { contains: search } } } },
-          { type: { is: { name: { contains: search } } } },
-          {
-            registeredBy: {
-              is: {
-                OR: [
-                  { username: { contains: search } },
-                  { name: { contains: search } }
-                ]
+  }), a.handle("correspondent:transactions:list", async (m, c) => {
+    var f;
+    if (!l())
+      return { success: !1, message: "Debes iniciar sesion", transactions: [] };
+    const s = ca.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Filtros invalidos", transactions: [] };
+    const t = s.data, i = (f = t.search) == null ? void 0 : f.trim();
+    return {
+      success: !0,
+      transactions: (await r.correspondentTransaction.findMany({
+        where: {
+          platformId: t.platformId,
+          registeredByUserId: t.userId,
+          status: t.status,
+          performedAt: t.dateFrom || t.dateTo ? {
+            ...t.dateFrom ? { gte: new Date(t.dateFrom) } : {},
+            ...t.dateTo ? { lt: Re(new Date(t.dateTo)) } : {}
+          } : void 0,
+          OR: i ? [
+            { approvalCode: { contains: i } },
+            { externalReference: { contains: i } },
+            { customerName: { contains: i } },
+            { customerDocument: { contains: i } },
+            { targetAccount: { contains: i } },
+            { targetPhone: { contains: i } },
+            { note: { contains: i } },
+            { platform: { is: { name: { contains: i } } } },
+            { type: { is: { name: { contains: i } } } },
+            {
+              registeredBy: {
+                is: {
+                  OR: [
+                    { username: { contains: i } },
+                    { name: { contains: i } }
+                  ]
+                }
               }
             }
-          }
-        ] : void 0
-      },
-      include: {
-        platform: true,
-        type: true,
-        registeredBy: { select: { id: true, username: true, name: true } },
-        evidences: { select: { id: true, fileName: true } },
-        dailyClosure: { select: { id: true, status: true } }
-      },
-      orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }],
-      take: 150
-    });
-    return {
-      success: true,
-      transactions: transactions.map((transaction) => {
-        var _a2, _b;
+          ] : void 0
+        },
+        include: {
+          platform: !0,
+          type: !0,
+          registeredBy: { select: { id: !0, username: !0, name: !0 } },
+          evidences: { select: { id: !0, fileName: !0 } },
+          dailyClosure: { select: { id: !0, status: !0 } }
+        },
+        orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }],
+        take: 150
+      })).map((g) => {
+        var T, I;
         return {
-          id: transaction.id,
-          approvalCode: transaction.approvalCode,
-          platformId: transaction.platformId,
-          platform: transaction.platform.name,
-          typeId: transaction.typeId,
-          type: transaction.type.name,
-          direction: transaction.type.direction,
-          amount: transaction.amount,
-          commissionAmount: transaction.commissionAmount,
-          netAmount: transaction.netAmount,
-          externalReference: transaction.externalReference,
-          customerName: transaction.customerName,
-          customerDocument: transaction.customerDocument,
-          targetAccount: transaction.targetAccount,
-          targetPhone: transaction.targetPhone,
-          performedAt: transaction.performedAt.toISOString(),
-          status: transaction.status,
-          source: transaction.source,
-          registeredBy: transaction.registeredBy.name ?? transaction.registeredBy.username,
-          note: transaction.note,
-          hasEvidence: transaction.evidences.length > 0,
-          evidenceCount: transaction.evidences.length,
-          closureId: ((_a2 = transaction.dailyClosure) == null ? void 0 : _a2.id) ?? null,
-          closureStatus: ((_b = transaction.dailyClosure) == null ? void 0 : _b.status) ?? null
+          id: g.id,
+          approvalCode: g.approvalCode,
+          platformId: g.platformId,
+          platform: g.platform.name,
+          typeId: g.typeId,
+          type: g.type.name,
+          direction: g.type.direction,
+          amount: g.amount,
+          commissionAmount: g.commissionAmount,
+          netAmount: g.netAmount,
+          externalReference: g.externalReference,
+          customerName: g.customerName,
+          customerDocument: g.customerDocument,
+          targetAccount: g.targetAccount,
+          targetPhone: g.targetPhone,
+          performedAt: g.performedAt.toISOString(),
+          status: g.status,
+          source: g.source,
+          registeredBy: g.registeredBy.name ?? g.registeredBy.username,
+          note: g.note,
+          hasEvidence: g.evidences.length > 0,
+          evidenceCount: g.evidences.length,
+          closureId: ((T = g.dailyClosure) == null ? void 0 : T.id) ?? null,
+          closureStatus: ((I = g.dailyClosure) == null ? void 0 : I.status) ?? null
         };
       })
     };
-  });
-  ipcMain2.handle("correspondent:transaction:detail", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2) {
-      return { success: false, message: "Debes iniciar sesion" };
-    }
-    const parsed = getCorrespondentTransactionDetailSchema.safeParse(payload);
-    if (!parsed.success) {
-      return { success: false, message: "Transaccion invalida" };
-    }
-    const transaction = await getCorrespondentTransactionDetail(prisma2, parsed.data.transactionId);
-    if (!transaction) {
-      return { success: false, message: "La transaccion ya no existe" };
-    }
-    return {
-      success: true,
+  }), a.handle("correspondent:transaction:detail", async (m, c) => {
+    if (!l())
+      return { success: !1, message: "Debes iniciar sesion" };
+    const s = ia.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Transaccion invalida" };
+    const t = await Ra(r, s.data.transactionId);
+    return t ? {
+      success: !0,
       transaction: {
-        id: transaction.id,
-        approvalCode: transaction.approvalCode,
-        platformId: transaction.platformId,
-        platform: transaction.platform.name,
-        typeId: transaction.typeId,
-        type: transaction.type.name,
-        amount: transaction.amount,
-        commissionAmount: transaction.commissionAmount,
-        netAmount: transaction.netAmount,
-        performedAt: transaction.performedAt.toISOString(),
-        createdAt: transaction.createdAt.toISOString(),
-        updatedAt: transaction.updatedAt.toISOString(),
-        registeredBy: transaction.registeredBy.name ?? transaction.registeredBy.username,
-        note: transaction.note,
-        status: transaction.status,
-        auditTrail: transaction.auditLogs.map((entry) => ({
-          id: entry.id,
-          action: entry.action,
-          createdAt: entry.createdAt.toISOString(),
-          user: entry.user ? entry.user.name ?? entry.user.username : null,
-          beforeJson: entry.beforeJson,
-          afterJson: entry.afterJson,
-          context: entry.context
+        id: t.id,
+        approvalCode: t.approvalCode,
+        platformId: t.platformId,
+        platform: t.platform.name,
+        typeId: t.typeId,
+        type: t.type.name,
+        amount: t.amount,
+        commissionAmount: t.commissionAmount,
+        netAmount: t.netAmount,
+        performedAt: t.performedAt.toISOString(),
+        createdAt: t.createdAt.toISOString(),
+        updatedAt: t.updatedAt.toISOString(),
+        registeredBy: t.registeredBy.name ?? t.registeredBy.username,
+        note: t.note,
+        status: t.status,
+        auditTrail: t.auditLogs.map((i) => ({
+          id: i.id,
+          action: i.action,
+          createdAt: i.createdAt.toISOString(),
+          user: i.user ? i.user.name ?? i.user.username : null,
+          beforeJson: i.beforeJson,
+          afterJson: i.afterJson,
+          context: i.context
         }))
       }
-    };
-  });
-  ipcMain2.handle("correspondent:transaction:create", async (_event, payload) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2) {
-      return { success: false, message: "Debes iniciar sesion para registrar movimientos" };
-    }
-    const parsed = createCorrespondentTransactionSchema.safeParse(payload);
-    if (!parsed.success) {
-      return { success: false, message: "Datos invalidos para el corresponsal" };
-    }
-    const data = parsed.data;
-    const performedAt = new Date(data.performedAt);
-    const [platform, type, activeCashSession] = await Promise.all([
-      prisma2.correspondentPlatform.findUnique({ where: { id: data.platformId } }),
-      prisma2.correspondentTransactionType.findUnique({ where: { id: data.typeId } }),
-      getActiveCashSessionForUser(prisma2, currentSessionUser2.id)
+    } : { success: !1, message: "La transaccion ya no existe" };
+  }), a.handle("correspondent:transaction:create", async (m, c) => {
+    var C, h, v, D, P, b, d, A, S, y;
+    const n = l();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion para registrar movimientos" };
+    const s = na.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para el corresponsal" };
+    const t = s.data, i = new Date(t.performedAt), [u, f, g] = await Promise.all([
+      r.correspondentPlatform.findUnique({ where: { id: t.platformId } }),
+      r.correspondentTransactionType.findUnique({ where: { id: t.typeId } }),
+      tt(r, n.id)
     ]);
-    if (!platform || !platform.isActive) {
-      return { success: false, message: "La plataforma seleccionada no esta disponible" };
-    }
-    if (!type || !type.isActive || type.platformId !== platform.id) {
-      return { success: false, message: "El tipo de transaccion no corresponde a la plataforma" };
-    }
-    const duplicate = await prisma2.correspondentTransaction.findFirst({
+    if (!u || !u.isActive)
+      return { success: !1, message: "La plataforma seleccionada no esta disponible" };
+    if (!f || !f.isActive || f.platformId !== u.id)
+      return { success: !1, message: "El tipo de transaccion no corresponde a la plataforma" };
+    if (await r.correspondentTransaction.findFirst({
       where: {
-        platformId: platform.id,
-        typeId: type.id,
-        amount: data.amount,
-        externalReference: ((_a = data.externalReference) == null ? void 0 : _a.trim()) || null,
+        platformId: u.id,
+        typeId: f.id,
+        amount: t.amount,
+        externalReference: ((C = t.externalReference) == null ? void 0 : C.trim()) || null,
         performedAt: {
-          gte: new Date(performedAt.getTime() - 10 * 60 * 1e3),
-          lte: new Date(performedAt.getTime() + 10 * 60 * 1e3)
+          gte: new Date(i.getTime() - 10 * 60 * 1e3),
+          lte: new Date(i.getTime() + 10 * 60 * 1e3)
         },
-        status: CorrespondentTransactionStatus.REGISTERED
+        status: ne.REGISTERED
       }
-    });
-    if (duplicate) {
-      return { success: false, message: "Parece un duplicado reciente. Verifica antes de registrar." };
-    }
-    const computedCommission = data.commissionAmount ?? await resolveCommissionAmount(prisma2, platform.id, type.id, data.amount, performedAt);
-    const netAmount = type.direction === CorrespondentDirection.OUT ? data.amount - computedCommission : data.amount + computedCommission;
-    const evidencePayload = data.evidence ? await saveCorrespondentEvidence({ app: app2, platformCode: platform.code, evidence: data.evidence }) : null;
+    }))
+      return { success: !1, message: "Parece un duplicado reciente. Verifica antes de registrar." };
+    const I = t.commissionAmount ?? await at(r, u.id, f.id, t.amount, i), p = f.direction === _.OUT ? t.amount - I : t.amount + I, N = t.evidence ? await wa({ app: e, platformCode: u.code, evidence: t.evidence }) : null;
     try {
-      const existingApprovalCodes = (await prisma2.correspondentTransaction.findMany({
-        select: { approvalCode: true }
-      })).map((transaction2) => transaction2.approvalCode);
-      const approvalCode = resolveLooseCode({
-        desiredCode: data.approvalCode,
-        existingCodes: existingApprovalCodes,
+      const w = (await r.correspondentTransaction.findMany({
+        select: { approvalCode: !0 }
+      })).map((Y) => Y.approvalCode), $ = Fe({
+        desiredCode: t.approvalCode,
+        existingCodes: w,
         generatedPrefix: "APR",
         digits: 6,
         maxLength: 40
-      });
-      const transaction = await prisma2.correspondentTransaction.create({
+      }), U = await r.correspondentTransaction.create({
         data: {
-          approvalCode,
-          platformId: platform.id,
-          typeId: type.id,
-          cashSessionId: (activeCashSession == null ? void 0 : activeCashSession.id) ?? null,
-          cashRegisterId: (activeCashSession == null ? void 0 : activeCashSession.registerId) ?? null,
-          registeredByUserId: currentSessionUser2.id,
-          status: CorrespondentTransactionStatus.REGISTERED,
-          source: data.source,
-          ocrStatus: ((_b = data.evidence) == null ? void 0 : _b.ocrRawText) ? CorrespondentOcrStatus.PROCESSED : platform.supportsOcr ? CorrespondentOcrStatus.NEEDS_REVIEW : CorrespondentOcrStatus.NOT_REQUESTED,
-          reconciliationStatus: CorrespondentReconciliationStatus.PENDING,
-          externalReference: ((_c = data.externalReference) == null ? void 0 : _c.trim()) || null,
-          customerName: ((_d = data.customerName) == null ? void 0 : _d.trim()) || null,
-          customerDocument: ((_e = data.customerDocument) == null ? void 0 : _e.trim()) || null,
-          targetAccount: ((_f = data.targetAccount) == null ? void 0 : _f.trim()) || null,
-          targetPhone: ((_g = data.targetPhone) == null ? void 0 : _g.trim()) || null,
-          amount: data.amount,
-          commissionAmount: computedCommission,
-          netAmount,
-          performedAt,
-          note: ((_h = data.note) == null ? void 0 : _h.trim()) || null,
-          rawExtractedText: ((_i = data.rawExtractedText) == null ? void 0 : _i.trim()) || ((_j = data.evidence) == null ? void 0 : _j.ocrRawText) || null,
-          evidences: evidencePayload ? {
+          approvalCode: $,
+          platformId: u.id,
+          typeId: f.id,
+          cashSessionId: (g == null ? void 0 : g.id) ?? null,
+          cashRegisterId: (g == null ? void 0 : g.registerId) ?? null,
+          registeredByUserId: n.id,
+          status: ne.REGISTERED,
+          source: t.source,
+          ocrStatus: (h = t.evidence) != null && h.ocrRawText ? Le.PROCESSED : u.supportsOcr ? Le.NEEDS_REVIEW : Le.NOT_REQUESTED,
+          reconciliationStatus: $t.PENDING,
+          externalReference: ((v = t.externalReference) == null ? void 0 : v.trim()) || null,
+          customerName: ((D = t.customerName) == null ? void 0 : D.trim()) || null,
+          customerDocument: ((P = t.customerDocument) == null ? void 0 : P.trim()) || null,
+          targetAccount: ((b = t.targetAccount) == null ? void 0 : b.trim()) || null,
+          targetPhone: ((d = t.targetPhone) == null ? void 0 : d.trim()) || null,
+          amount: t.amount,
+          commissionAmount: I,
+          netAmount: p,
+          performedAt: i,
+          note: ((A = t.note) == null ? void 0 : A.trim()) || null,
+          rawExtractedText: ((S = t.rawExtractedText) == null ? void 0 : S.trim()) || ((y = t.evidence) == null ? void 0 : y.ocrRawText) || null,
+          evidences: N ? {
             create: {
-              ...evidencePayload,
-              capturedByUserId: currentSessionUser2.id
+              ...N,
+              capturedByUserId: n.id
             }
           } : void 0
         },
         include: {
-          platform: true,
-          type: true,
-          evidences: { select: { id: true } }
+          platform: !0,
+          type: !0,
+          evidences: { select: { id: !0 } }
         }
       });
-      await logCorrespondentAction({
-        prisma: prisma2,
-        currentSessionUser: currentSessionUser2,
-        transactionId: transaction.id,
+      return await Q({
+        prisma: r,
+        currentSessionUser: n,
+        transactionId: U.id,
         action: "create_transaction",
         afterJson: {
-          approvalCode: transaction.approvalCode,
-          platform: transaction.platform.name,
-          type: transaction.type.name,
-          amount: transaction.amount,
-          commissionAmount: transaction.commissionAmount,
-          hasEvidence: transaction.evidences.length > 0
+          approvalCode: U.approvalCode,
+          platform: U.platform.name,
+          type: U.type.name,
+          amount: U.amount,
+          commissionAmount: U.commissionAmount,
+          hasEvidence: U.evidences.length > 0
         }
-      });
-      return {
-        success: true,
+      }), {
+        success: !0,
         transaction: {
-          id: transaction.id,
-          approvalCode: transaction.approvalCode,
-          platform: transaction.platform.name,
-          type: transaction.type.name,
-          amount: transaction.amount,
-          commissionAmount: transaction.commissionAmount,
-          netAmount: transaction.netAmount,
-          hasEvidence: transaction.evidences.length > 0
+          id: U.id,
+          approvalCode: U.approvalCode,
+          platform: U.platform.name,
+          type: U.type.name,
+          amount: U.amount,
+          commissionAmount: U.commissionAmount,
+          netAmount: U.netAmount,
+          hasEvidence: U.evidences.length > 0
         }
       };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo registrar la transaccion";
-      return { success: false, message };
+    } catch (w) {
+      return { success: !1, message: w instanceof Error ? w.message : "No se pudo registrar la transaccion" };
     }
-  });
-  ipcMain2.handle("correspondent:transaction:update", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2) {
-      return { success: false, message: "Debes iniciar sesion para editar movimientos" };
-    }
-    const parsed = updateCorrespondentTransactionSchema.safeParse(payload);
-    if (!parsed.success) {
-      return { success: false, message: "Datos invalidos para actualizar la transaccion" };
-    }
-    const existingTransaction = await prisma2.correspondentTransaction.findUnique({
-      where: { id: parsed.data.transactionId },
+  }), a.handle("correspondent:transaction:update", async (m, c) => {
+    const n = l();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion para editar movimientos" };
+    const s = oa.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para actualizar la transaccion" };
+    const t = await r.correspondentTransaction.findUnique({
+      where: { id: s.data.transactionId },
       include: {
-        platform: true,
-        type: true
+        platform: !0,
+        type: !0
       }
     });
-    if (!existingTransaction) {
-      return { success: false, message: "La transaccion ya no existe" };
-    }
-    if (existingTransaction.dailyClosureId) {
-      return { success: false, message: "No puedes editar una transaccion que ya hace parte de un cuadre" };
-    }
-    if (existingTransaction.status === CorrespondentTransactionStatus.VOIDED) {
-      return { success: false, message: "No puedes editar una transaccion anulada" };
-    }
-    const nextType = await prisma2.correspondentTransactionType.findUnique({
-      where: { id: parsed.data.typeId }
+    if (!t)
+      return { success: !1, message: "La transaccion ya no existe" };
+    if (t.dailyClosureId)
+      return { success: !1, message: "No puedes editar una transaccion que ya hace parte de un cuadre" };
+    if (t.status === ne.VOIDED)
+      return { success: !1, message: "No puedes editar una transaccion anulada" };
+    const i = await r.correspondentTransactionType.findUnique({
+      where: { id: s.data.typeId }
     });
-    if (!nextType || !nextType.isActive || nextType.platformId !== existingTransaction.platformId) {
-      return { success: false, message: "El nuevo tipo no pertenece al mismo corresponsal" };
-    }
-    const nextPerformedAt = new Date(parsed.data.performedAt);
-    const nextCommissionAmount = await resolveCommissionAmount(
-      prisma2,
-      existingTransaction.platformId,
-      nextType.id,
-      parsed.data.amount,
-      nextPerformedAt
-    );
-    const nextNetAmount = nextType.direction === CorrespondentDirection.OUT ? parsed.data.amount - nextCommissionAmount : parsed.data.amount + nextCommissionAmount;
+    if (!i || !i.isActive || i.platformId !== t.platformId)
+      return { success: !1, message: "El nuevo tipo no pertenece al mismo corresponsal" };
+    const u = new Date(s.data.performedAt), f = await at(
+      r,
+      t.platformId,
+      i.id,
+      s.data.amount,
+      u
+    ), g = i.direction === _.OUT ? s.data.amount - f : s.data.amount + f;
     try {
-      const existingApprovalCodes = (await prisma2.correspondentTransaction.findMany({
-        where: { NOT: { id: existingTransaction.id } },
-        select: { approvalCode: true }
-      })).map((transaction) => transaction.approvalCode);
-      const approvalCode = resolveLooseCode({
-        desiredCode: parsed.data.approvalCode ?? existingTransaction.approvalCode,
-        existingCodes: existingApprovalCodes,
+      const T = (await r.correspondentTransaction.findMany({
+        where: { NOT: { id: t.id } },
+        select: { approvalCode: !0 }
+      })).map((N) => N.approvalCode), I = Fe({
+        desiredCode: s.data.approvalCode ?? t.approvalCode,
+        existingCodes: T,
         generatedPrefix: "APR",
         digits: 6,
         maxLength: 40
-      });
-      const updatedTransaction = await prisma2.correspondentTransaction.update({
-        where: { id: existingTransaction.id },
+      }), p = await r.correspondentTransaction.update({
+        where: { id: t.id },
         data: {
-          approvalCode,
-          typeId: nextType.id,
-          amount: parsed.data.amount,
-          commissionAmount: nextCommissionAmount,
-          netAmount: nextNetAmount,
-          performedAt: nextPerformedAt,
-          reviewedByUserId: currentSessionUser2.id
+          approvalCode: I,
+          typeId: i.id,
+          amount: s.data.amount,
+          commissionAmount: f,
+          netAmount: g,
+          performedAt: u,
+          reviewedByUserId: n.id
         },
         include: {
-          platform: true,
-          type: true,
-          evidences: { select: { id: true } }
+          platform: !0,
+          type: !0,
+          evidences: { select: { id: !0 } }
         }
       });
-      await logCorrespondentAction({
-        prisma: prisma2,
-        currentSessionUser: currentSessionUser2,
-        transactionId: updatedTransaction.id,
+      return await Q({
+        prisma: r,
+        currentSessionUser: n,
+        transactionId: p.id,
         action: "update_transaction",
         beforeJson: {
-          approvalCode: existingTransaction.approvalCode,
-          type: existingTransaction.type.name,
-          amount: existingTransaction.amount,
-          performedAt: existingTransaction.performedAt.toISOString(),
-          commissionAmount: existingTransaction.commissionAmount
+          approvalCode: t.approvalCode,
+          type: t.type.name,
+          amount: t.amount,
+          performedAt: t.performedAt.toISOString(),
+          commissionAmount: t.commissionAmount
         },
         afterJson: {
-          approvalCode: updatedTransaction.approvalCode,
-          type: updatedTransaction.type.name,
-          amount: updatedTransaction.amount,
-          performedAt: updatedTransaction.performedAt.toISOString(),
-          commissionAmount: updatedTransaction.commissionAmount
+          approvalCode: p.approvalCode,
+          type: p.type.name,
+          amount: p.amount,
+          performedAt: p.performedAt.toISOString(),
+          commissionAmount: p.commissionAmount
         }
-      });
-      return {
-        success: true,
+      }), {
+        success: !0,
         transaction: {
-          id: updatedTransaction.id,
-          approvalCode: updatedTransaction.approvalCode,
-          platform: updatedTransaction.platform.name,
-          type: updatedTransaction.type.name,
-          amount: updatedTransaction.amount,
-          commissionAmount: updatedTransaction.commissionAmount,
-          netAmount: updatedTransaction.netAmount,
-          hasEvidence: updatedTransaction.evidences.length > 0
+          id: p.id,
+          approvalCode: p.approvalCode,
+          platform: p.platform.name,
+          type: p.type.name,
+          amount: p.amount,
+          commissionAmount: p.commissionAmount,
+          netAmount: p.netAmount,
+          hasEvidence: p.evidences.length > 0
         }
       };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo actualizar la transaccion";
-      return { success: false, message };
+    } catch (T) {
+      return { success: !1, message: T instanceof Error ? T.message : "No se pudo actualizar la transaccion" };
     }
-  });
-  ipcMain2.handle("correspondent:platform:create", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
-      return { success: false, message: "Solo el administrador puede crear corresponsales" };
-    }
-    const parsed = createCorrespondentPlatformSchema.safeParse(payload);
-    if (!parsed.success) {
-      return { success: false, message: "Datos invalidos para el corresponsal" };
-    }
-    const platformName = parsed.data.name.trim();
-    const duplicate = await prisma2.correspondentPlatform.findFirst({
-      where: { name: { equals: platformName } },
-      select: { id: true }
-    });
-    if (duplicate) {
-      return { success: false, message: "Ya existe un corresponsal con ese nombre" };
-    }
+  }), a.handle("correspondent:platform:create", async (m, c) => {
+    const n = l();
+    if (!n || n.role !== F.ADMIN)
+      return { success: !1, message: "Solo el administrador puede crear corresponsales" };
+    const s = la.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para el corresponsal" };
+    const t = s.data.name.trim();
+    if (await r.correspondentPlatform.findFirst({
+      where: { name: { equals: t } },
+      select: { id: !0 }
+    }))
+      return { success: !1, message: "Ya existe un corresponsal con ese nombre" };
     try {
-      const created = await prisma2.correspondentPlatform.create({
+      const u = await r.correspondentPlatform.create({
         data: {
-          code: await buildUniquePlatformCode(prisma2, platformName),
-          name: platformName,
-          isActive: true,
-          requiresEvidence: parsed.data.requiresEvidence,
-          supportsOcr: parsed.data.supportsOcr,
-          supportsFileImport: parsed.data.supportsFileImport
+          code: await Ca(r, t),
+          name: t,
+          isActive: !0,
+          requiresEvidence: s.data.requiresEvidence,
+          supportsOcr: s.data.supportsOcr,
+          supportsFileImport: s.data.supportsFileImport
         }
       });
-      await prisma2.correspondentCommissionRule.create({
+      return await r.correspondentCommissionRule.create({
         data: {
-          platformId: created.id,
-          mode: CommissionMode.NONE,
+          platformId: u.id,
+          mode: Oe.NONE,
           value: 0,
-          isActive: true
+          isActive: !0
         }
-      });
-      await logCorrespondentAction({
-        prisma: prisma2,
-        currentSessionUser: currentSessionUser2,
+      }), await Q({
+        prisma: r,
+        currentSessionUser: n,
         action: "create_platform",
-        context: `platform:${created.id}`,
+        context: `platform:${u.id}`,
         afterJson: {
-          platform: created.name,
-          code: created.code
+          platform: u.name,
+          code: u.code
         }
-      });
-      return { success: true, platformId: created.id };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo crear el corresponsal";
-      return { success: false, message };
+      }), { success: !0, platformId: u.id };
+    } catch (u) {
+      return { success: !1, message: u instanceof Error ? u.message : "No se pudo crear el corresponsal" };
     }
-  });
-  ipcMain2.handle("correspondent:platform:update", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
-      return { success: false, message: "Solo el administrador puede editar corresponsales" };
-    }
-    const parsed = updateCorrespondentPlatformSchema.safeParse(payload);
-    if (!parsed.success) {
-      return { success: false, message: "Datos invalidos para actualizar el corresponsal" };
-    }
-    const existingPlatform = await prisma2.correspondentPlatform.findUnique({
-      where: { id: parsed.data.platformId }
+  }), a.handle("correspondent:platform:update", async (m, c) => {
+    const n = l();
+    if (!n || n.role !== F.ADMIN)
+      return { success: !1, message: "Solo el administrador puede editar corresponsales" };
+    const s = pa.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para actualizar el corresponsal" };
+    const t = await r.correspondentPlatform.findUnique({
+      where: { id: s.data.platformId }
     });
-    if (!existingPlatform) {
-      return { success: false, message: "El corresponsal ya no existe" };
-    }
-    const duplicate = await prisma2.correspondentPlatform.findFirst({
+    if (!t)
+      return { success: !1, message: "El corresponsal ya no existe" };
+    if (await r.correspondentPlatform.findFirst({
       where: {
-        name: { equals: parsed.data.name.trim() },
-        NOT: { id: existingPlatform.id }
+        name: { equals: s.data.name.trim() },
+        NOT: { id: t.id }
       },
-      select: { id: true }
-    });
-    if (duplicate) {
-      return { success: false, message: "Ya existe otro corresponsal con ese nombre" };
-    }
+      select: { id: !0 }
+    }))
+      return { success: !1, message: "Ya existe otro corresponsal con ese nombre" };
     try {
-      const updated = await prisma2.correspondentPlatform.update({
-        where: { id: existingPlatform.id },
+      const u = await r.correspondentPlatform.update({
+        where: { id: t.id },
         data: {
-          name: parsed.data.name.trim(),
-          requiresEvidence: parsed.data.requiresEvidence,
-          supportsOcr: parsed.data.supportsOcr,
-          supportsFileImport: parsed.data.supportsFileImport
+          name: s.data.name.trim(),
+          requiresEvidence: s.data.requiresEvidence,
+          supportsOcr: s.data.supportsOcr,
+          supportsFileImport: s.data.supportsFileImport
         }
       });
-      await logCorrespondentAction({
-        prisma: prisma2,
-        currentSessionUser: currentSessionUser2,
+      return await Q({
+        prisma: r,
+        currentSessionUser: n,
         action: "update_platform",
-        context: `platform:${updated.id}`,
+        context: `platform:${u.id}`,
         beforeJson: {
-          name: existingPlatform.name,
-          requiresEvidence: existingPlatform.requiresEvidence,
-          supportsOcr: existingPlatform.supportsOcr,
-          supportsFileImport: existingPlatform.supportsFileImport
+          name: t.name,
+          requiresEvidence: t.requiresEvidence,
+          supportsOcr: t.supportsOcr,
+          supportsFileImport: t.supportsFileImport
         },
         afterJson: {
-          name: updated.name,
-          requiresEvidence: updated.requiresEvidence,
-          supportsOcr: updated.supportsOcr,
-          supportsFileImport: updated.supportsFileImport
+          name: u.name,
+          requiresEvidence: u.requiresEvidence,
+          supportsOcr: u.supportsOcr,
+          supportsFileImport: u.supportsFileImport
         }
-      });
-      return { success: true, platformId: updated.id };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo actualizar el corresponsal";
-      return { success: false, message };
+      }), { success: !0, platformId: u.id };
+    } catch (u) {
+      return { success: !1, message: u instanceof Error ? u.message : "No se pudo actualizar el corresponsal" };
     }
-  });
-  ipcMain2.handle("correspondent:platform:delete", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
-      return { success: false, message: "Solo el administrador puede eliminar corresponsales" };
-    }
-    const parsed = deleteCorrespondentPlatformSchema.safeParse(payload);
-    if (!parsed.success) {
-      return { success: false, message: "Corresponsal invalido" };
-    }
-    const existingPlatform = await prisma2.correspondentPlatform.findUnique({
-      where: { id: parsed.data.platformId },
+  }), a.handle("correspondent:platform:delete", async (m, c) => {
+    const n = l();
+    if (!n || n.role !== F.ADMIN)
+      return { success: !1, message: "Solo el administrador puede eliminar corresponsales" };
+    const s = ga.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Corresponsal invalido" };
+    const t = await r.correspondentPlatform.findUnique({
+      where: { id: s.data.platformId },
       include: {
         transactionTypes: {
-          select: { id: true }
+          select: { id: !0 }
         }
       }
     });
-    if (!existingPlatform) {
-      return { success: false, message: "El corresponsal ya no existe" };
-    }
+    if (!t)
+      return { success: !1, message: "El corresponsal ya no existe" };
     try {
-      await prisma2.$transaction(async (tx) => {
-        await tx.correspondentPlatform.update({
-          where: { id: existingPlatform.id },
-          data: { isActive: false }
+      return await r.$transaction(async (i) => {
+        await i.correspondentPlatform.update({
+          where: { id: t.id },
+          data: { isActive: !1 }
+        }), t.transactionTypes.length > 0 && await i.correspondentTransactionType.updateMany({
+          where: { platformId: t.id },
+          data: { isActive: !1 }
         });
-        if (existingPlatform.transactionTypes.length > 0) {
-          await tx.correspondentTransactionType.updateMany({
-            where: { platformId: existingPlatform.id },
-            data: { isActive: false }
-          });
-        }
-      });
-      await logCorrespondentAction({
-        prisma: prisma2,
-        currentSessionUser: currentSessionUser2,
+      }), await Q({
+        prisma: r,
+        currentSessionUser: n,
         action: "delete_platform",
-        context: `platform:${existingPlatform.id}`,
+        context: `platform:${t.id}`,
         beforeJson: {
-          name: existingPlatform.name
+          name: t.name
         }
-      });
-      return { success: true, platformId: existingPlatform.id };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo eliminar el corresponsal";
-      return { success: false, message };
+      }), { success: !0, platformId: t.id };
+    } catch (i) {
+      return { success: !1, message: i instanceof Error ? i.message : "No se pudo eliminar el corresponsal" };
     }
-  });
-  ipcMain2.handle("correspondent:type:create", async (_event, payload) => {
-    var _a;
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
-      return { success: false, message: "Solo el administrador puede crear tipos" };
-    }
-    const parsed = createCorrespondentTransactionTypeSchema.safeParse(payload);
-    if (!parsed.success) {
-      return { success: false, message: "Datos invalidos para el tipo" };
-    }
-    const platform = await prisma2.correspondentPlatform.findUnique({
-      where: { id: parsed.data.platformId },
+  }), a.handle("correspondent:type:create", async (m, c) => {
+    var f;
+    const n = l();
+    if (!n || n.role !== F.ADMIN)
+      return { success: !1, message: "Solo el administrador puede crear tipos" };
+    const s = ma.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para el tipo" };
+    const t = await r.correspondentPlatform.findUnique({
+      where: { id: s.data.platformId },
       include: {
         transactionTypes: {
-          select: { sortOrder: true },
+          select: { sortOrder: !0 },
           orderBy: { sortOrder: "desc" },
           take: 1
         }
       }
     });
-    if (!platform || !platform.isActive) {
-      return { success: false, message: "El corresponsal ya no existe" };
-    }
-    const typeName = parsed.data.name.trim();
-    const duplicate = await prisma2.correspondentTransactionType.findFirst({
+    if (!t || !t.isActive)
+      return { success: !1, message: "El corresponsal ya no existe" };
+    const i = s.data.name.trim();
+    if (await r.correspondentTransactionType.findFirst({
       where: {
-        platformId: platform.id,
-        name: { equals: typeName }
+        platformId: t.id,
+        name: { equals: i }
       },
-      select: { id: true }
-    });
-    if (duplicate) {
-      return { success: false, message: "Ese corresponsal ya tiene un tipo con ese nombre" };
-    }
+      select: { id: !0 }
+    }))
+      return { success: !1, message: "Ese corresponsal ya tiene un tipo con ese nombre" };
     try {
-      const created = await prisma2.correspondentTransactionType.create({
+      const g = await r.correspondentTransactionType.create({
         data: {
-          platformId: platform.id,
-          code: await buildUniqueTypeCode(prisma2, platform.id, typeName),
-          name: typeName,
-          direction: parsed.data.direction,
-          isActive: true,
-          sortOrder: (((_a = platform.transactionTypes[0]) == null ? void 0 : _a.sortOrder) ?? 0) + 10
+          platformId: t.id,
+          code: await ha(r, t.id, i),
+          name: i,
+          direction: s.data.direction,
+          isActive: !0,
+          sortOrder: (((f = t.transactionTypes[0]) == null ? void 0 : f.sortOrder) ?? 0) + 10
         }
       });
-      await logCorrespondentAction({
-        prisma: prisma2,
-        currentSessionUser: currentSessionUser2,
+      return await Q({
+        prisma: r,
+        currentSessionUser: n,
         action: "create_transaction_type",
-        context: `platform:${platform.id};type:${created.id}`,
+        context: `platform:${t.id};type:${g.id}`,
         afterJson: {
-          platform: platform.name,
-          type: created.name,
-          direction: created.direction
+          platform: t.name,
+          type: g.name,
+          direction: g.direction
         }
-      });
-      return { success: true, typeId: created.id };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo crear el tipo";
-      return { success: false, message };
+      }), { success: !0, typeId: g.id };
+    } catch (g) {
+      return { success: !1, message: g instanceof Error ? g.message : "No se pudo crear el tipo" };
     }
-  });
-  ipcMain2.handle("correspondent:type:update", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
-      return { success: false, message: "Solo el administrador puede editar tipos" };
-    }
-    const parsed = updateCorrespondentTransactionTypeSchema.safeParse(payload);
-    if (!parsed.success) {
-      return { success: false, message: "Datos invalidos para actualizar el tipo" };
-    }
-    const existingType = await prisma2.correspondentTransactionType.findUnique({
-      where: { id: parsed.data.typeId }
+  }), a.handle("correspondent:type:update", async (m, c) => {
+    const n = l();
+    if (!n || n.role !== F.ADMIN)
+      return { success: !1, message: "Solo el administrador puede editar tipos" };
+    const s = fa.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para actualizar el tipo" };
+    const t = await r.correspondentTransactionType.findUnique({
+      where: { id: s.data.typeId }
     });
-    if (!existingType) {
-      return { success: false, message: "El tipo ya no existe" };
-    }
-    const duplicate = await prisma2.correspondentTransactionType.findFirst({
+    if (!t)
+      return { success: !1, message: "El tipo ya no existe" };
+    if (await r.correspondentTransactionType.findFirst({
       where: {
-        platformId: existingType.platformId,
-        name: { equals: parsed.data.name.trim() },
-        NOT: { id: existingType.id }
+        platformId: t.platformId,
+        name: { equals: s.data.name.trim() },
+        NOT: { id: t.id }
       },
-      select: { id: true }
-    });
-    if (duplicate) {
-      return { success: false, message: "Ya existe otro tipo con ese nombre en el corresponsal" };
-    }
+      select: { id: !0 }
+    }))
+      return { success: !1, message: "Ya existe otro tipo con ese nombre en el corresponsal" };
     try {
-      const updated = await prisma2.correspondentTransactionType.update({
-        where: { id: existingType.id },
+      const u = await r.correspondentTransactionType.update({
+        where: { id: t.id },
         data: {
-          name: parsed.data.name.trim(),
-          direction: parsed.data.direction
+          name: s.data.name.trim(),
+          direction: s.data.direction
         }
       });
-      await logCorrespondentAction({
-        prisma: prisma2,
-        currentSessionUser: currentSessionUser2,
+      return await Q({
+        prisma: r,
+        currentSessionUser: n,
         action: "update_transaction_type",
-        context: `platform:${existingType.platformId};type:${updated.id}`,
+        context: `platform:${t.platformId};type:${u.id}`,
         beforeJson: {
-          name: existingType.name,
-          direction: existingType.direction
+          name: t.name,
+          direction: t.direction
         },
         afterJson: {
-          name: updated.name,
-          direction: updated.direction
+          name: u.name,
+          direction: u.direction
         }
-      });
-      return { success: true, typeId: updated.id };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo actualizar el tipo";
-      return { success: false, message };
+      }), { success: !0, typeId: u.id };
+    } catch (u) {
+      return { success: !1, message: u instanceof Error ? u.message : "No se pudo actualizar el tipo" };
     }
-  });
-  ipcMain2.handle("correspondent:type:delete", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
-      return { success: false, message: "Solo el administrador puede eliminar tipos" };
-    }
-    const parsed = deleteCorrespondentTransactionTypeSchema.safeParse(payload);
-    if (!parsed.success) {
-      return { success: false, message: "Tipo invalido" };
-    }
-    const existingType = await prisma2.correspondentTransactionType.findUnique({
-      where: { id: parsed.data.typeId }
+  }), a.handle("correspondent:type:delete", async (m, c) => {
+    const n = l();
+    if (!n || n.role !== F.ADMIN)
+      return { success: !1, message: "Solo el administrador puede eliminar tipos" };
+    const s = Ea.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Tipo invalido" };
+    const t = await r.correspondentTransactionType.findUnique({
+      where: { id: s.data.typeId }
     });
-    if (!existingType) {
-      return { success: false, message: "El tipo ya no existe" };
-    }
+    if (!t)
+      return { success: !1, message: "El tipo ya no existe" };
     try {
-      await prisma2.correspondentTransactionType.update({
-        where: { id: existingType.id },
-        data: { isActive: false }
-      });
-      await logCorrespondentAction({
-        prisma: prisma2,
-        currentSessionUser: currentSessionUser2,
+      return await r.correspondentTransactionType.update({
+        where: { id: t.id },
+        data: { isActive: !1 }
+      }), await Q({
+        prisma: r,
+        currentSessionUser: n,
         action: "delete_transaction_type",
-        context: `platform:${existingType.platformId};type:${existingType.id}`,
+        context: `platform:${t.platformId};type:${t.id}`,
         beforeJson: {
-          name: existingType.name,
-          direction: existingType.direction
+          name: t.name,
+          direction: t.direction
         }
-      });
-      return { success: true, typeId: existingType.id };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo eliminar el tipo";
-      return { success: false, message };
+      }), { success: !0, typeId: t.id };
+    } catch (i) {
+      return { success: !1, message: i instanceof Error ? i.message : "No se pudo eliminar el tipo" };
     }
-  });
-  ipcMain2.handle("correspondent:closures:list", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2) {
-      return { success: false, message: "Debes iniciar sesion", closures: [] };
-    }
-    const parsed = listCorrespondentClosuresSchema.safeParse(payload);
-    if (!parsed.success) {
-      return { success: false, message: "Fecha de cierre invalida", closures: [] };
-    }
-    const businessDate = normalizeBusinessDate(parsed.data.businessDate);
-    const [platforms, closures, transactions] = await Promise.all([
-      prisma2.correspondentPlatform.findMany({
-        where: { isActive: true },
+  }), a.handle("correspondent:closures:list", async (m, c) => {
+    if (!l())
+      return { success: !1, message: "Debes iniciar sesion", closures: [] };
+    const s = da.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Fecha de cierre invalida", closures: [] };
+    const t = !!(s.data.dateFrom || s.data.dateTo), i = Ce(s.data.dateFrom ?? s.data.businessDate), u = Ce(s.data.dateTo ?? s.data.dateFrom ?? s.data.businessDate), f = Ce(s.data.businessDate ?? s.data.dateFrom), [g, T, I] = await Promise.all([
+      r.correspondentPlatform.findMany({
+        where: { isActive: !0 },
         orderBy: [{ createdAt: "asc" }, { name: "asc" }]
       }),
-      prisma2.correspondentDailyClosure.findMany({
-        where: { businessDate },
+      r.correspondentDailyClosure.findMany({
+        where: t ? {
+          businessDate: {
+            gte: ee(i),
+            lt: Re(u)
+          }
+        } : { businessDate: f },
         include: {
-          platform: true,
-          closedBy: { select: { username: true, name: true } }
+          platform: !0,
+          closedBy: { select: { username: !0, name: !0 } }
         },
         orderBy: { closedAt: "desc" }
       }),
-      getCorrespondentTransactionsForDay(prisma2, businessDate)
-    ]);
-    const closureByPlatform = new Map(closures.map((closure) => [closure.platformId, closure]));
-    const transactionsByPlatform = transactions.reduce((acc, transaction) => {
-      acc[transaction.platformId] = [...acc[transaction.platformId] ?? [], transaction];
-      return acc;
-    }, {});
-    const totals = summarizeCorrespondentTransactions(transactions);
+      t ? Oa(r, i, u) : Ue(r, f)
+    ]), p = new Map(
+      T.map((v) => [v.platformId, v])
+    ), N = T.reduce((v, D) => (v[D.platformId] = (v[D.platformId] ?? 0) + 1, v), {}), C = I.reduce((v, D) => (v[D.platformId] = [...v[D.platformId] ?? [], D], v), {}), h = ve(I);
     return {
-      success: true,
-      businessDate: businessDate.toISOString(),
+      success: !0,
+      mode: t ? "range" : "day",
+      businessDate: f.toISOString(),
+      dateFrom: ee(i).toISOString(),
+      dateTo: ee(u).toISOString(),
       totals: {
-        totalIn: totals.totalIn,
-        totalOut: totals.totalOut,
-        netTotal: totals.totalIn - totals.totalOut,
-        transactionsCount: totals.transactionsCount
+        totalIn: h.totalIn,
+        totalOut: h.totalOut,
+        netTotal: h.totalIn - h.totalOut,
+        transactionsCount: h.transactionsCount
       },
-      closures: platforms.map((platform) => {
-        const platformTransactions = transactionsByPlatform[platform.id] ?? [];
-        const summary = summarizeCorrespondentTransactions(platformTransactions);
-        const closure = closureByPlatform.get(platform.id) ?? null;
-        const breakdownMap = platformTransactions.reduce((acc, transaction) => {
-          if (transaction.status === CorrespondentTransactionStatus.VOIDED) {
-            return acc;
-          }
-          const current = acc[transaction.typeId] ?? {
-            typeId: transaction.typeId,
-            type: transaction.type.name,
-            direction: transaction.type.direction,
+      closures: g.map((v) => {
+        const D = C[v.id] ?? [], P = ve(D), b = p.get(v.id) ?? null, d = D.reduce((A, S) => {
+          if (S.status === ne.VOIDED)
+            return A;
+          const y = A[S.typeId] ?? {
+            typeId: S.typeId,
+            type: S.type.name,
+            direction: S.type.direction,
             total: 0,
             count: 0
           };
-          current.total += transaction.amount;
-          current.count += 1;
-          acc[transaction.typeId] = current;
-          return acc;
+          return y.total += S.amount, y.count += 1, A[S.typeId] = y, A;
         }, {});
         return {
-          platformId: platform.id,
-          platform: platform.name,
-          totalIn: summary.totalIn,
-          totalOut: summary.totalOut,
-          totalCommission: summary.totalCommission,
-          expectedBalance: summary.totalIn - summary.totalOut + summary.totalCommission,
-          transactionsCount: summary.transactionsCount,
-          pendingTransactions: summary.pendingClosureCount,
-          breakdown: Object.values(breakdownMap).sort((a, b) => a.type.localeCompare(b.type, "es")),
-          closure: closure ? {
-            id: closure.id,
-            expectedBalance: closure.expectedBalance,
-            reportedBalance: closure.reportedBalance,
-            differenceAmount: closure.differenceAmount,
-            status: closure.status,
-            closedAt: closure.closedAt.toISOString(),
-            closedBy: closure.closedBy.name ?? closure.closedBy.username,
-            note: closure.note
+          platformId: v.id,
+          platform: v.name,
+          totalIn: P.totalIn,
+          totalOut: P.totalOut,
+          totalCommission: P.totalCommission,
+          expectedBalance: P.totalIn - P.totalOut + P.totalCommission,
+          transactionsCount: P.transactionsCount,
+          pendingTransactions: P.pendingClosureCount,
+          closuresCount: N[v.id] ?? 0,
+          breakdown: Object.values(d).sort((A, S) => A.type.localeCompare(S.type, "es")),
+          closure: !t && b ? {
+            id: b.id,
+            expectedBalance: b.expectedBalance,
+            reportedBalance: b.reportedBalance,
+            differenceAmount: b.differenceAmount,
+            status: b.status,
+            closedAt: b.closedAt.toISOString(),
+            closedBy: b.closedBy.name ?? b.closedBy.username,
+            note: b.note
           } : null
         };
       })
     };
-  });
-  ipcMain2.handle("correspondent:closure:create", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2) {
-      return { success: false, message: "Debes iniciar sesion para cerrar" };
-    }
-    const parsed = createCorrespondentClosureSchema.safeParse(payload);
-    if (!parsed.success) {
-      return { success: false, message: "Datos invalidos para el cierre" };
-    }
-    const data = parsed.data;
-    const businessDate = normalizeBusinessDate(data.businessDate);
-    const existing = await prisma2.correspondentDailyClosure.findFirst({
+  }), a.handle("correspondent:closure:create", async (m, c) => {
+    const n = l();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion para cerrar" };
+    const s = ua.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para el cierre" };
+    const t = s.data, i = Ce(t.businessDate);
+    if (await r.correspondentDailyClosure.findFirst({
       where: {
-        platformId: data.platformId,
-        businessDate
+        platformId: t.platformId,
+        businessDate: i
       }
-    });
-    if (existing) {
-      return { success: false, message: "La plataforma ya fue cerrada para esa fecha" };
-    }
-    const [platform, transactions, activeCashSession] = await Promise.all([
-      prisma2.correspondentPlatform.findUnique({ where: { id: data.platformId } }),
-      getCorrespondentTransactionsForDay(prisma2, businessDate, data.platformId),
-      getActiveCashSessionForUser(prisma2, currentSessionUser2.id)
+    }))
+      return { success: !1, message: "La plataforma ya fue cerrada para esa fecha" };
+    const [f, g, T] = await Promise.all([
+      r.correspondentPlatform.findUnique({ where: { id: t.platformId } }),
+      Ue(r, i, t.platformId),
+      tt(r, n.id)
     ]);
-    if (!platform) {
-      return { success: false, message: "Plataforma no encontrada" };
-    }
-    const openTransactions = transactions.filter(
-      (transaction) => transaction.status === CorrespondentTransactionStatus.REGISTERED && !transaction.dailyClosureId
-    );
-    const summary = summarizeCorrespondentTransactions(openTransactions);
-    const expectedBalance = data.openingBalance + summary.totalIn - summary.totalOut + summary.totalCommission;
-    const differenceAmount = data.reportedBalance - expectedBalance;
+    if (!f)
+      return { success: !1, message: "Plataforma no encontrada" };
+    const I = g.filter(
+      (h) => h.status === ne.REGISTERED && !h.dailyClosureId
+    ), p = ve(I), N = t.openingBalance + p.totalIn - p.totalOut + p.totalCommission, C = t.reportedBalance - N;
     try {
-      const closure = await prisma2.$transaction(async (tx) => {
-        var _a;
-        const createdClosure = await tx.correspondentDailyClosure.create({
+      const h = await r.$transaction(async (v) => {
+        var P;
+        const D = await v.correspondentDailyClosure.create({
           data: {
-            platformId: platform.id,
-            cashSessionId: (activeCashSession == null ? void 0 : activeCashSession.id) ?? null,
-            businessDate,
-            totalIn: summary.totalIn,
-            totalOut: summary.totalOut,
-            totalCommission: summary.totalCommission,
-            transactionsCount: summary.transactionsCount,
-            expectedBalance,
-            reportedBalance: data.reportedBalance,
-            differenceAmount,
-            status: differenceAmount === 0 ? CorrespondentClosureStatus.CLOSED : CorrespondentClosureStatus.WITH_DIFFERENCE,
-            note: ((_a = data.note) == null ? void 0 : _a.trim()) || null,
-            closedByUserId: currentSessionUser2.id
+            platformId: f.id,
+            cashSessionId: (T == null ? void 0 : T.id) ?? null,
+            businessDate: i,
+            totalIn: p.totalIn,
+            totalOut: p.totalOut,
+            totalCommission: p.totalCommission,
+            transactionsCount: p.transactionsCount,
+            expectedBalance: N,
+            reportedBalance: t.reportedBalance,
+            differenceAmount: C,
+            status: C === 0 ? We.CLOSED : We.WITH_DIFFERENCE,
+            note: ((P = t.note) == null ? void 0 : P.trim()) || null,
+            closedByUserId: n.id
           }
         });
-        if (openTransactions.length > 0) {
-          await tx.correspondentTransaction.updateMany({
-            where: {
-              id: { in: openTransactions.map((transaction) => transaction.id) }
-            },
-            data: {
-              dailyClosureId: createdClosure.id
-            }
-          });
-        }
-        return createdClosure;
+        return I.length > 0 && await v.correspondentTransaction.updateMany({
+          where: {
+            id: { in: I.map((b) => b.id) }
+          },
+          data: {
+            dailyClosureId: D.id
+          }
+        }), D;
       });
-      await logCorrespondentAction({
-        prisma: prisma2,
-        currentSessionUser: currentSessionUser2,
+      return await Q({
+        prisma: r,
+        currentSessionUser: n,
         action: "create_closure",
-        context: `platform:${platform.id};closure:${closure.id}`,
+        context: `platform:${f.id};closure:${h.id}`,
         afterJson: {
-          platform: platform.name,
-          businessDate: businessDate.toISOString(),
-          expectedBalance,
-          reportedBalance: data.reportedBalance,
-          differenceAmount
+          platform: f.name,
+          businessDate: i.toISOString(),
+          expectedBalance: N,
+          reportedBalance: t.reportedBalance,
+          differenceAmount: C
         }
-      });
-      return {
-        success: true,
+      }), {
+        success: !0,
         closure: {
-          id: closure.id,
-          expectedBalance,
-          reportedBalance: closure.reportedBalance,
-          differenceAmount: closure.differenceAmount,
-          status: closure.status
+          id: h.id,
+          expectedBalance: N,
+          reportedBalance: h.reportedBalance,
+          differenceAmount: h.differenceAmount,
+          status: h.status
         }
       };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo cerrar la plataforma";
-      return { success: false, message };
+    } catch (h) {
+      return { success: !1, message: h instanceof Error ? h.message : "No se pudo cerrar la plataforma" };
     }
   });
 }
-const treasurySourceMediumSchema = z.enum(["CASH", "TRANSFER", "CORRESPONDENT"]);
-const accountingRangeSchema = z.object({
-  dateFrom: z.string().datetime().optional(),
-  dateTo: z.string().datetime().optional()
-}).optional().default({});
-const createAccountingCreditSchema = z.object({
-  saleId: z.string().uuid("saleId invalido"),
-  customerId: z.string().uuid("customerId invalido"),
-  total: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0").optional(),
-  dueDate: z.string().datetime("Fecha de vencimiento invalida").optional().nullable()
-});
-const createAccountingPaymentSchema = z.object({
-  creditId: z.string().uuid("creditId invalido"),
-  amount: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
-  method: paymentMethodSchema.optional().default("CASH"),
-  note: z.string().trim().max(250).optional().nullable()
-});
-const createAccountingCreditNoteSchema = z.object({
-  saleId: z.string().uuid("saleId invalido"),
-  amount: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
-  reason: z.string().trim().max(250).optional().nullable()
-});
-const createAccountingExpenseSchema = z.object({
-  amount: z.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
-  note: z.string().trim().min(2, "La descripcion es obligatoria").max(250),
-  type: z.enum(["EXPENSE_OUT", "WITHDRAWAL_OUT"]).optional().default("EXPENSE_OUT"),
-  sourceMedium: treasurySourceMediumSchema.optional().default("CASH"),
-  sourcePlatformId: z.string().uuid("Plataforma invalida").optional().nullable()
-});
-const productUnitMeasureSchema = z.enum([
+const xa = o.enum(["CASH", "TRANSFER", "CORRESPONDENT"]), Pa = o.object({
+  dateFrom: o.string().datetime().optional(),
+  dateTo: o.string().datetime().optional()
+}).optional().default({}), La = o.object({
+  saleId: o.string().uuid("saleId invalido"),
+  customerId: o.string().uuid("customerId invalido"),
+  total: o.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0").optional(),
+  dueDate: o.string().datetime("Fecha de vencimiento invalida").optional().nullable()
+}), Ua = o.object({
+  creditId: o.string().uuid("creditId invalido"),
+  amount: o.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  method: Ke.optional().default("CASH"),
+  note: o.string().trim().max(250).optional().nullable()
+}), Ma = o.object({
+  saleId: o.string().uuid("saleId invalido"),
+  amount: o.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  reason: o.string().trim().max(250).optional().nullable()
+}), _a = o.object({
+  amount: o.number().int("El valor debe ser entero").positive("El valor debe ser mayor a 0"),
+  note: o.string().trim().min(2, "La descripcion es obligatoria").max(250),
+  type: o.enum(["EXPENSE_OUT", "WITHDRAWAL_OUT"]).optional().default("EXPENSE_OUT"),
+  sourceMedium: xa.optional().default("CASH"),
+  sourcePlatformId: o.string().uuid("Plataforma invalida").optional().nullable()
+}), Tt = o.enum([
   "UNIDAD",
   "PAR",
   "METRO",
@@ -1867,63 +1644,104 @@ const productUnitMeasureSchema = z.enum([
   "LIBRA",
   "KILO",
   "LITRO"
-]);
-const allowedTaxRates = [0, 0.05, 0.19];
-function validateAllowedTaxRate(taxRate, ctx) {
-  if (taxRate === void 0)
-    return;
-  if (!allowedTaxRates.includes(taxRate)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "El IVA permitido es: no aplica, 0%, 5% o 19%",
-      path: ["taxRate"]
-    });
-  }
+]), Ba = [0, 0.05, 0.19];
+function It(e, a) {
+  e !== void 0 && (Ba.includes(e) || a.addIssue({
+    code: o.ZodIssueCode.custom,
+    message: "El IVA permitido es: no aplica, 0%, 5% o 19%",
+    path: ["taxRate"]
+  }));
 }
-const createProductSchema = z.object({
-  name: z.string({ message: "El nombre es obligatorio" }).trim().min(2, "Minimo 2 caracteres").max(120, "Maximo 120 caracteres"),
-  barcode: z.string().trim().min(1).max(50).optional().nullable(),
-  sku: z.string().trim().min(1).max(50).optional().nullable(),
-  unitMeasure: productUnitMeasureSchema.optional().default("UNIDAD"),
-  price: z.number({ message: "El precio es obligatorio" }).positive("El precio debe ser mayor a 0"),
-  cost: z.number().min(0, "El costo no puede ser negativo").optional().default(0),
-  marginPercent: z.number().min(0, "La ganancia no puede ser negativa").optional().default(0),
-  hasTax: z.boolean().optional().default(false),
-  taxRate: z.number().min(0).max(1).optional().default(0),
-  stock: z.number().int("El stock debe ser un numero entero").min(0, "El stock no puede ser negativo").optional().default(0),
-  categoryId: z.string().uuid().optional().nullable(),
-  subcategoryId: z.string().uuid().optional().nullable(),
-  isActive: z.boolean().optional().default(true)
-}).superRefine((data, ctx) => {
-  validateAllowedTaxRate(data.taxRate, ctx);
+const Fa = o.object({
+  name: o.string({ message: "El nombre es obligatorio" }).trim().min(2, "Minimo 2 caracteres").max(120, "Maximo 120 caracteres"),
+  barcode: o.string().trim().min(1).max(50).optional().nullable(),
+  sku: o.string().trim().min(1).max(50).optional().nullable(),
+  unitMeasure: Tt.optional().default("UNIDAD"),
+  price: o.number({ message: "El precio es obligatorio" }).positive("El precio debe ser mayor a 0"),
+  cost: o.number().min(0, "El costo no puede ser negativo").optional().default(0),
+  marginPercent: o.number().min(0, "La ganancia no puede ser negativa").optional().default(0),
+  hasTax: o.boolean().optional().default(!1),
+  taxRate: o.number().min(0).max(1).optional().default(0),
+  stock: o.number().int("El stock debe ser un numero entero").min(0, "El stock no puede ser negativo").optional().default(0),
+  categoryId: o.string().uuid().optional().nullable(),
+  subcategoryId: o.string().uuid().optional().nullable(),
+  isActive: o.boolean().optional().default(!0)
+}).superRefine((e, a) => {
+  It(e.taxRate, a);
+}), $a = o.object({
+  id: o.string().uuid("ID de producto invalido"),
+  name: o.string().trim().min(2, "Minimo 2 caracteres").max(120).optional(),
+  barcode: o.string().trim().min(1).max(50).optional().nullable(),
+  sku: o.string().trim().min(1).max(50).optional().nullable(),
+  unitMeasure: Tt.optional(),
+  price: o.number().positive("El precio debe ser mayor a 0").optional(),
+  cost: o.number().min(0).optional(),
+  marginPercent: o.number().min(0).optional(),
+  hasTax: o.boolean().optional(),
+  taxRate: o.number().min(0).max(1).optional(),
+  stock: o.number().int().min(0).optional(),
+  categoryId: o.string().uuid().optional().nullable(),
+  subcategoryId: o.string().uuid().optional().nullable(),
+  isActive: o.boolean().optional()
+}).superRefine((e, a) => {
+  It(e.taxRate, a);
 });
-const updateProductSchema = z.object({
-  id: z.string().uuid("ID de producto invalido"),
-  name: z.string().trim().min(2, "Minimo 2 caracteres").max(120).optional(),
-  barcode: z.string().trim().min(1).max(50).optional().nullable(),
-  sku: z.string().trim().min(1).max(50).optional().nullable(),
-  unitMeasure: productUnitMeasureSchema.optional(),
-  price: z.number().positive("El precio debe ser mayor a 0").optional(),
-  cost: z.number().min(0).optional(),
-  marginPercent: z.number().min(0).optional(),
-  hasTax: z.boolean().optional(),
-  taxRate: z.number().min(0).max(1).optional(),
-  stock: z.number().int().min(0).optional(),
-  categoryId: z.string().uuid().optional().nullable(),
-  subcategoryId: z.string().uuid().optional().nullable(),
-  isActive: z.boolean().optional()
-}).superRefine((data, ctx) => {
-  validateAllowedTaxRate(data.taxRate, ctx);
+o.object({
+  productId: o.string().uuid("ID de producto invalido"),
+  delta: o.number().int("El ajuste debe ser un numero entero").refine((e) => e !== 0, "El ajuste no puede ser 0"),
+  reason: o.string().trim().max(200).optional()
 });
-z.object({
-  productId: z.string().uuid("ID de producto invalido"),
-  delta: z.number().int("El ajuste debe ser un numero entero").refine((n) => n !== 0, "El ajuste no puede ser 0"),
-  reason: z.string().trim().max(200).optional()
+o.object({
+  barcode: o.string().trim().min(1, "Barcode no puede estar vacio")
 });
-z.object({
-  barcode: z.string().trim().min(1, "Barcode no puede estar vacio")
-});
-const adminSections = [
+const yt = {
+  title: "Acceso a interfaces",
+  groups: [
+    {
+      title: "Operacion comercial",
+      permissions: [
+        "Acceder a Facturar",
+        "Acceder a Historial ventas",
+        "Acceder a Clientes",
+        "Acceder a Compras",
+        "Acceder a Proveedores"
+      ]
+    },
+    {
+      title: "Caja y corresponsal",
+      permissions: [
+        "Acceder a Caja general",
+        "Acceder a Corresponsal transacciones",
+        "Acceder a Corresponsal historial",
+        "Acceder a Corresponsal resumen diario",
+        "Acceder a Corresponsal configuracion"
+      ]
+    },
+    {
+      title: "Inventario",
+      permissions: [
+        "Acceder a Productos",
+        "Acceder a Movimientos de inventario"
+      ]
+    },
+    {
+      title: "Control financiero",
+      permissions: [
+        "Acceder a Centro contable",
+        "Acceder a Reportes"
+      ]
+    },
+    {
+      title: "Gestion y sistema",
+      permissions: [
+        "Acceder a Usuarios",
+        "Acceder a Roles y permisos",
+        "Acceder a Configuracion"
+      ]
+    }
+  ]
+}, ka = [
+  yt,
   {
     title: "Contabilidad",
     groups: [
@@ -2313,12 +2131,30 @@ const adminSections = [
         ]
       },
       {
-        title: "Negocio y sistema",
+        title: "Interfaz del sistema",
         permissions: [
-          "Editar configuracion general del negocio",
+          "Cambiar tema del sistema"
+        ]
+      },
+      {
+        title: "Datos del negocio",
+        permissions: [
+          "Editar datos del negocio"
+        ]
+      },
+      {
+        title: "Facturacion e impresion",
+        permissions: [
+          "Configurar factura e impresion",
           "Editar informacion fiscal",
           "Configurar numeraciones",
-          "Configurar impuestos",
+          "Configurar impuestos"
+        ]
+      },
+      {
+        title: "Inventario y operacion",
+        permissions: [
+          "Configurar inventario y comportamiento de venta",
           "Configurar listas de precios",
           "Configurar almacenes",
           "Sincronizar informacion"
@@ -2326,8 +2162,8 @@ const adminSections = [
       }
     ]
   }
-];
-const employeeSections = [
+], Xa = [
+  yt,
   {
     title: "POS",
     groups: [
@@ -2359,6 +2195,30 @@ const employeeSections = [
     title: "Configuraciones generales",
     groups: [
       {
+        title: "Interfaz del sistema",
+        permissions: [
+          "Cambiar tema del sistema"
+        ]
+      },
+      {
+        title: "Datos del negocio",
+        permissions: [
+          "Editar datos del negocio"
+        ]
+      },
+      {
+        title: "Facturacion e impresion",
+        permissions: [
+          "Configurar factura e impresion"
+        ]
+      },
+      {
+        title: "Inventario y operacion",
+        permissions: [
+          "Configurar inventario y comportamiento de venta"
+        ]
+      },
+      {
         title: "Restricciones",
         permissions: [
           "Sin acceso a crear usuarios",
@@ -2369,234 +2229,345 @@ const employeeSections = [
       }
     ]
   }
-];
-const ROLE_DEFINITIONS = [
+], De = [
   {
     key: "ADMIN",
     name: "Administrador",
     description: "Acceso completo a todas las secciones del sistema, puede agregar o eliminar usuarios y administrar la configuracion general.",
-    sections: adminSections
+    sections: ka
   },
   {
     key: "EMPLOYEE",
     name: "Empleado",
     description: "Acceso operativo para ventas y caja, con permisos limitados sobre configuracion, usuarios y reportes sensibles.",
-    sections: employeeSections
+    sections: Xa
   }
 ];
-function getRoleDefinition(role) {
-  return ROLE_DEFINITIONS.find((entry) => entry.key === role) ?? ROLE_DEFINITIONS[0];
+function Va(e) {
+  return De.find((a) => a.key === e) ?? De[0];
 }
-function slugify(value) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+function Me(e) {
+  return e.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
-function buildPermissionKey(sectionTitle, groupTitle, label) {
-  return [slugify(sectionTitle), slugify(groupTitle), slugify(label)].filter(Boolean).join(".");
+function O(e, a, r) {
+  return [Me(e), Me(a), Me(r)].filter(Boolean).join(".");
 }
-function flattenRolePermissionCatalog(role) {
-  return role.sections.flatMap(
-    (section) => section.groups.flatMap(
-      (group) => group.permissions.map((permission) => ({
-        key: buildPermissionKey(section.title, group.title, permission),
-        label: permission,
-        sectionTitle: section.title,
-        groupTitle: group.title
+function Nt(e) {
+  return e.sections.flatMap(
+    (a) => a.groups.flatMap(
+      (r) => r.permissions.map((l) => ({
+        key: O(a.title, r.title, l),
+        label: l,
+        sectionTitle: a.title,
+        groupTitle: r.title
       }))
     )
   );
 }
-function getPermissionCatalogItem(roleKey, permissionKey) {
-  return flattenRolePermissionCatalog(getRoleDefinition(roleKey)).find((item) => item.key === permissionKey) ?? null;
+function Ct(e, a) {
+  return Nt(Va(e)).find((r) => r.key === a) ?? null;
 }
-const APP_PERMISSION_KEYS = {
-  posAccess: buildPermissionKey("POS", "Operacion POS", "Acceder al modulo Facturar"),
-  salesCreate: buildPermissionKey("POS", "Operacion POS", "Crear ventas desde POS"),
-  salesChangeCustomer: buildPermissionKey("POS", "Operacion POS", "Cambiar cliente en la factura"),
-  salesManagePayments: buildPermissionKey("POS", "Operacion POS", "Gestionar pagos en efectivo, transferencia y combinado"),
-  salesHistory: buildPermissionKey("POS", "Operacion POS", "Ver historial de ventas"),
-  salesPrint: buildPermissionKey("POS", "Operacion POS", "Imprimir factura"),
-  cashOpen: buildPermissionKey("POS", "Caja y control diario", "Abrir caja"),
-  cashClose: buildPermissionKey("POS", "Caja y control diario", "Cerrar caja"),
-  cashView: buildPermissionKey("POS", "Caja y control diario", "Consultar resumen de caja"),
-  productsView: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Ver listado de items"),
-  productsCreate: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Crear nuevos items de venta"),
-  productsEdit: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Editar items"),
-  productsDelete: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Eliminar items"),
-  stockMovesView: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Ver listado de ajustes de inventario"),
-  purchasesView: buildPermissionKey("Contabilidad", "Compras y proveedores", "Ver listado de facturas de proveedores"),
-  purchasesDetails: buildPermissionKey("Contabilidad", "Compras y proveedores", "Ver detalles de facturas de proveedores"),
-  purchasesCreate: buildPermissionKey("Contabilidad", "Compras y proveedores", "Crear nuevas facturas de proveedores"),
-  suppliersView: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Ver listado de proveedores"),
-  suppliersCreate: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Agregar nuevos contactos"),
-  suppliersEdit: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Editar contactos"),
-  usersView: buildPermissionKey("Configuraciones generales", "Usuarios y seguridad", "Ver usuarios"),
-  usersCreate: buildPermissionKey("Configuraciones generales", "Usuarios y seguridad", "Crear usuarios"),
-  usersEdit: buildPermissionKey("Configuraciones generales", "Usuarios y seguridad", "Editar usuarios"),
-  rolesView: buildPermissionKey("Configuraciones generales", "Usuarios y seguridad", "Ver roles y permisos"),
-  rolesManage: buildPermissionKey("Configuraciones generales", "Usuarios y seguridad", "Administrar el rol Administrador"),
-  customersView: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Ver listado de clientes"),
-  customersCreate: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Agregar nuevos contactos"),
-  customersEdit: buildPermissionKey("Contabilidad", "Items, inventario y contactos", "Editar contactos"),
-  correspondentView: buildPermissionKey("POS", "Operacion de tienda", "Gestionar corresponsal"),
-  reportsView: buildPermissionKey("Contabilidad", "Reportes comerciales y financieros", "Ver reporte de ventas generales"),
-  settingsView: buildPermissionKey("Configuraciones generales", "Negocio y sistema", "Editar configuracion general del negocio")
+const qa = {
+  posAccess: O("Acceso a interfaces", "Operacion comercial", "Acceder a Facturar"),
+  salesAccess: O("Acceso a interfaces", "Operacion comercial", "Acceder a Historial ventas"),
+  customersAccess: O("Acceso a interfaces", "Operacion comercial", "Acceder a Clientes"),
+  purchasesAccess: O("Acceso a interfaces", "Operacion comercial", "Acceder a Compras"),
+  suppliersAccess: O("Acceso a interfaces", "Operacion comercial", "Acceder a Proveedores"),
+  cashAccess: O("Acceso a interfaces", "Caja y corresponsal", "Acceder a Caja general"),
+  correspondentAccess: O("Acceso a interfaces", "Caja y corresponsal", "Acceder a Corresponsal transacciones"),
+  correspondentHistoryAccess: O("Acceso a interfaces", "Caja y corresponsal", "Acceder a Corresponsal historial"),
+  correspondentClosuresAccess: O("Acceso a interfaces", "Caja y corresponsal", "Acceder a Corresponsal resumen diario"),
+  correspondentSettingsAccess: O("Acceso a interfaces", "Caja y corresponsal", "Acceder a Corresponsal configuracion"),
+  productsAccess: O("Acceso a interfaces", "Inventario", "Acceder a Productos"),
+  stockMovesAccess: O("Acceso a interfaces", "Inventario", "Acceder a Movimientos de inventario"),
+  accountingAccess: O("Acceso a interfaces", "Control financiero", "Acceder a Centro contable"),
+  reportsAccess: O("Acceso a interfaces", "Control financiero", "Acceder a Reportes"),
+  usersAccess: O("Acceso a interfaces", "Gestion y sistema", "Acceder a Usuarios"),
+  rolesAccess: O("Acceso a interfaces", "Gestion y sistema", "Acceder a Roles y permisos"),
+  settingsAccess: O("Acceso a interfaces", "Gestion y sistema", "Acceder a Configuracion")
+}, ja = {
+  salesCreate: O("POS", "Operacion POS", "Crear ventas desde POS"),
+  salesChangeCustomer: O("POS", "Operacion POS", "Cambiar cliente en la factura"),
+  salesManagePayments: O("POS", "Operacion POS", "Gestionar pagos en efectivo, transferencia y combinado"),
+  salesHistory: O("POS", "Operacion POS", "Ver historial de ventas"),
+  salesPrint: O("POS", "Operacion POS", "Imprimir factura"),
+  cashOpen: O("POS", "Caja y control diario", "Abrir caja"),
+  cashClose: O("POS", "Caja y control diario", "Cerrar caja"),
+  cashView: O("POS", "Caja y control diario", "Consultar resumen de caja"),
+  productsView: O("Contabilidad", "Items, inventario y contactos", "Ver listado de items"),
+  productsCreate: O("Contabilidad", "Items, inventario y contactos", "Crear nuevos items de venta"),
+  productsEdit: O("Contabilidad", "Items, inventario y contactos", "Editar items"),
+  productsDelete: O("Contabilidad", "Items, inventario y contactos", "Eliminar items"),
+  stockMovesView: O("Contabilidad", "Items, inventario y contactos", "Ver listado de ajustes de inventario"),
+  purchasesView: O("Contabilidad", "Compras y proveedores", "Ver listado de facturas de proveedores"),
+  purchasesDetails: O("Contabilidad", "Compras y proveedores", "Ver detalles de facturas de proveedores"),
+  purchasesCreate: O("Contabilidad", "Compras y proveedores", "Crear nuevas facturas de proveedores"),
+  suppliersView: O("Contabilidad", "Items, inventario y contactos", "Ver listado de proveedores"),
+  suppliersCreate: O("Contabilidad", "Items, inventario y contactos", "Agregar nuevos contactos"),
+  suppliersEdit: O("Contabilidad", "Items, inventario y contactos", "Editar contactos"),
+  usersView: O("Configuraciones generales", "Usuarios y seguridad", "Ver usuarios"),
+  usersCreate: O("Configuraciones generales", "Usuarios y seguridad", "Crear usuarios"),
+  usersEdit: O("Configuraciones generales", "Usuarios y seguridad", "Editar usuarios"),
+  rolesView: O("Configuraciones generales", "Usuarios y seguridad", "Ver roles y permisos"),
+  rolesManage: O("Configuraciones generales", "Usuarios y seguridad", "Administrar el rol Administrador"),
+  customersView: O("Contabilidad", "Items, inventario y contactos", "Ver listado de clientes"),
+  customersCreate: O("Contabilidad", "Items, inventario y contactos", "Agregar nuevos contactos"),
+  customersEdit: O("Contabilidad", "Items, inventario y contactos", "Editar contactos"),
+  correspondentView: O("POS", "Operacion de tienda", "Gestionar corresponsal"),
+  reportsView: O("Contabilidad", "Reportes comerciales y financieros", "Ver reporte de ventas generales"),
+  settingsView: O("Configuraciones generales", "Negocio y sistema", "Editar configuracion general del negocio"),
+  settingsTheme: O("Configuraciones generales", "Interfaz del sistema", "Cambiar tema del sistema"),
+  settingsBusiness: O("Configuraciones generales", "Datos del negocio", "Editar datos del negocio"),
+  settingsBilling: O("Configuraciones generales", "Facturacion e impresion", "Configurar factura e impresion"),
+  settingsInventory: O("Configuraciones generales", "Inventario y operacion", "Configurar inventario y comportamiento de venta")
+}, E = {
+  ...qa,
+  ...ja
+}, ht = {
+  [E.posAccess]: [
+    E.salesCreate,
+    E.salesChangeCustomer,
+    E.salesManagePayments,
+    E.salesHistory,
+    E.salesPrint
+  ],
+  [E.salesAccess]: [
+    E.salesHistory,
+    E.salesPrint
+  ],
+  [E.customersAccess]: [
+    E.customersView,
+    E.customersCreate,
+    E.customersEdit
+  ],
+  [E.purchasesAccess]: [
+    E.purchasesView,
+    E.purchasesDetails,
+    E.purchasesCreate
+  ],
+  [E.suppliersAccess]: [
+    E.suppliersView,
+    E.suppliersCreate,
+    E.suppliersEdit
+  ],
+  [E.cashAccess]: [
+    E.cashView,
+    E.cashOpen,
+    E.cashClose
+  ],
+  [E.correspondentAccess]: [E.correspondentView],
+  [E.correspondentHistoryAccess]: [E.correspondentView],
+  [E.correspondentClosuresAccess]: [E.correspondentView, E.cashView],
+  [E.correspondentSettingsAccess]: [E.correspondentView],
+  [E.productsAccess]: [
+    E.productsView,
+    E.productsCreate,
+    E.productsEdit,
+    E.productsDelete
+  ],
+  [E.stockMovesAccess]: [
+    E.stockMovesView,
+    E.productsEdit
+  ],
+  [E.accountingAccess]: [E.reportsView],
+  [E.reportsAccess]: [E.reportsView],
+  [E.usersAccess]: [
+    E.usersView,
+    E.usersCreate,
+    E.usersEdit
+  ],
+  [E.rolesAccess]: [
+    E.rolesView,
+    E.rolesManage
+  ],
+  [E.settingsAccess]: [
+    E.settingsView,
+    E.settingsTheme,
+    E.settingsBusiness,
+    E.settingsBilling,
+    E.settingsInventory
+  ]
+}, vt = {
+  [E.settingsTheme]: [E.settingsView],
+  [E.settingsBusiness]: [E.settingsView],
+  [E.settingsBilling]: [E.settingsView],
+  [E.settingsInventory]: [E.settingsView]
+}, za = {
+  [E.settingsView]: [
+    E.settingsTheme,
+    E.settingsBusiness,
+    E.settingsBilling,
+    E.settingsInventory
+  ]
 };
-const createCategorySchema = z.object({
-  name: z.string().trim().min(2).max(80)
-});
-const createSubcategorySchema = z.object({
-  categoryId: z.string().uuid(),
-  name: z.string().trim().min(2).max(80)
-});
-const deleteByIdSchema = z.object({
-  id: z.string().uuid()
-});
-const documentTypeSchema = z.enum([
+[
+  ...Object.keys(ht),
+  ...Object.keys(vt)
+];
+function Ga(e) {
+  return e ? [
+    e,
+    ...ht[e] ?? [],
+    ...vt[e] ?? []
+  ] : [];
+}
+function bt(e, a) {
+  if (!a)
+    return !0;
+  const r = e ?? [];
+  return Ga(a).some((l) => r.includes(l));
+}
+function Ne(e) {
+  const a = /* @__PURE__ */ new Set();
+  for (const r of e ?? []) {
+    const l = za[r];
+    if (l) {
+      for (const m of l)
+        a.add(m);
+      continue;
+    }
+    a.add(r);
+  }
+  return Array.from(a);
+}
+const Ka = o.object({
+  name: o.string().trim().min(2).max(80)
+}), Ha = o.object({
+  categoryId: o.string().uuid(),
+  name: o.string().trim().min(2).max(80)
+}), Ee = o.object({
+  id: o.string().uuid()
+}), St = o.enum([
   "Cédula",
   "NIT",
   "Cédula de extranjería",
   "Pasaporte",
   "Tarjeta de identidad"
-]);
-const createCustomerSchema = z.object({
-  internalCode: z.string().trim().max(30).optional().nullable(),
-  firstName: z.string().trim().min(2).max(80),
-  lastName: z.string().trim().max(80).optional().default(""),
-  documentType: documentTypeSchema.optional().default("Cédula"),
-  documentNumber: z.string().trim().max(40).optional().nullable(),
-  phone: z.string().trim().regex(/^\d{10}$/).optional().nullable(),
-  email: z.string().trim().email().max(120).optional().nullable(),
-  address: z.string().trim().max(180).optional().nullable(),
-  isActive: z.boolean().optional().default(true)
-});
-const updateCustomerSchema = createCustomerSchema.extend({
-  id: z.string().uuid()
-});
-const createSupplierSchema = z.object({
-  internalCode: z.string().trim().max(30).optional().nullable(),
-  name: z.string().trim().min(2).max(120),
-  contactName: z.string().trim().max(120).optional().nullable(),
-  documentType: documentTypeSchema.optional().default("NIT"),
-  documentNumber: z.string().trim().max(40).optional().nullable(),
-  phone: z.string().trim().regex(/^\d{10}$/).optional().nullable(),
-  email: z.string().trim().email().max(120).optional().nullable(),
-  address: z.string().trim().max(180).optional().nullable(),
-  isActive: z.boolean().optional().default(true)
-});
-const updateSupplierSchema = createSupplierSchema.extend({
-  id: z.string().uuid()
-});
-const createPurchaseSchema = z.object({
-  supplierId: z.string().uuid(),
-  purchasedAt: z.string().datetime().optional(),
-  note: z.string().trim().max(300).optional().nullable(),
-  markAsPaid: z.boolean().optional().default(false),
-  paymentMedium: z.enum(["CASH", "TRANSFER", "CORRESPONDENT"]).optional().default("CASH"),
-  paymentPlatformId: z.string().uuid().optional().nullable(),
-  items: z.array(
-    z.object({
-      productId: z.string().uuid(),
-      qty: z.number().int().positive(),
-      cost: z.number().positive(),
-      taxRate: z.number().min(0).max(1).optional().default(0.19)
+]), wt = o.object({
+  internalCode: o.string().trim().max(30).optional().nullable(),
+  firstName: o.string().trim().min(2).max(80),
+  lastName: o.string().trim().max(80).optional().default(""),
+  documentType: St.optional().default("Cédula"),
+  documentNumber: o.string().trim().max(40).optional().nullable(),
+  phone: o.string().trim().regex(/^\d{10}$/).optional().nullable(),
+  email: o.string().trim().email().max(120).optional().nullable(),
+  address: o.string().trim().max(180).optional().nullable(),
+  isActive: o.boolean().optional().default(!0)
+}), Ya = wt.extend({
+  id: o.string().uuid()
+}), Ot = o.object({
+  internalCode: o.string().trim().max(30).optional().nullable(),
+  name: o.string().trim().min(2).max(120),
+  contactName: o.string().trim().max(120).optional().nullable(),
+  documentType: St.optional().default("NIT"),
+  documentNumber: o.string().trim().max(40).optional().nullable(),
+  phone: o.string().trim().regex(/^\d{10}$/).optional().nullable(),
+  email: o.string().trim().email().max(120).optional().nullable(),
+  address: o.string().trim().max(180).optional().nullable(),
+  isActive: o.boolean().optional().default(!0)
+}), Ja = Ot.extend({
+  id: o.string().uuid()
+}), Wa = o.object({
+  supplierId: o.string().uuid(),
+  purchasedAt: o.string().datetime().optional(),
+  note: o.string().trim().max(300).optional().nullable(),
+  markAsPaid: o.boolean().optional().default(!1),
+  paymentMedium: o.enum(["CASH", "TRANSFER", "CORRESPONDENT"]).optional().default("CASH"),
+  paymentPlatformId: o.string().uuid().optional().nullable(),
+  items: o.array(
+    o.object({
+      productId: o.string().uuid(),
+      qty: o.number().int().positive(),
+      cost: o.number().positive(),
+      taxRate: o.number().min(0).max(1).optional().default(0.19)
     })
   ).min(1)
+}), Rt = o.object({
+  platformId: o.string().uuid(),
+  amount: o.number().min(0)
+}), Qa = o.object({
+  openingCashAmount: o.number().min(0),
+  openingTransferAmount: o.number().min(0).optional().default(0),
+  note: o.string().trim().max(300).optional().nullable(),
+  cashBreakdown: o.record(o.string(), o.number()).optional().default({}),
+  correspondentBalances: o.array(Rt).optional().default([])
+}), Za = o.object({
+  sessionId: o.string().uuid(),
+  countedCashAmount: o.number().min(0),
+  countedTransferAmount: o.number().min(0).optional().default(0),
+  note: o.string().trim().max(300).optional().nullable(),
+  cashBreakdown: o.record(o.string(), o.number()).optional().default({}),
+  correspondentBalances: o.array(Rt).optional().default([])
+}), es = o.enum(["LIGHT", "DARK"]), Dt = o.enum(["NORMAL", "THERMAL_80", "THERMAL_50"]), ts = o.object({
+  businessName: o.string().trim().max(120).optional().nullable(),
+  taxId: o.string().trim().max(40).optional().nullable(),
+  address: o.string().trim().max(180).optional().nullable(),
+  city: o.string().trim().max(80).optional().nullable()
+}), as = o.object({
+  themeMode: es
+}), ss = o.object({
+  invoicePrefix: o.string().trim().max(10).optional().nullable(),
+  defaultReceiptTemplate: Dt.optional().default("NORMAL"),
+  receiptFooter: o.string().trim().max(400).optional().nullable()
+}), rs = o.object({
+  defaultTaxRate: o.number().min(0).max(1).optional(),
+  allowNegativeStock: o.boolean().optional()
+}), ns = o.object({
+  dateFrom: o.string().datetime().optional(),
+  dateTo: o.string().datetime().optional(),
+  cashierId: o.string().uuid().optional(),
+  status: o.nativeEnum(me).optional(),
+  search: o.string().trim().max(80).optional()
+}).optional().default({}), os = o.object({
+  saleId: o.string().uuid()
+}), st = os.extend({
+  template: Dt.optional().default("NORMAL")
 });
-const cashPlatformAmountSchema = z.object({
-  platformId: z.string().uuid(),
-  amount: z.number().min(0)
-});
-const openCashSessionSchema = z.object({
-  openingCashAmount: z.number().min(0),
-  openingTransferAmount: z.number().min(0).optional().default(0),
-  note: z.string().trim().max(300).optional().nullable(),
-  cashBreakdown: z.record(z.string(), z.number()).optional().default({}),
-  correspondentBalances: z.array(cashPlatformAmountSchema).optional().default([])
-});
-const closeCashSessionSchema = z.object({
-  sessionId: z.string().uuid(),
-  countedCashAmount: z.number().min(0),
-  countedTransferAmount: z.number().min(0).optional().default(0),
-  note: z.string().trim().max(300).optional().nullable(),
-  cashBreakdown: z.record(z.string(), z.number()).optional().default({}),
-  correspondentBalances: z.array(cashPlatformAmountSchema).optional().default([])
-});
-const businessSettingsSchema = z.object({
-  businessName: z.string().trim().max(120).optional().nullable(),
-  taxId: z.string().trim().max(40).optional().nullable(),
-  address: z.string().trim().max(180).optional().nullable(),
-  city: z.string().trim().max(80).optional().nullable(),
-  invoicePrefix: z.string().trim().max(10).optional().nullable(),
-  defaultTaxRate: z.number().min(0).max(1).optional(),
-  allowNegativeStock: z.boolean().optional(),
-  receiptFooter: z.string().trim().max(400).optional().nullable()
-});
-const salesListFilterSchema = z.object({
-  dateFrom: z.string().datetime().optional(),
-  dateTo: z.string().datetime().optional(),
-  cashierId: z.string().uuid().optional(),
-  status: z.nativeEnum(SaleStatus).optional(),
-  search: z.string().trim().max(80).optional()
-}).optional().default({});
-const saleByIdSchema = z.object({
-  saleId: z.string().uuid()
-});
-function money$1(value) {
-  return Math.round(value);
+function z(e) {
+  return Math.round(e);
 }
-const BUSINESS_CITY_SEPARATOR = "|||CITY|||";
-function mergeBusinessAddress(address, city) {
-  const normalizedAddress = (address == null ? void 0 : address.trim()) || "";
-  const normalizedCity = (city == null ? void 0 : city.trim()) || "";
-  if (!normalizedCity)
-    return normalizedAddress || null;
-  return `${normalizedAddress}${BUSINESS_CITY_SEPARATOR}${normalizedCity}`;
+const xt = "|||CITY|||";
+function rt(e, a) {
+  const r = (e == null ? void 0 : e.trim()) || "", l = (a == null ? void 0 : a.trim()) || "";
+  return l ? `${r}${xt}${l}` : r || null;
 }
-function splitBusinessAddress(rawAddress) {
-  var _a, _b;
-  if (!rawAddress)
+function nt(e) {
+  var r, l;
+  if (!e)
     return { address: "", city: "" };
-  const parts = rawAddress.split(BUSINESS_CITY_SEPARATOR);
+  const a = e.split(xt);
   return {
-    address: ((_a = parts[0]) == null ? void 0 : _a.trim()) || "",
-    city: ((_b = parts[1]) == null ? void 0 : _b.trim()) || ""
+    address: ((r = a[0]) == null ? void 0 : r.trim()) || "",
+    city: ((l = a[1]) == null ? void 0 : l.trim()) || ""
   };
 }
-function calculateSalePrice(cost, marginPercent = 0, hasTax = false, taxRate = 0) {
-  const basePrice = Number(cost || 0) * (1 + Number(marginPercent || 0) / 100);
-  const total = hasTax ? basePrice * (1 + Number(taxRate || 0)) : basePrice;
-  return money$1(total);
+function is(e, a = 0, r = !1, l = 0) {
+  const m = Number(e || 0) * (1 + Number(a || 0) / 100), c = r ? m * (1 + Number(l || 0)) : m;
+  return z(c);
 }
-function paymentMethodLabel(value) {
-  if (value === PaymentMethod.CARD)
-    return "Transferencia";
-  if (value === PaymentMethod.TRANSFER)
-    return "Transferencia";
-  return "Efectivo";
+function le(e) {
+  return e === j.CARD || e === j.TRANSFER ? "Transferencia" : "Efectivo";
 }
-function paymentSummaryLabel(payments, fallback) {
-  if (!payments || payments.length <= 1)
-    return paymentMethodLabel(fallback);
-  return payments.map((payment) => `${paymentMethodLabel(payment.method)} $${payment.amount.toLocaleString("es-CO")}`).join(" + ");
+function cs(e, a) {
+  return !e || e.length <= 1 ? le(a) : e.map((r) => `${le(r.method)} $${r.amount.toLocaleString("es-CO")}`).join(" + ");
 }
-function buildInvoiceHtml(sale) {
-  const rows = sale.items.map(
-    (item) => `
+function ds(e) {
+  const a = ye(e.cashier), r = Pt(e.receiptFooter), l = e.items.map(
+    (c) => `
         <tr>
-          <td>${item.name}</td>
-          <td style="text-align:center">${item.qty}</td>
-          <td style="text-align:right">$${item.price.toLocaleString("es-CO")}</td>
-          <td style="text-align:right">$${item.lineTotal.toLocaleString("es-CO")}</td>
+          <td>${c.name}</td>
+          <td style="text-align:center">${c.qty}</td>
+          <td style="text-align:right">$${c.price.toLocaleString("es-CO")}</td>
+          <td style="text-align:right">$${c.lineTotal.toLocaleString("es-CO")}</td>
         </tr>
       `
-  ).join("");
-  const businessAddress = [sale.address, sale.city].filter(Boolean).join(" - ");
+  ).join(""), m = [e.address, e.city].filter(Boolean).join(" - ");
   return `
     <!doctype html>
     <html lang="es">
       <head>
         <meta charset="utf-8" />
-        <title>${sale.invoiceNumber}</title>
+        <title>${e.invoiceNumber}</title>
         <style>
           body { font-family: Arial, sans-serif; color: #111827; margin: 24px; }
           h1, h2, p { margin: 0; }
@@ -2608,19 +2579,21 @@ function buildInvoiceHtml(sale) {
           .totals { margin-top: 18px; width: 260px; margin-left: auto; }
           .totals-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; }
           .totals-row.total { border-top: 1px solid #d1d5db; padding-top: 8px; font-weight: 700; font-size: 14px; }
+          .legal-notes { margin-top: 20px; padding-top: 12px; border-top: 1px solid #e5e7eb; display: grid; gap: 6px; }
+          .legal-notes p { font-size: 11px; color: #4b5563; line-height: 1.5; }
         </style>
       </head>
       <body>
         <div class="header">
-          <h1>${sale.businessName || "Factura de venta"}</h1>
+          <h1>${e.businessName || "Factura de venta"}</h1>
           <div class="meta">
-            ${sale.taxId ? `<div>NIT: ${sale.taxId}</div>` : ""}
-            ${businessAddress ? `<div>Dirección: ${businessAddress}</div>` : ""}
-            <div>Factura: ${sale.invoiceNumber}</div>
-            <div>Fecha: ${sale.createdAt.toLocaleString("es-CO")}</div>
-            <div>Cliente: ${sale.customer}</div>
-            <div>Cajero: ${sale.cashier.name ?? sale.cashier.username}</div>
-            <div>Pago: ${sale.paymentSummary}</div>
+            ${e.taxId ? `<div>NIT: ${e.taxId}</div>` : ""}
+            ${m ? `<div>Dirección: ${m}</div>` : ""}
+            <div>Factura: ${e.invoiceNumber}</div>
+            <div>Fecha: ${e.createdAt.toLocaleString("es-CO")}</div>
+            <div>Cliente: ${e.customer}</div>
+            <div>Cajero: ${a}</div>
+            <div>Pago: ${e.paymentSummary}</div>
           </div>
         </div>
 
@@ -2633,478 +2606,538 @@ function buildInvoiceHtml(sale) {
               <th style="text-align:right">Total</th>
             </tr>
           </thead>
-          <tbody>${rows}</tbody>
+          <tbody>${l}</tbody>
         </table>
 
         <div class="totals">
-          <div class="totals-row"><span>Subtotal</span><strong>$${sale.subtotal.toLocaleString("es-CO")}</strong></div>
-          <div class="totals-row"><span>IVA</span><strong>$${sale.tax.toLocaleString("es-CO")}</strong></div>
-          <div class="totals-row total"><span>Total</span><strong>$${sale.total.toLocaleString("es-CO")}</strong></div>
+          <div class="totals-row"><span>Subtotal</span><strong>$${e.subtotal.toLocaleString("es-CO")}</strong></div>
+          <div class="totals-row"><span>IVA</span><strong>$${e.tax.toLocaleString("es-CO")}</strong></div>
+          <div class="totals-row total"><span>Total</span><strong>$${e.total.toLocaleString("es-CO")}</strong></div>
         </div>
-        ${sale.receiptFooter ? `<p style="margin-top: 20px; font-size: 12px; color: #4b5563;">${sale.receiptFooter}</p>` : ""}
+        <div class="legal-notes">${r.map((c) => `<p>${c}</p>`).join("")}</div>
       </body>
     </html>
   `;
 }
-async function ensureAdminSession(getCurrentSessionUser) {
-  const currentSessionUser2 = getCurrentSessionUser();
-  if (!currentSessionUser2 || currentSessionUser2.role !== Role.ADMIN) {
+function us(e, a) {
+  if (a === "NORMAL")
+    return ds(e);
+  const r = a === "THERMAL_50" ? 50 : 80, l = [e.address, e.city].filter(Boolean).join(" - "), m = ye(e.cashier), c = Pt(e.receiptFooter), n = e.items.map(
+    (s) => `
+        <div class="item">
+          <div class="item-name">${s.name}</div>
+          <div class="item-meta">
+            <span>${s.qty} x $${s.price.toLocaleString("es-CO")}</span>
+            <strong>$${s.lineTotal.toLocaleString("es-CO")}</strong>
+          </div>
+        </div>
+      `
+  ).join("");
+  return `
+    <!doctype html>
+    <html lang="es">
+      <head>
+        <meta charset="utf-8" />
+        <title>${e.invoiceNumber}</title>
+        <style>
+          @page { size: ${r}mm auto; margin: 4mm; }
+          body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            color: #111827;
+            margin: 0;
+            width: ${r - 8}mm;
+            font-size: ${a === "THERMAL_50" ? 10 : 11}px;
+            line-height: 1.35;
+          }
+          h1, p { margin: 0; }
+          .receipt { display: flex; flex-direction: column; gap: 10px; }
+          .header { text-align: center; border-bottom: 1px dashed #9ca3af; padding-bottom: 8px; }
+          .header h1 { font-size: ${a === "THERMAL_50" ? 14 : 16}px; margin-bottom: 4px; }
+          .muted { color: #4b5563; }
+          .meta { display: grid; gap: 2px; }
+          .section-title {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #6b7280;
+          }
+          .items { display: grid; gap: 8px; }
+          .item { border-bottom: 1px dashed #d1d5db; padding-bottom: 6px; }
+          .item-name { font-weight: 700; margin-bottom: 3px; }
+          .item-meta { display: flex; justify-content: space-between; gap: 8px; }
+          .totals { border-top: 1px dashed #9ca3af; padding-top: 8px; display: grid; gap: 4px; }
+          .total-row { display: flex; justify-content: space-between; }
+          .total-row.total { font-size: 13px; font-weight: 800; }
+          .footer { text-align: center; border-top: 1px dashed #d1d5db; padding-top: 8px; display: grid; gap: 6px; }
+        </style>
+      </head>
+      <body>
+        <div class="receipt">
+          <div class="header">
+            <h1>${e.businessName || "Factura de venta"}</h1>
+            ${e.taxId ? `<p class="muted">NIT: ${e.taxId}</p>` : ""}
+            ${l ? `<p class="muted">${l}</p>` : ""}
+          </div>
+
+          <div class="meta">
+            <div><strong>Factura:</strong> ${e.invoiceNumber}</div>
+            <div><strong>Fecha:</strong> ${e.createdAt.toLocaleString("es-CO")}</div>
+            <div><strong>Cliente:</strong> ${e.customer}</div>
+            <div><strong>Cajero:</strong> ${m}</div>
+            <div><strong>Pago:</strong> ${e.paymentSummary}</div>
+          </div>
+
+          <div>
+            <div class="section-title">Detalle</div>
+            <div class="items">${n}</div>
+          </div>
+
+          <div class="totals">
+            <div class="total-row"><span>Subtotal</span><strong>$${e.subtotal.toLocaleString("es-CO")}</strong></div>
+            <div class="total-row"><span>IVA</span><strong>$${e.tax.toLocaleString("es-CO")}</strong></div>
+            <div class="total-row total"><span>Total</span><strong>$${e.total.toLocaleString("es-CO")}</strong></div>
+          </div>
+          <div class="footer">${c.map((s) => `<p class="muted">${s}</p>`).join("")}</div>
+        </div>
+      </body>
+    </html>
+  `;
+}
+async function ot(e) {
+  const a = e();
+  if (!a || a.role !== F.ADMIN)
     throw new Error("Solo admins pueden ejecutar esta accion");
-  }
-  return currentSessionUser2;
+  return a;
 }
-function hasSessionPermission(currentSessionUser2, permissionKey) {
-  var _a;
-  if (!permissionKey)
-    return true;
-  return Boolean((_a = currentSessionUser2 == null ? void 0 : currentSessionUser2.permissions) == null ? void 0 : _a.includes(permissionKey));
+function M(e, a) {
+  return a ? bt(e == null ? void 0 : e.permissions, a) : !0;
 }
-function actorLabel(currentSessionUser2) {
-  var _a;
-  return ((_a = currentSessionUser2 == null ? void 0 : currentSessionUser2.name) == null ? void 0 : _a.trim()) || (currentSessionUser2 == null ? void 0 : currentSessionUser2.username) || "Sistema";
+function _e(e) {
+  var a;
+  return ((a = e == null ? void 0 : e.name) == null ? void 0 : a.trim()) || (e == null ? void 0 : e.username) || "Sistema";
 }
-function buildFullName(firstName, lastName) {
-  return [firstName.trim(), (lastName == null ? void 0 : lastName.trim()) || ""].filter(Boolean).join(" ");
+function ye(e) {
+  var l;
+  const a = ((l = e.name) == null ? void 0 : l.trim()) || e.username, [r] = a.split(/\s+/).filter(Boolean);
+  return r || a;
 }
-function buildDocumentValue(documentType, documentNumber) {
-  const normalizedNumber = documentNumber == null ? void 0 : documentNumber.trim();
-  if (!normalizedNumber)
-    return null;
-  return `${documentType || "Cédula"}: ${normalizedNumber}`;
+function Pt(e) {
+  const a = [
+    "Esta factura de venta podra constituirse como titulo valor conforme a la legislacion comercial aplicable y cuando se cumplan los requisitos legales.",
+    "En ventas a credito, la mora en el pago causara intereses a la tasa maxima legal vigente."
+  ];
+  return e != null && e.trim() && a.push(e.trim()), a;
 }
-async function getAuditUserMap(prisma2, entity, entityIds, action, newestFirst = false) {
-  var _a, _b, _c;
-  if (entityIds.length === 0) {
+function it(e, a) {
+  return [e.trim(), (a == null ? void 0 : a.trim()) || ""].filter(Boolean).join(" ");
+}
+function be(e, a) {
+  const r = a == null ? void 0 : a.trim();
+  return r ? `${e || "Cédula"}: ${r}` : null;
+}
+async function de(e, a, r, l, m = !1) {
+  var s, t, i;
+  if (r.length === 0)
     return /* @__PURE__ */ new Map();
-  }
-  const logs = await prisma2.auditLog.findMany({
+  const c = await e.auditLog.findMany({
     where: {
-      entity,
-      action,
-      entityId: { in: entityIds }
+      entity: a,
+      action: l,
+      entityId: { in: r }
     },
     include: {
       user: {
         select: {
-          name: true,
-          username: true
+          name: !0,
+          username: !0
         }
       }
     },
-    orderBy: { createdAt: newestFirst ? "desc" : "asc" }
-  });
-  const result = /* @__PURE__ */ new Map();
-  for (const log of logs) {
-    if (!log.entityId || result.has(log.entityId))
-      continue;
-    result.set(log.entityId, ((_b = (_a = log.user) == null ? void 0 : _a.name) == null ? void 0 : _b.trim()) || ((_c = log.user) == null ? void 0 : _c.username) || "Sistema");
-  }
-  return result;
+    orderBy: { createdAt: m ? "desc" : "asc" }
+  }), n = /* @__PURE__ */ new Map();
+  for (const u of c)
+    !u.entityId || n.has(u.entityId) || n.set(u.entityId, ((t = (s = u.user) == null ? void 0 : s.name) == null ? void 0 : t.trim()) || ((i = u.user) == null ? void 0 : i.username) || "Sistema");
+  return n;
 }
-function parseSessionMeta(note) {
-  if (!note)
+function G(e) {
+  if (!e)
     return {};
   try {
-    return JSON.parse(note);
+    return JSON.parse(e);
   } catch {
     return {};
   }
 }
-function stringifySessionMeta(meta) {
-  return JSON.stringify(meta);
+function ct(e) {
+  return JSON.stringify(e);
 }
-function toAmountMap(items) {
-  return new Map((items ?? []).map((item) => [item.platformId, Number(item.amount || 0)]));
+function $e(e) {
+  return new Map((e ?? []).map((a) => [a.platformId, Number(a.amount || 0)]));
 }
-function normalizeTreasuryMedium(value) {
-  if (value === "TRANSFER" || value === "CORRESPONDENT")
-    return value;
-  return "CASH";
+function ke(e) {
+  return e === "TRANSFER" || e === "CORRESPONDENT" ? e : "CASH";
 }
-function parseTreasuryMovementMeta(note) {
-  if (!note)
+function se(e) {
+  if (!e)
     return null;
   try {
-    const parsed = JSON.parse(note);
-    if (!parsed || typeof parsed !== "object")
-      return null;
-    if (!parsed.medium && !parsed.label && !parsed.sourceType)
-      return null;
-    return {
-      ...parsed,
-      medium: normalizeTreasuryMedium(parsed.medium)
+    const a = JSON.parse(e);
+    return !a || typeof a != "object" || !a.medium && !a.label && !a.sourceType ? null : {
+      ...a,
+      medium: ke(a.medium)
     };
   } catch {
     return null;
   }
 }
-function buildTreasuryMovementNote(meta) {
-  return JSON.stringify(meta);
+function Se(e) {
+  return JSON.stringify(e);
 }
-function resolveMovementLabel(note, fallback = "Movimiento de caja") {
-  const meta = parseTreasuryMovementMeta(note);
-  return (meta == null ? void 0 : meta.label) || (meta == null ? void 0 : meta.userNote) || note || fallback;
+function Be(e, a = "Movimiento de caja") {
+  const r = se(e);
+  return (r == null ? void 0 : r.label) || (r == null ? void 0 : r.userNote) || e || a;
 }
-function resolveMovementMedium(note) {
-  var _a;
-  return ((_a = parseTreasuryMovementMeta(note)) == null ? void 0 : _a.medium) ?? "CASH";
+function ie(e) {
+  var a;
+  return ((a = se(e)) == null ? void 0 : a.medium) ?? "CASH";
 }
-function resolveMovementPlatformId(note) {
-  var _a;
-  return ((_a = parseTreasuryMovementMeta(note)) == null ? void 0 : _a.platformId) ?? null;
+function ls(e) {
+  var a;
+  return ((a = se(e)) == null ? void 0 : a.platformId) ?? null;
 }
-function resolveMovementPlatformName(note) {
-  var _a;
-  return ((_a = parseTreasuryMovementMeta(note)) == null ? void 0 : _a.platformName) ?? null;
+function Xe(e) {
+  var a;
+  return ((a = se(e)) == null ? void 0 : a.platformName) ?? null;
 }
-function buildDateRangeFilter(dateFrom, dateTo) {
-  return dateFrom || dateTo ? {
-    ...dateFrom ? { gte: new Date(dateFrom) } : {},
-    ...dateTo ? { lte: new Date(dateTo) } : {}
+function ms(e, a) {
+  return e || a ? {
+    ...e ? { gte: new Date(e) } : {},
+    ...a ? { lte: new Date(a) } : {}
   } : void 0;
 }
-function getSessionSection(meta, key) {
-  const raw = meta[key];
-  return raw && typeof raw === "object" ? raw : {};
+function K(e, a) {
+  const r = e[a];
+  return r && typeof r == "object" ? r : {};
 }
-function getSectionTransferAmount(section) {
-  return Number(section.transferAmount ?? 0);
+function oe(e) {
+  return Number(e.transferAmount ?? 0);
 }
-function buildSalePaymentTotals(sales) {
-  return sales.reduce(
-    (acc, sale) => {
-      if (sale.payments && sale.payments.length > 0) {
-        for (const payment of sale.payments) {
-          if (payment.method === PaymentMethod.CASH)
-            acc.cash += payment.amount;
-          if (payment.method === PaymentMethod.TRANSFER || payment.method === PaymentMethod.CARD) {
-            acc.transfer += payment.amount;
-          }
-        }
-        return acc;
+function ps(e) {
+  return e.reduce(
+    (a, r) => {
+      if (r.payments && r.payments.length > 0) {
+        for (const l of r.payments)
+          l.method === j.CASH && (a.cash += l.amount), (l.method === j.TRANSFER || l.method === j.CARD) && (a.transfer += l.amount);
+        return a;
       }
-      if (sale.paymentMethod === PaymentMethod.CASH) {
-        acc.cash += sale.total;
-      } else {
-        acc.transfer += sale.total;
-      }
-      return acc;
+      return r.paymentMethod === j.CASH ? a.cash += r.total : a.transfer += r.total, a;
     },
     { cash: 0, transfer: 0 }
   );
 }
-function buildCorrespondentMovementMap(movements) {
-  const map = /* @__PURE__ */ new Map();
-  for (const move of movements) {
-    const medium = resolveMovementMedium(move.note);
-    if (medium !== "CORRESPONDENT")
+function fs(e) {
+  const a = /* @__PURE__ */ new Map();
+  for (const r of e) {
+    if (ie(r.note) !== "CORRESPONDENT")
       continue;
-    const platformId = resolveMovementPlatformId(move.note);
-    if (!platformId)
+    const m = ls(r.note);
+    if (!m)
       continue;
-    const current = map.get(platformId) ?? { manualIncome: 0, manualExpense: 0, platformName: resolveMovementPlatformName(move.note) };
-    if (move.type === CashMovementType.INCOME_IN)
-      current.manualIncome += move.amount;
-    if (move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT) {
-      current.manualExpense += move.amount;
-    }
-    if (!current.platformName)
-      current.platformName = resolveMovementPlatformName(move.note);
-    map.set(platformId, current);
+    const c = a.get(m) ?? { manualIncome: 0, manualExpense: 0, platformName: Xe(r.note) };
+    r.type === B.INCOME_IN && (c.manualIncome += r.amount), (r.type === B.EXPENSE_OUT || r.type === B.WITHDRAWAL_OUT) && (c.manualExpense += r.amount), c.platformName || (c.platformName = Xe(r.note)), a.set(m, c);
   }
-  return map;
+  return a;
 }
-function buildSessionTreasurySnapshot(params) {
-  const sessionMeta = parseSessionMeta(params.session.note);
-  const opening = getSessionSection(sessionMeta, "opening");
-  const closing = getSessionSection(sessionMeta, "closing");
-  const openingCorrespondent = toAmountMap(
-    opening.correspondentBalances ?? []
-  );
-  const closingCorrespondent = toAmountMap(
-    closing.correspondentBalances ?? []
-  );
-  const openingTransferAmount = getSectionTransferAmount(opening);
-  const countedTransferAmount = closing.transferAmount === void 0 ? null : getSectionTransferAmount(closing);
-  const saleTotals = buildSalePaymentTotals(params.session.sales);
-  const cashManualIncome = params.session.movements.filter((move) => move.type === CashMovementType.INCOME_IN && resolveMovementMedium(move.note) === "CASH").reduce((sum, move) => sum + move.amount, 0);
-  const transferManualIncome = params.session.movements.filter((move) => move.type === CashMovementType.INCOME_IN && resolveMovementMedium(move.note) === "TRANSFER").reduce((sum, move) => sum + move.amount, 0);
-  const cashManualExpense = params.session.movements.filter(
-    (move) => (move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT) && resolveMovementMedium(move.note) === "CASH"
-  ).reduce((sum, move) => sum + move.amount, 0);
-  const transferManualExpense = params.session.movements.filter(
-    (move) => (move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT) && resolveMovementMedium(move.note) === "TRANSFER"
-  ).reduce((sum, move) => sum + move.amount, 0);
-  const correspondentManualMap = buildCorrespondentMovementMap(params.session.movements);
-  const expectedCash = params.session.openingAmount + saleTotals.cash + cashManualIncome - cashManualExpense;
-  const expectedTransferAmount = openingTransferAmount + saleTotals.transfer + transferManualIncome - transferManualExpense;
-  const correspondentByPlatform = params.platforms.map((platform) => {
-    const platformTransactions = params.session.correspondentTransactions.filter(
-      (transaction) => transaction.platform.id === platform.id
-    );
-    const totalIn = platformTransactions.filter((transaction) => transaction.type.direction === CorrespondentDirection.IN).reduce((sum, transaction) => sum + transaction.amount, 0);
-    const totalOut = platformTransactions.filter((transaction) => transaction.type.direction === CorrespondentDirection.OUT).reduce((sum, transaction) => sum + transaction.amount, 0);
-    const totalCommission = platformTransactions.reduce((sum, transaction) => sum + transaction.commissionAmount, 0);
-    const manualAdjustments = correspondentManualMap.get(platform.id) ?? {
+function dt(e) {
+  const a = G(e.session.note), r = K(a, "opening"), l = K(a, "closing"), m = $e(
+    r.correspondentBalances ?? []
+  ), c = $e(
+    l.correspondentBalances ?? []
+  ), n = oe(r), s = l.transferAmount === void 0 ? null : oe(l), t = ps(e.session.sales), i = e.session.movements.filter((d) => d.type === B.INCOME_IN && ie(d.note) === "CASH").reduce((d, A) => d + A.amount, 0), u = e.session.movements.filter((d) => d.type === B.INCOME_IN && ie(d.note) === "TRANSFER").reduce((d, A) => d + A.amount, 0), f = e.session.movements.filter(
+    (d) => (d.type === B.EXPENSE_OUT || d.type === B.WITHDRAWAL_OUT) && ie(d.note) === "CASH"
+  ).reduce((d, A) => d + A.amount, 0), g = e.session.movements.filter(
+    (d) => (d.type === B.EXPENSE_OUT || d.type === B.WITHDRAWAL_OUT) && ie(d.note) === "TRANSFER"
+  ).reduce((d, A) => d + A.amount, 0), T = fs(e.session.movements), I = e.session.openingAmount + t.cash + i - f, p = n + t.transfer + u - g, N = e.platforms.map((d) => {
+    const A = e.session.correspondentTransactions.filter(
+      (k) => k.platform.id === d.id
+    ), S = A.filter((k) => k.type.direction === _.IN).reduce((k, L) => k + L.amount, 0), y = A.filter((k) => k.type.direction === _.OUT).reduce((k, L) => k + L.amount, 0), w = A.reduce((k, L) => k + L.commissionAmount, 0), $ = T.get(d.id) ?? {
       manualIncome: 0,
       manualExpense: 0,
-      platformName: platform.name
-    };
-    const openingAmount = openingCorrespondent.get(platform.id) ?? 0;
-    const expectedAmount = openingAmount + totalIn - totalOut + totalCommission + manualAdjustments.manualIncome - manualAdjustments.manualExpense;
-    const countedAmount = closingCorrespondent.has(platform.id) ? closingCorrespondent.get(platform.id) ?? 0 : null;
+      platformName: d.name
+    }, U = m.get(d.id) ?? 0, Y = U + S - y + w + $.manualIncome - $.manualExpense, q = c.has(d.id) ? c.get(d.id) ?? 0 : null;
     return {
-      platformId: platform.id,
-      platform: platform.name,
-      openingAmount,
-      totalIn,
-      totalOut,
-      totalCommission,
-      manualIncome: manualAdjustments.manualIncome,
-      manualExpense: manualAdjustments.manualExpense,
-      expectedAmount,
-      countedAmount,
-      differenceAmount: countedAmount === null ? null : countedAmount - expectedAmount
+      platformId: d.id,
+      platform: d.name,
+      openingAmount: U,
+      totalIn: S,
+      totalOut: y,
+      totalCommission: w,
+      manualIncome: $.manualIncome,
+      manualExpense: $.manualExpense,
+      expectedAmount: Y,
+      countedAmount: q,
+      differenceAmount: q === null ? null : q - Y
     };
-  });
-  const openingCorrespondentTotal = correspondentByPlatform.reduce((sum, item) => sum + item.openingAmount, 0);
-  const correspondentExpectedTotal = correspondentByPlatform.reduce((sum, item) => sum + item.expectedAmount, 0);
-  const countedCorrespondentTotal = correspondentByPlatform.reduce(
-    (sum, item) => sum + (item.countedAmount ?? item.expectedAmount),
+  }), C = N.reduce((d, A) => d + A.openingAmount, 0), h = N.reduce((d, A) => d + A.expectedAmount, 0), v = N.reduce(
+    (d, A) => d + (A.countedAmount ?? A.expectedAmount),
     0
-  );
-  const countedCashAmount = closing.cashBreakdown && typeof closing.cashBreakdown === "object" ? null : params.session.countedAmount ?? null;
-  const expectedAvailableTotal = expectedCash + expectedTransferAmount + correspondentExpectedTotal;
-  const countedAvailableTotal = (params.session.countedAmount ?? expectedCash) + (countedTransferAmount ?? expectedTransferAmount) + countedCorrespondentTotal;
+  ), D = l.cashBreakdown && typeof l.cashBreakdown == "object" ? null : e.session.countedAmount ?? null, P = I + p + h, b = (e.session.countedAmount ?? I) + (s ?? p) + v;
   return {
-    sessionMeta,
-    opening,
-    closing,
-    openingTransferAmount,
-    countedTransferAmount,
-    salesCash: saleTotals.cash,
-    salesTransfer: saleTotals.transfer,
-    cashManualIncome,
-    transferManualIncome,
-    cashManualExpense,
-    transferManualExpense,
-    expectedCash,
-    expectedTransferAmount,
-    openingCorrespondentTotal,
-    correspondentExpectedTotal,
-    countedCorrespondentTotal,
-    correspondentByPlatform,
-    expectedAvailableTotal,
-    countedAvailableTotal,
-    countedCashAmount
+    sessionMeta: a,
+    opening: r,
+    closing: l,
+    openingTransferAmount: n,
+    countedTransferAmount: s,
+    salesCash: t.cash,
+    salesTransfer: t.transfer,
+    cashManualIncome: i,
+    transferManualIncome: u,
+    cashManualExpense: f,
+    transferManualExpense: g,
+    expectedCash: I,
+    expectedTransferAmount: p,
+    openingCorrespondentTotal: C,
+    correspondentExpectedTotal: h,
+    countedCorrespondentTotal: v,
+    correspondentByPlatform: N,
+    expectedAvailableTotal: P,
+    countedAvailableTotal: b,
+    countedCashAmount: D
   };
 }
-function startOfToday() {
-  const today = /* @__PURE__ */ new Date();
-  today.setHours(0, 0, 0, 0);
-  return today;
+function gs() {
+  const e = /* @__PURE__ */ new Date();
+  return e.setHours(0, 0, 0, 0), e;
 }
-function deriveCreditStatus(balance, total, dueDate) {
-  if (total <= 0)
-    return CreditStatus.CANCELLED;
-  if (balance <= 0)
-    return CreditStatus.PAID;
-  if (dueDate && dueDate.getTime() < startOfToday().getTime())
-    return CreditStatus.OVERDUE;
-  if (balance < total)
-    return CreditStatus.PARTIAL;
-  return CreditStatus.PENDING;
+function Ae(e, a, r) {
+  return a <= 0 ? fe.CANCELLED : e <= 0 ? fe.PAID : r && r.getTime() < gs().getTime() ? fe.OVERDUE : e < a ? fe.PARTIAL : fe.PENDING;
 }
-function mapSaleStatusFromReturns(total, returnedTotal) {
-  if (returnedTotal >= total)
-    return SaleStatus.RETURNED;
-  if (returnedTotal > 0)
-    return SaleStatus.PARTIALLY_RETURNED;
-  return SaleStatus.COMPLETED;
+function ut(e, a) {
+  return a >= e ? me.RETURNED : a > 0 ? me.PARTIALLY_RETURNED : me.COMPLETED;
 }
-async function ensureBackofficeSchemaIfNeeded(prismaClient) {
-  const customerColumns = await prismaClient.$queryRawUnsafe(`PRAGMA table_info("Customer");`);
-  const supplierColumns = await prismaClient.$queryRawUnsafe(`PRAGMA table_info("Supplier");`);
-  const customerColumnSet = new Set(customerColumns.map((column) => column.name));
-  const supplierColumnSet = new Set(supplierColumns.map((column) => column.name));
-  if (!customerColumnSet.has("internalCode")) {
-    await prismaClient.$executeRawUnsafe(`ALTER TABLE "Customer" ADD COLUMN "internalCode" TEXT;`);
-  }
-  if (!supplierColumnSet.has("internalCode")) {
-    await prismaClient.$executeRawUnsafe(`ALTER TABLE "Supplier" ADD COLUMN "internalCode" TEXT;`);
-  }
-  const customers = await prismaClient.customer.findMany({
+async function Es(e) {
+  const a = await e.$queryRawUnsafe(
+    'PRAGMA table_info("BusinessSettings");'
+  ), r = new Set(a.map((f) => f.name));
+  r.has("themeMode") || await e.$executeRawUnsafe(
+    `ALTER TABLE "BusinessSettings" ADD COLUMN "themeMode" TEXT NOT NULL DEFAULT 'LIGHT';`
+  ), r.has("defaultReceiptTemplate") || await e.$executeRawUnsafe(
+    `ALTER TABLE "BusinessSettings" ADD COLUMN "defaultReceiptTemplate" TEXT NOT NULL DEFAULT 'NORMAL';`
+  );
+  const l = await e.$queryRawUnsafe('PRAGMA table_info("Customer");'), m = await e.$queryRawUnsafe('PRAGMA table_info("Supplier");'), c = new Set(l.map((f) => f.name)), n = new Set(m.map((f) => f.name));
+  c.has("internalCode") || await e.$executeRawUnsafe('ALTER TABLE "Customer" ADD COLUMN "internalCode" TEXT;'), n.has("internalCode") || await e.$executeRawUnsafe('ALTER TABLE "Supplier" ADD COLUMN "internalCode" TEXT;');
+  const s = await e.customer.findMany({
     select: {
-      id: true,
-      internalCode: true
+      id: !0,
+      internalCode: !0
     },
     orderBy: [{ createdAt: "asc" }, { name: "asc" }]
-  });
-  const assignedCustomerCodes = [];
-  for (const customer of customers) {
-    const internalCode = resolveManagedCode({
-      desiredCode: customer.internalCode,
-      existingCodes: assignedCustomerCodes,
+  }), t = [];
+  for (const f of s) {
+    const g = Z({
+      desiredCode: f.internalCode,
+      existingCodes: t,
       prefix: "CLI",
       digits: 4,
       maxLength: 30
     });
-    if (internalCode !== customer.internalCode) {
-      await prismaClient.customer.update({
-        where: { id: customer.id },
-        data: { internalCode }
-      });
-    }
-    assignedCustomerCodes.push(internalCode);
+    g !== f.internalCode && await e.customer.update({
+      where: { id: f.id },
+      data: { internalCode: g }
+    }), t.push(g);
   }
-  const suppliers = await prismaClient.supplier.findMany({
+  const i = await e.supplier.findMany({
     select: {
-      id: true,
-      internalCode: true
+      id: !0,
+      internalCode: !0
     },
     orderBy: [{ createdAt: "asc" }, { name: "asc" }]
-  });
-  const assignedSupplierCodes = [];
-  for (const supplier of suppliers) {
-    const internalCode = resolveManagedCode({
-      desiredCode: supplier.internalCode,
-      existingCodes: assignedSupplierCodes,
+  }), u = [];
+  for (const f of i) {
+    const g = Z({
+      desiredCode: f.internalCode,
+      existingCodes: u,
       prefix: "PRV",
       digits: 4,
       maxLength: 30
     });
-    if (internalCode !== supplier.internalCode) {
-      await prismaClient.supplier.update({
-        where: { id: supplier.id },
-        data: { internalCode }
-      });
-    }
-    assignedSupplierCodes.push(internalCode);
+    g !== f.internalCode && await e.supplier.update({
+      where: { id: f.id },
+      data: { internalCode: g }
+    }), u.push(g);
   }
-  await prismaClient.$executeRawUnsafe(
-    `CREATE UNIQUE INDEX IF NOT EXISTS "Customer_internalCode_key" ON "Customer"("internalCode");`
-  );
-  await prismaClient.$executeRawUnsafe(
-    `CREATE UNIQUE INDEX IF NOT EXISTS "Supplier_internalCode_key" ON "Supplier"("internalCode");`
+  await e.$executeRawUnsafe(
+    'CREATE UNIQUE INDEX IF NOT EXISTS "Customer_internalCode_key" ON "Customer"("internalCode");'
+  ), await e.$executeRawUnsafe(
+    'CREATE UNIQUE INDEX IF NOT EXISTS "Supplier_internalCode_key" ON "Supplier"("internalCode");'
   );
 }
-function getSkuPrefix(name, categoryName) {
-  const source = (categoryName || name || "PRD").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-  return (source.slice(0, 3) || "PRD").padEnd(3, "X");
+function As(e, a) {
+  return ((a || e || "PRD").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 3) || "PRD").padEnd(3, "X");
 }
-async function generateSku(prisma2, name, categoryName) {
-  const prefix = getSkuPrefix(name, categoryName);
-  const count = await prisma2.product.count({
-    where: { sku: { startsWith: prefix } }
+async function Ts(e, a, r) {
+  const l = As(a, r), m = await e.product.count({
+    where: { sku: { startsWith: l } }
   });
-  return `${prefix}-${String(count + 1).padStart(3, "0")}`;
+  return `${l}-${String(m + 1).padStart(3, "0")}`;
 }
-async function generatePurchaseNumber(prisma2) {
-  const count = await prisma2.purchase.count();
-  return `CP-${String(count + 1).padStart(6, "0")}`;
+async function Is(e) {
+  const a = await e.purchase.count();
+  return `CP-${String(a + 1).padStart(6, "0")}`;
 }
-async function logAudit(prisma2, currentSessionUser2, module, action, entity, entityId, beforeJson, afterJson) {
-  await prisma2.auditLog.create({
+async function V(e, a, r, l, m, c, n, s) {
+  await e.auditLog.create({
     data: {
-      userId: (currentSessionUser2 == null ? void 0 : currentSessionUser2.id) ?? null,
-      module,
-      action,
-      entity,
-      entityId: entityId ?? null,
-      beforeJson: beforeJson === void 0 ? null : JSON.stringify(beforeJson),
-      afterJson: afterJson === void 0 ? null : JSON.stringify(afterJson)
+      userId: (a == null ? void 0 : a.id) ?? null,
+      module: r,
+      action: l,
+      entity: m,
+      entityId: c ?? null,
+      beforeJson: n === void 0 ? null : JSON.stringify(n),
+      afterJson: s === void 0 ? null : JSON.stringify(s)
     }
   });
 }
-function registerBackofficeIpcHandlers({
-  ipcMain: ipcMain2,
-  prisma: prisma2,
-  getCurrentSessionUser,
-  getConnectedAt
+function ys({
+  ipcMain: e,
+  prisma: a,
+  getCurrentSessionUser: r,
+  getConnectedAt: l
 }) {
-  ipcMain2.handle("app:status", async () => ({
-    success: true,
-    connectedAt: getConnectedAt().toISOString(),
+  e.handle("app:status", async () => ({
+    success: !0,
+    connectedAt: l().toISOString(),
     now: (/* @__PURE__ */ new Date()).toISOString()
-  }));
-  ipcMain2.handle("settings:get", async () => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    const settings = await prisma2.businessSettings.findUnique({
+  })), e.handle("settings:get", async () => {
+    if (!r())
+      return { success: !1, message: "Debes iniciar sesion" };
+    const c = await a.businessSettings.findUnique({
       where: { id: "default" }
-    });
-    const addressParts = splitBusinessAddress(settings == null ? void 0 : settings.address);
+    }), n = nt(c == null ? void 0 : c.address);
     return {
-      success: true,
+      success: !0,
       settings: {
-        businessName: (settings == null ? void 0 : settings.businessName) || "",
-        taxId: (settings == null ? void 0 : settings.taxId) || "",
-        address: addressParts.address,
-        city: addressParts.city,
-        invoicePrefix: (settings == null ? void 0 : settings.invoicePrefix) || "FV",
-        defaultTaxRate: (settings == null ? void 0 : settings.defaultTaxRate) ?? 0.19,
-        allowNegativeStock: (settings == null ? void 0 : settings.allowNegativeStock) ?? false,
-        receiptFooter: (settings == null ? void 0 : settings.receiptFooter) || ""
+        businessName: (c == null ? void 0 : c.businessName) || "",
+        taxId: (c == null ? void 0 : c.taxId) || "",
+        address: n.address,
+        city: n.city,
+        themeMode: (c == null ? void 0 : c.themeMode) === "DARK" ? "DARK" : "LIGHT",
+        invoicePrefix: (c == null ? void 0 : c.invoicePrefix) || "FV",
+        defaultTaxRate: (c == null ? void 0 : c.defaultTaxRate) ?? 0.19,
+        allowNegativeStock: (c == null ? void 0 : c.allowNegativeStock) ?? !1,
+        defaultReceiptTemplate: (c == null ? void 0 : c.defaultReceiptTemplate) === "THERMAL_80" || (c == null ? void 0 : c.defaultReceiptTemplate) === "THERMAL_50" ? c.defaultReceiptTemplate : "NORMAL",
+        receiptFooter: (c == null ? void 0 : c.receiptFooter) || ""
       }
     };
-  });
-  ipcMain2.handle("settings:update", async (_event, payload) => {
-    const currentSessionUser2 = await ensureAdminSession(getCurrentSessionUser);
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.settingsView)) {
-      return { success: false, message: "Tu rol no puede editar la configuracion general" };
-    }
-    const parsed = businessSettingsSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Configuracion invalida" };
-    const data = parsed.data;
-    await prisma2.businessSettings.upsert({
+  }), e.handle("settings:update-theme", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.settingsTheme))
+      return { success: !1, message: "Tu rol no puede cambiar el tema del sistema" };
+    const s = as.safeParse(c);
+    return s.success ? (await a.businessSettings.upsert({
       where: { id: "default" },
       update: {
-        businessName: data.businessName || null,
-        taxId: data.taxId || null,
-        address: mergeBusinessAddress(data.address, data.city),
-        invoicePrefix: data.invoicePrefix || "FV",
-        defaultTaxRate: data.defaultTaxRate ?? 0.19,
-        allowNegativeStock: data.allowNegativeStock ?? false,
-        receiptFooter: data.receiptFooter || null
+        themeMode: s.data.themeMode
       },
       create: {
         id: "default",
-        businessName: data.businessName || null,
-        taxId: data.taxId || null,
-        address: mergeBusinessAddress(data.address, data.city),
-        invoicePrefix: data.invoicePrefix || "FV",
-        defaultTaxRate: data.defaultTaxRate ?? 0.19,
-        allowNegativeStock: data.allowNegativeStock ?? false,
-        receiptFooter: data.receiptFooter || null
+        themeMode: s.data.themeMode
       }
-    });
-    await logAudit(prisma2, currentSessionUser2, "settings", "update", "BusinessSettings", "default", void 0, data);
-    return { success: true };
-  });
-  ipcMain2.handle("cash:summary", async () => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    const [activeSession, previousClosedSession, recentSessions, platforms] = await Promise.all([
-      prisma2.cashSession.findFirst({
-        where: { status: CashSessionStatus.OPEN },
+    }), await V(a, n, "settings", "update_theme", "BusinessSettings", "default", void 0, s.data), { success: !0 }) : { success: !1, message: "Configuracion de tema invalida" };
+  }), e.handle("settings:update-business", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.settingsBusiness))
+      return { success: !1, message: "Tu rol no puede editar los datos del negocio" };
+    const s = ts.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos del negocio invalidos" };
+    const t = s.data;
+    return await a.businessSettings.upsert({
+      where: { id: "default" },
+      update: {
+        businessName: t.businessName || null,
+        taxId: t.taxId || null,
+        address: rt(t.address, t.city)
+      },
+      create: {
+        id: "default",
+        businessName: t.businessName || null,
+        taxId: t.taxId || null,
+        address: rt(t.address, t.city)
+      }
+    }), await V(a, n, "settings", "update_business", "BusinessSettings", "default", void 0, t), { success: !0 };
+  }), e.handle("settings:update-billing", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.settingsBilling))
+      return { success: !1, message: "Tu rol no puede editar factura e impresion" };
+    const s = ss.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Configuracion de factura invalida" };
+    const t = s.data;
+    return await a.businessSettings.upsert({
+      where: { id: "default" },
+      update: {
+        invoicePrefix: t.invoicePrefix || "FV",
+        defaultReceiptTemplate: t.defaultReceiptTemplate,
+        receiptFooter: t.receiptFooter || null
+      },
+      create: {
+        id: "default",
+        invoicePrefix: t.invoicePrefix || "FV",
+        defaultReceiptTemplate: t.defaultReceiptTemplate,
+        receiptFooter: t.receiptFooter || null
+      }
+    }), await V(a, n, "settings", "update_billing", "BusinessSettings", "default", void 0, t), { success: !0 };
+  }), e.handle("settings:update-inventory", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.settingsInventory))
+      return { success: !1, message: "Tu rol no puede editar inventario y operacion" };
+    const s = rs.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Configuracion operativa invalida" };
+    const t = s.data;
+    return await a.businessSettings.upsert({
+      where: { id: "default" },
+      update: {
+        defaultTaxRate: t.defaultTaxRate ?? 0.19,
+        allowNegativeStock: t.allowNegativeStock ?? !1
+      },
+      create: {
+        id: "default",
+        defaultTaxRate: t.defaultTaxRate ?? 0.19,
+        allowNegativeStock: t.allowNegativeStock ?? !1
+      }
+    }), await V(a, n, "settings", "update_inventory", "BusinessSettings", "default", void 0, t), { success: !0 };
+  }), e.handle("cash:summary", async () => {
+    if (!r())
+      return { success: !1, message: "Debes iniciar sesion" };
+    const [c, n, s, t] = await Promise.all([
+      a.cashSession.findFirst({
+        where: { status: W.OPEN },
         include: {
-          register: true,
-          user: { select: { username: true, name: true } },
+          register: !0,
+          user: { select: { username: !0, name: !0 } },
           sales: {
             select: {
-              id: true,
-              invoiceNumber: true,
-              customer: true,
-              total: true,
-              paymentMethod: true,
-              createdAt: true,
+              id: !0,
+              invoiceNumber: !0,
+              customer: !0,
+              total: !0,
+              paymentMethod: !0,
+              createdAt: !0,
               payments: {
                 select: {
-                  method: true,
-                  amount: true
+                  method: !0,
+                  amount: !0
                 }
               }
             },
@@ -3116,1448 +3149,1299 @@ function registerBackofficeIpcHandlers({
           correspondentTransactions: {
             where: { status: "REGISTERED" },
             include: {
-              platform: { select: { id: true, name: true } },
-              type: { select: { name: true, direction: true } }
+              platform: { select: { id: !0, name: !0 } },
+              type: { select: { name: !0, direction: !0 } }
             },
             orderBy: { performedAt: "desc" }
           }
         },
         orderBy: { openedAt: "desc" }
       }),
-      prisma2.cashSession.findFirst({
-        where: { status: CashSessionStatus.CLOSED },
+      a.cashSession.findFirst({
+        where: { status: W.CLOSED },
         include: {
-          register: true,
-          user: { select: { username: true, name: true } }
+          register: !0,
+          user: { select: { username: !0, name: !0 } }
         },
         orderBy: { closedAt: "desc" }
       }),
-      prisma2.cashSession.findMany({
+      a.cashSession.findMany({
         include: {
-          register: true,
-          user: { select: { username: true, name: true } }
+          register: !0,
+          user: { select: { username: !0, name: !0 } }
         },
         orderBy: { openedAt: "desc" },
         take: 20
       }),
-      prisma2.correspondentPlatform.findMany({
+      a.correspondentPlatform.findMany({
         orderBy: { name: "asc" }
       })
-    ]);
-    const previousReference = previousClosedSession ? (() => {
-      var _a;
-      const previousMeta = parseSessionMeta(previousClosedSession.note);
-      const previousClosing = getSessionSection(previousMeta, "closing");
-      const previousCorrespondentMap = toAmountMap(
-        previousClosing.correspondentBalances ?? []
-      );
-      const closingRows = platforms.map((platform) => ({
-        platformId: platform.id,
-        platform: platform.name,
-        countedAmount: previousCorrespondentMap.get(platform.id) ?? 0
-      })).filter((item) => item.countedAmount > 0);
-      const countedTransferAmount2 = getSectionTransferAmount(previousClosing);
+    ]), i = n ? (() => {
+      var D;
+      const p = G(n.note), N = K(p, "closing"), C = $e(
+        N.correspondentBalances ?? []
+      ), h = t.map((P) => ({
+        platformId: P.id,
+        platform: P.name,
+        countedAmount: C.get(P.id) ?? 0
+      })).filter((P) => P.countedAmount > 0), v = oe(N);
       return {
-        sessionId: previousClosedSession.id,
-        registerName: previousClosedSession.register.name,
-        user: previousClosedSession.user.name ?? previousClosedSession.user.username,
-        closedAt: ((_a = previousClosedSession.closedAt) == null ? void 0 : _a.toISOString()) ?? null,
-        countedCashAmount: previousClosedSession.countedAmount ?? 0,
-        countedTransferAmount: countedTransferAmount2,
-        countedAvailableAmount: (previousClosedSession.countedAmount ?? 0) + countedTransferAmount2 + closingRows.reduce((sum, item) => sum + item.countedAmount, 0),
-        closingBreakdown: previousClosing.cashBreakdown && typeof previousClosing.cashBreakdown === "object" ? previousClosing.cashBreakdown : {},
-        correspondent: closingRows
+        sessionId: n.id,
+        registerName: n.register.name,
+        user: n.user.name ?? n.user.username,
+        closedAt: ((D = n.closedAt) == null ? void 0 : D.toISOString()) ?? null,
+        countedCashAmount: n.countedAmount ?? 0,
+        countedTransferAmount: v,
+        countedAvailableAmount: (n.countedAmount ?? 0) + v + h.reduce((P, b) => P + b.countedAmount, 0),
+        closingBreakdown: N.cashBreakdown && typeof N.cashBreakdown == "object" ? N.cashBreakdown : {},
+        correspondent: h
       };
     })() : null;
-    if (!activeSession) {
+    if (!c)
       return {
-        success: true,
+        success: !0,
         activeSession: null,
-        previousReference,
-        recentSessions: recentSessions.map((session) => {
-          var _a;
+        previousReference: i,
+        recentSessions: s.map((p) => {
+          var N;
           return {
-            id: session.id,
-            registerName: session.register.name,
-            user: session.user.name ?? session.user.username,
-            status: session.status,
-            openedAt: session.openedAt.toISOString(),
-            closedAt: ((_a = session.closedAt) == null ? void 0 : _a.toISOString()) ?? null,
-            openingAmount: session.openingAmount,
-            openingAvailableAmount: session.openingAmount + getSectionTransferAmount(getSessionSection(parseSessionMeta(session.note), "opening")) + (getSessionSection(parseSessionMeta(session.note), "opening").correspondentBalances ?? []).reduce((sum, item) => sum + Number(item.amount || 0), 0),
-            countedAmount: session.countedAmount,
-            countedAvailableAmount: (session.countedAmount ?? 0) + getSectionTransferAmount(getSessionSection(parseSessionMeta(session.note), "closing")) + (getSessionSection(parseSessionMeta(session.note), "closing").correspondentBalances ?? []).reduce((sum, item) => sum + Number(item.amount || 0), 0),
-            differenceAmount: session.differenceAmount
+            id: p.id,
+            registerName: p.register.name,
+            user: p.user.name ?? p.user.username,
+            status: p.status,
+            openedAt: p.openedAt.toISOString(),
+            closedAt: ((N = p.closedAt) == null ? void 0 : N.toISOString()) ?? null,
+            openingAmount: p.openingAmount,
+            openingAvailableAmount: p.openingAmount + oe(K(G(p.note), "opening")) + (K(G(p.note), "opening").correspondentBalances ?? []).reduce((C, h) => C + Number(h.amount || 0), 0),
+            countedAmount: p.countedAmount,
+            countedAvailableAmount: (p.countedAmount ?? 0) + oe(K(G(p.note), "closing")) + (K(G(p.note), "closing").correspondentBalances ?? []).reduce((C, h) => C + Number(h.amount || 0), 0),
+            differenceAmount: p.differenceAmount
           };
         })
       };
-    }
-    const treasury = buildSessionTreasurySnapshot({
-      session: activeSession,
-      platforms
-    });
-    const openingAvailableAmount = activeSession.openingAmount + treasury.openingTransferAmount + treasury.openingCorrespondentTotal;
-    const countedCashAmount = activeSession.countedAmount ?? treasury.expectedCash;
-    const countedTransferAmount = treasury.countedTransferAmount ?? treasury.expectedTransferAmount;
-    const openingComparison = previousReference ? {
-      cashDifferenceAmount: activeSession.openingAmount - previousReference.countedCashAmount,
-      transferDifferenceAmount: treasury.openingTransferAmount - previousReference.countedTransferAmount,
-      correspondentDifferenceTotal: treasury.correspondentByPlatform.reduce((sum, item) => {
-        var _a;
-        const previousAmount = ((_a = previousReference.correspondent.find((previous) => previous.platformId === item.platformId)) == null ? void 0 : _a.countedAmount) ?? 0;
-        return sum + (item.openingAmount - previousAmount);
+    const u = dt({
+      session: c,
+      platforms: t
+    }), f = c.openingAmount + u.openingTransferAmount + u.openingCorrespondentTotal, g = c.countedAmount ?? u.expectedCash, T = u.countedTransferAmount ?? u.expectedTransferAmount, I = i ? {
+      cashDifferenceAmount: c.openingAmount - i.countedCashAmount,
+      transferDifferenceAmount: u.openingTransferAmount - i.countedTransferAmount,
+      correspondentDifferenceTotal: u.correspondentByPlatform.reduce((p, N) => {
+        var h;
+        const C = ((h = i.correspondent.find((v) => v.platformId === N.platformId)) == null ? void 0 : h.countedAmount) ?? 0;
+        return p + (N.openingAmount - C);
       }, 0),
-      differenceAmount: openingAvailableAmount - previousReference.countedAvailableAmount
+      differenceAmount: f - i.countedAvailableAmount
     } : null;
     return {
-      success: true,
+      success: !0,
       activeSession: {
-        id: activeSession.id,
-        registerName: activeSession.register.name,
-        user: activeSession.user.name ?? activeSession.user.username,
-        openedAt: activeSession.openedAt.toISOString(),
-        openingAmount: activeSession.openingAmount,
-        openingTransferAmount: treasury.openingTransferAmount,
-        openingAvailableAmount,
-        expectedCash: treasury.expectedCash,
-        expectedTransferAmount: treasury.expectedTransferAmount,
-        expectedAvailableAmount: treasury.expectedAvailableTotal,
-        countedCashAmount,
-        countedTransferAmount,
-        countedAvailableAmount: countedCashAmount + countedTransferAmount + treasury.correspondentByPlatform.reduce(
-          (sum, item) => sum + (item.countedAmount ?? item.expectedAmount),
+        id: c.id,
+        registerName: c.register.name,
+        user: c.user.name ?? c.user.username,
+        openedAt: c.openedAt.toISOString(),
+        openingAmount: c.openingAmount,
+        openingTransferAmount: u.openingTransferAmount,
+        openingAvailableAmount: f,
+        expectedCash: u.expectedCash,
+        expectedTransferAmount: u.expectedTransferAmount,
+        expectedAvailableAmount: u.expectedAvailableTotal,
+        countedCashAmount: g,
+        countedTransferAmount: T,
+        countedAvailableAmount: g + T + u.correspondentByPlatform.reduce(
+          (p, N) => p + (N.countedAmount ?? N.expectedAmount),
           0
         ),
-        cashDifferenceAmount: countedCashAmount - treasury.expectedCash,
-        transferDifferenceAmount: countedTransferAmount - treasury.expectedTransferAmount,
-        availableDifferenceAmount: countedCashAmount + countedTransferAmount + treasury.correspondentByPlatform.reduce(
-          (sum, item) => sum + (item.countedAmount ?? item.expectedAmount),
+        cashDifferenceAmount: g - u.expectedCash,
+        transferDifferenceAmount: T - u.expectedTransferAmount,
+        availableDifferenceAmount: g + T + u.correspondentByPlatform.reduce(
+          (p, N) => p + (N.countedAmount ?? N.expectedAmount),
           0
-        ) - treasury.expectedAvailableTotal,
-        salesCash: treasury.salesCash,
+        ) - u.expectedAvailableTotal,
+        salesCash: u.salesCash,
         salesCard: 0,
-        salesTransfer: treasury.salesTransfer,
-        manualIncome: treasury.cashManualIncome,
-        manualExpense: treasury.cashManualExpense,
-        manualTransferIncome: treasury.transferManualIncome,
-        manualTransferExpense: treasury.transferManualExpense,
-        openingBreakdown: treasury.opening.cashBreakdown && typeof treasury.opening.cashBreakdown === "object" ? treasury.opening.cashBreakdown : {},
-        closingBreakdown: treasury.closing.cashBreakdown && typeof treasury.closing.cashBreakdown === "object" ? treasury.closing.cashBreakdown : {},
-        correspondent: treasury.correspondentByPlatform,
-        openingComparison,
+        salesTransfer: u.salesTransfer,
+        manualIncome: u.cashManualIncome,
+        manualExpense: u.cashManualExpense,
+        manualTransferIncome: u.transferManualIncome,
+        manualTransferExpense: u.transferManualExpense,
+        openingBreakdown: u.opening.cashBreakdown && typeof u.opening.cashBreakdown == "object" ? u.opening.cashBreakdown : {},
+        closingBreakdown: u.closing.cashBreakdown && typeof u.closing.cashBreakdown == "object" ? u.closing.cashBreakdown : {},
+        correspondent: u.correspondentByPlatform,
+        openingComparison: I,
         recentActivity: [
-          ...activeSession.sales.flatMap(
-            (sale) => (sale.payments && sale.payments.length > 0 ? sale.payments : [
+          ...c.sales.flatMap(
+            (p) => (p.payments && p.payments.length > 0 ? p.payments : [
               {
-                method: sale.paymentMethod,
-                amount: sale.total
+                method: p.paymentMethod,
+                amount: p.total
               }
-            ]).map((payment, index) => ({
-              id: `${sale.id}-${payment.method}-${index}`,
-              createdAt: sale.createdAt.toISOString(),
+            ]).map((N, C) => ({
+              id: `${p.id}-${N.method}-${C}`,
+              createdAt: p.createdAt.toISOString(),
               type: "Venta",
-              medium: payment.method === PaymentMethod.CASH ? "Efectivo" : payment.method === PaymentMethod.CARD ? "Transferencia" : "Transferencia",
-              detail: `${sale.invoiceNumber} - ${sale.customer}`,
-              amount: payment.amount,
-              signedAmount: payment.amount
+              medium: N.method === j.CASH ? "Efectivo" : (N.method === j.CARD, "Transferencia"),
+              detail: `${p.invoiceNumber} - ${p.customer}`,
+              amount: N.amount,
+              signedAmount: N.amount
             }))
           ),
-          ...activeSession.correspondentTransactions.map((transaction) => ({
-            id: transaction.id,
-            createdAt: transaction.performedAt.toISOString(),
+          ...c.correspondentTransactions.map((p) => ({
+            id: p.id,
+            createdAt: p.performedAt.toISOString(),
             type: "Corresponsal",
-            medium: transaction.platform.name,
-            detail: `${transaction.type.name}${transaction.commissionAmount > 0 ? ` + comision ${transaction.commissionAmount.toLocaleString("es-CO")}` : ""}`,
-            amount: transaction.amount,
-            signedAmount: transaction.type.direction === CorrespondentDirection.OUT ? -transaction.amount : transaction.amount
+            medium: p.platform.name,
+            detail: `${p.type.name}${p.commissionAmount > 0 ? ` + comision ${p.commissionAmount.toLocaleString("es-CO")}` : ""}`,
+            amount: p.amount,
+            signedAmount: p.type.direction === _.OUT ? -p.amount : p.amount
           })),
-          ...activeSession.movements.map((move) => ({
-            id: move.id,
-            createdAt: move.createdAt.toISOString(),
-            type: move.type,
-            medium: resolveMovementMedium(move.note) === "TRANSFER" ? "Transferencias" : resolveMovementMedium(move.note) === "CORRESPONDENT" ? resolveMovementPlatformName(move.note) || "Corresponsal" : "Efectivo",
-            detail: resolveMovementLabel(move.note),
-            amount: move.amount,
-            signedAmount: move.type === CashMovementType.EXPENSE_OUT || move.type === CashMovementType.WITHDRAWAL_OUT ? -move.amount : move.amount
+          ...c.movements.map((p) => ({
+            id: p.id,
+            createdAt: p.createdAt.toISOString(),
+            type: p.type,
+            medium: ie(p.note) === "TRANSFER" ? "Transferencias" : ie(p.note) === "CORRESPONDENT" ? Xe(p.note) || "Corresponsal" : "Efectivo",
+            detail: Be(p.note),
+            amount: p.amount,
+            signedAmount: p.type === B.EXPENSE_OUT || p.type === B.WITHDRAWAL_OUT ? -p.amount : p.amount
           }))
-        ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 30)
+        ].sort((p, N) => new Date(N.createdAt).getTime() - new Date(p.createdAt).getTime()).slice(0, 30)
       },
-      previousReference,
-      recentSessions: recentSessions.map((session) => {
-        var _a;
+      previousReference: i,
+      recentSessions: s.map((p) => {
+        var N;
         return {
-          id: session.id,
-          registerName: session.register.name,
-          user: session.user.name ?? session.user.username,
-          status: session.status,
-          openedAt: session.openedAt.toISOString(),
-          closedAt: ((_a = session.closedAt) == null ? void 0 : _a.toISOString()) ?? null,
-          openingAmount: session.openingAmount,
-          openingAvailableAmount: session.openingAmount + getSectionTransferAmount(getSessionSection(parseSessionMeta(session.note), "opening")) + (getSessionSection(parseSessionMeta(session.note), "opening").correspondentBalances ?? []).reduce((sum, item) => sum + Number(item.amount || 0), 0),
-          countedAmount: session.countedAmount,
-          countedAvailableAmount: (session.countedAmount ?? 0) + getSectionTransferAmount(getSessionSection(parseSessionMeta(session.note), "closing")) + (getSessionSection(parseSessionMeta(session.note), "closing").correspondentBalances ?? []).reduce((sum, item) => sum + Number(item.amount || 0), 0),
-          differenceAmount: session.differenceAmount
+          id: p.id,
+          registerName: p.register.name,
+          user: p.user.name ?? p.user.username,
+          status: p.status,
+          openedAt: p.openedAt.toISOString(),
+          closedAt: ((N = p.closedAt) == null ? void 0 : N.toISOString()) ?? null,
+          openingAmount: p.openingAmount,
+          openingAvailableAmount: p.openingAmount + oe(K(G(p.note), "opening")) + (K(G(p.note), "opening").correspondentBalances ?? []).reduce((C, h) => C + Number(h.amount || 0), 0),
+          countedAmount: p.countedAmount,
+          countedAvailableAmount: (p.countedAmount ?? 0) + oe(K(G(p.note), "closing")) + (K(G(p.note), "closing").correspondentBalances ?? []).reduce((C, h) => C + Number(h.amount || 0), 0),
+          differenceAmount: p.differenceAmount
         };
       })
     };
-  });
-  ipcMain2.handle("cash:open", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.cashOpen)) {
-      return { success: false, message: "Tu rol no puede abrir caja" };
-    }
-    const parsed = openCashSessionSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Datos invalidos para apertura de caja" };
-    const existing = await prisma2.cashSession.findFirst({
-      where: { status: CashSessionStatus.OPEN }
-    });
-    if (existing)
-      return { success: false, message: "Ya existe una caja abierta" };
-    const register = await prisma2.cashRegister.findFirst({
-      where: { isActive: true },
+  }), e.handle("cash:open", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.cashOpen))
+      return { success: !1, message: "Tu rol no puede abrir caja" };
+    const s = Qa.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para apertura de caja" };
+    if (await a.cashSession.findFirst({
+      where: { status: W.OPEN }
+    }))
+      return { success: !1, message: "Ya existe una caja abierta" };
+    const i = await a.cashRegister.findFirst({
+      where: { isActive: !0 },
       orderBy: { createdAt: "asc" }
     });
-    if (!register)
-      return { success: false, message: "No hay caja activa configurada" };
-    const openingAvailableAmount = parsed.data.openingCashAmount + parsed.data.openingTransferAmount + parsed.data.correspondentBalances.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    const meta = stringifySessionMeta({
+    if (!i)
+      return { success: !1, message: "No hay caja activa configurada" };
+    const u = s.data.openingCashAmount + s.data.openingTransferAmount + s.data.correspondentBalances.reduce((T, I) => T + Number(I.amount || 0), 0), f = ct({
       opening: {
-        cashBreakdown: parsed.data.cashBreakdown,
-        transferAmount: parsed.data.openingTransferAmount,
-        correspondentBalances: parsed.data.correspondentBalances,
-        note: parsed.data.note || null
+        cashBreakdown: s.data.cashBreakdown,
+        transferAmount: s.data.openingTransferAmount,
+        correspondentBalances: s.data.correspondentBalances,
+        note: s.data.note || null
       }
-    });
-    const session = await prisma2.cashSession.create({
+    }), g = await a.cashSession.create({
       data: {
-        registerId: register.id,
-        userId: currentSessionUser2.id,
-        status: CashSessionStatus.OPEN,
-        openingAmount: parsed.data.openingCashAmount,
-        expectedAmount: openingAvailableAmount,
-        note: meta
+        registerId: i.id,
+        userId: n.id,
+        status: W.OPEN,
+        openingAmount: s.data.openingCashAmount,
+        expectedAmount: u,
+        note: f
       }
     });
-    await prisma2.cashMovement.create({
+    return await a.cashMovement.create({
       data: {
-        sessionId: session.id,
-        type: CashMovementType.OPENING,
-        amount: parsed.data.openingCashAmount,
-        note: parsed.data.note || "Apertura de caja"
+        sessionId: g.id,
+        type: B.OPENING,
+        amount: s.data.openingCashAmount,
+        note: s.data.note || "Apertura de caja"
       }
-    });
-    return { success: true, sessionId: session.id };
-  });
-  ipcMain2.handle("cash:close", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.cashClose)) {
-      return { success: false, message: "Tu rol no puede cerrar caja" };
-    }
-    const parsed = closeCashSessionSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Datos invalidos para cierre de caja" };
-    const session = await prisma2.cashSession.findUnique({
-      where: { id: parsed.data.sessionId },
+    }), { success: !0, sessionId: g.id };
+  }), e.handle("cash:close", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.cashClose))
+      return { success: !1, message: "Tu rol no puede cerrar caja" };
+    const s = Za.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para cierre de caja" };
+    const t = await a.cashSession.findUnique({
+      where: { id: s.data.sessionId },
       include: {
         sales: {
           include: {
             payments: {
               select: {
-                method: true,
-                amount: true
+                method: !0,
+                amount: !0
               }
             }
           }
         },
-        movements: true,
+        movements: !0,
         correspondentTransactions: {
           where: { status: "REGISTERED" },
           include: {
-            platform: { select: { id: true, name: true } },
-            type: { select: { name: true, direction: true } }
+            platform: { select: { id: !0, name: !0 } },
+            type: { select: { name: !0, direction: !0 } }
           }
         }
       }
     });
-    if (!session || session.status !== CashSessionStatus.OPEN) {
-      return { success: false, message: "La caja seleccionada no está abierta" };
-    }
-    const platforms = await prisma2.correspondentPlatform.findMany({
+    if (!t || t.status !== W.OPEN)
+      return { success: !1, message: "La caja seleccionada no está abierta" };
+    const i = await a.correspondentPlatform.findMany({
       orderBy: { name: "asc" }
-    });
-    const treasury = buildSessionTreasurySnapshot({
-      session,
-      platforms
-    });
-    const expectedCash = treasury.expectedCash;
-    const cashDifferenceAmount = parsed.data.countedCashAmount - expectedCash;
-    const countedCorrespondentTotal = treasury.correspondentByPlatform.reduce((sum, item) => {
-      var _a;
-      const counted = (_a = parsed.data.correspondentBalances.find((entry) => entry.platformId === item.platformId)) == null ? void 0 : _a.amount;
-      return sum + Number(counted ?? item.expectedAmount);
-    }, 0);
-    const expectedAvailableAmount = expectedCash + treasury.expectedTransferAmount + treasury.correspondentExpectedTotal;
-    const countedAvailableAmount = parsed.data.countedCashAmount + parsed.data.countedTransferAmount + countedCorrespondentTotal;
-    const differenceAmount = countedAvailableAmount - expectedAvailableAmount;
-    const previousMeta = parseSessionMeta(session.note);
-    const updatedMeta = stringifySessionMeta({
-      ...previousMeta,
+    }), u = dt({
+      session: t,
+      platforms: i
+    }), f = u.expectedCash, g = s.data.countedCashAmount - f, T = u.correspondentByPlatform.reduce((v, D) => {
+      var b;
+      const P = (b = s.data.correspondentBalances.find((d) => d.platformId === D.platformId)) == null ? void 0 : b.amount;
+      return v + Number(P ?? D.expectedAmount);
+    }, 0), I = f + u.expectedTransferAmount + u.correspondentExpectedTotal, N = s.data.countedCashAmount + s.data.countedTransferAmount + T - I, C = G(t.note), h = ct({
+      ...C,
       closing: {
-        cashBreakdown: parsed.data.cashBreakdown,
-        transferAmount: parsed.data.countedTransferAmount,
-        correspondentBalances: parsed.data.correspondentBalances,
-        note: parsed.data.note || null
+        cashBreakdown: s.data.cashBreakdown,
+        transferAmount: s.data.countedTransferAmount,
+        correspondentBalances: s.data.correspondentBalances,
+        note: s.data.note || null
       }
     });
-    await prisma2.$transaction(async (tx) => {
-      await tx.cashSession.update({
-        where: { id: session.id },
+    return await a.$transaction(async (v) => {
+      await v.cashSession.update({
+        where: { id: t.id },
         data: {
-          status: CashSessionStatus.CLOSED,
-          countedAmount: parsed.data.countedCashAmount,
-          expectedAmount: expectedAvailableAmount,
-          differenceAmount,
-          note: updatedMeta,
+          status: W.CLOSED,
+          countedAmount: s.data.countedCashAmount,
+          expectedAmount: I,
+          differenceAmount: N,
+          note: h,
           closedAt: /* @__PURE__ */ new Date()
         }
-      });
-      await tx.cashMovement.create({
+      }), await v.cashMovement.create({
         data: {
-          sessionId: session.id,
-          type: CashMovementType.CLOSING,
-          amount: parsed.data.countedCashAmount,
-          note: parsed.data.note || "Cierre de caja"
+          sessionId: t.id,
+          type: B.CLOSING,
+          amount: s.data.countedCashAmount,
+          note: s.data.note || "Cierre de caja"
+        }
+      }), N !== 0 && await v.cashMovement.create({
+        data: {
+          sessionId: t.id,
+          type: B.DIFFERENCE,
+          amount: N,
+          note: Se({
+            label: `Diferencia general de cierre (${g >= 0 ? "POS" : "negativa"} en efectivo: ${g.toLocaleString("es-CO")})`,
+            medium: "CASH",
+            sourceType: "MANUAL"
+          })
         }
       });
-      if (differenceAmount !== 0) {
-        await tx.cashMovement.create({
-          data: {
-            sessionId: session.id,
-            type: CashMovementType.DIFFERENCE,
-            amount: differenceAmount,
-            note: buildTreasuryMovementNote({
-              label: `Diferencia general de cierre (${cashDifferenceAmount >= 0 ? "POS" : "negativa"} en efectivo: ${cashDifferenceAmount.toLocaleString("es-CO")})`,
-              medium: "CASH",
-              sourceType: "MANUAL"
-            })
-          }
-        });
-      }
-    });
-    return { success: true };
-  });
-  ipcMain2.handle("users:list", async () => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion", users: [] };
-    const users = await prisma2.user.findMany({
+    }), { success: !0 };
+  }), e.handle("users:list", async () => r() ? {
+    success: !0,
+    users: (await a.user.findMany({
       orderBy: [{ role: "asc" }, { username: "asc" }],
       include: {
         roleProfile: {
           select: {
-            id: true,
-            name: true
+            id: !0,
+            name: !0
           }
         },
         _count: {
           select: {
-            sales: true,
-            cashSessions: true
+            sales: !0,
+            cashSessions: !0
           }
         }
       }
-    });
-    return {
-      success: true,
-      users: users.map((user) => {
-        var _a, _b, _c;
-        return {
-          id: user.id,
-          internalCode: user.internalCode,
-          name: user.name,
-          firstName: user.firstName ?? user.name,
-          lastName: user.lastName,
-          username: user.username,
-          documentNumber: user.documentNumber,
-          email: user.email,
-          phone: user.phone,
-          address: user.address,
-          birthDate: ((_a = user.birthDate) == null ? void 0 : _a.toISOString().slice(0, 10)) ?? null,
-          role: user.role,
-          roleProfileId: ((_b = user.roleProfile) == null ? void 0 : _b.id) ?? null,
-          roleProfileName: ((_c = user.roleProfile) == null ? void 0 : _c.name) ?? null,
-          isActive: user.isActive,
-          createdAt: user.createdAt.toISOString(),
-          salesCount: user._count.sales,
-          sessionsCount: user._count.cashSessions
-        };
-      })
-    };
-  });
-  ipcMain2.handle("products:categories:list", async () => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2) {
-      return { success: false, message: "Debes iniciar sesion", categories: [] };
-    }
-    const categories = await prisma2.productCategory.findMany({
+    })).map((n) => {
+      var s, t, i;
+      return {
+        id: n.id,
+        internalCode: n.internalCode,
+        name: n.name,
+        firstName: n.firstName ?? n.name,
+        lastName: n.lastName,
+        username: n.username,
+        documentNumber: n.documentNumber,
+        email: n.email,
+        phone: n.phone,
+        address: n.address,
+        birthDate: ((s = n.birthDate) == null ? void 0 : s.toISOString().slice(0, 10)) ?? null,
+        role: n.role,
+        roleProfileId: ((t = n.roleProfile) == null ? void 0 : t.id) ?? null,
+        roleProfileName: ((i = n.roleProfile) == null ? void 0 : i.name) ?? null,
+        isActive: n.isActive,
+        createdAt: n.createdAt.toISOString(),
+        salesCount: n._count.sales,
+        sessionsCount: n._count.cashSessions
+      };
+    })
+  } : { success: !1, message: "Debes iniciar sesion", users: [] }), e.handle("products:categories:list", async () => r() ? {
+    success: !0,
+    categories: (await a.productCategory.findMany({
       orderBy: { name: "asc" },
       include: {
         subcategories: {
-          where: { isActive: true },
+          where: { isActive: !0 },
           orderBy: { name: "asc" }
         }
       }
-    });
-    return {
-      success: true,
-      categories: categories.map((category) => ({
-        id: category.id,
-        name: category.name,
-        isActive: category.isActive,
-        subcategories: category.subcategories.map((subcategory) => ({
-          id: subcategory.id,
-          name: subcategory.name,
-          isActive: subcategory.isActive
-        }))
+    })).map((n) => ({
+      id: n.id,
+      name: n.name,
+      isActive: n.isActive,
+      subcategories: n.subcategories.map((s) => ({
+        id: s.id,
+        name: s.name,
+        isActive: s.isActive
       }))
-    };
-  });
-  ipcMain2.handle("products:list-admin", async () => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2) {
-      return { success: false, message: "Debes iniciar sesion", products: [] };
-    }
-    const products = await prisma2.product.findMany({
+    }))
+  } : { success: !1, message: "Debes iniciar sesion", categories: [] }), e.handle("products:list-admin", async () => {
+    if (!r())
+      return { success: !1, message: "Debes iniciar sesion", products: [] };
+    const c = await a.product.findMany({
       include: {
-        category: true,
-        subcategory: true
+        category: !0,
+        subcategory: !0
       },
       orderBy: { name: "asc" }
-    });
-    const productIds = products.map((product) => product.id);
-    const createdByMap = await getAuditUserMap(prisma2, "Product", productIds, "create");
-    const updatedByMap = await getAuditUserMap(prisma2, "Product", productIds, "update", true);
+    }), n = c.map((i) => i.id), s = await de(a, "Product", n, "create"), t = await de(a, "Product", n, "update", !0);
     return {
-      success: true,
-      products: products.map((product) => {
-        var _a, _b;
+      success: !0,
+      products: c.map((i) => {
+        var u, f;
         return {
-          id: product.id,
-          name: product.name,
-          sku: product.sku,
-          barcode: product.barcode,
-          unitMeasure: product.unitMeasure,
-          price: product.price,
-          cost: product.cost,
-          marginPercent: product.marginPercent,
-          hasTax: product.hasTax,
-          taxRate: product.taxRate,
-          stock: product.stock,
-          categoryId: product.categoryId,
-          subcategoryId: product.subcategoryId,
-          categoryName: ((_a = product.category) == null ? void 0 : _a.name) ?? null,
-          subcategoryName: ((_b = product.subcategory) == null ? void 0 : _b.name) ?? null,
-          isActive: product.isActive,
-          createdAt: product.createdAt.toISOString(),
-          updatedAt: product.updatedAt.toISOString(),
-          createdBy: createdByMap.get(product.id) ?? null,
-          updatedBy: updatedByMap.get(product.id) ?? createdByMap.get(product.id) ?? null
+          id: i.id,
+          name: i.name,
+          sku: i.sku,
+          barcode: i.barcode,
+          unitMeasure: i.unitMeasure,
+          price: i.price,
+          cost: i.cost,
+          marginPercent: i.marginPercent,
+          hasTax: i.hasTax,
+          taxRate: i.taxRate,
+          stock: i.stock,
+          categoryId: i.categoryId,
+          subcategoryId: i.subcategoryId,
+          categoryName: ((u = i.category) == null ? void 0 : u.name) ?? null,
+          subcategoryName: ((f = i.subcategory) == null ? void 0 : f.name) ?? null,
+          isActive: i.isActive,
+          createdAt: i.createdAt.toISOString(),
+          updatedAt: i.updatedAt.toISOString(),
+          createdBy: s.get(i.id) ?? null,
+          updatedBy: t.get(i.id) ?? s.get(i.id) ?? null
         };
       })
     };
-  });
-  ipcMain2.handle("products:create", async (_event, payload) => {
-    var _a;
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsCreate)) {
-      return { success: false, message: "Tu rol no puede crear productos" };
-    }
-    const parsed = createProductSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Datos invalidos para el producto" };
-    const data = parsed.data;
-    const category = data.categoryId ? await prisma2.productCategory.findUnique({ where: { id: data.categoryId } }) : null;
-    const sku = ((_a = data.sku) == null ? void 0 : _a.trim()) || await generateSku(prisma2, data.name, category == null ? void 0 : category.name);
+  }), e.handle("products:create", async (m, c) => {
+    var f;
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.productsCreate))
+      return { success: !1, message: "Tu rol no puede crear productos" };
+    const s = Fa.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para el producto" };
+    const t = s.data, i = t.categoryId ? await a.productCategory.findUnique({ where: { id: t.categoryId } }) : null, u = ((f = t.sku) == null ? void 0 : f.trim()) || await Ts(a, t.name, i == null ? void 0 : i.name);
     try {
-      const product = await prisma2.$transaction(async (tx) => {
-        const created = await tx.product.create({
+      const g = await a.$transaction(async (T) => {
+        const I = await T.product.create({
           data: {
-            name: data.name,
-            sku,
-            barcode: data.barcode || null,
-            unitMeasure: data.unitMeasure ?? "UNIDAD",
-            price: money$1(data.price),
-            cost: money$1(data.cost ?? 0),
-            marginPercent: data.marginPercent ?? 0,
-            hasTax: data.hasTax ?? false,
-            taxRate: data.hasTax ? data.taxRate ?? 0 : 0,
-            stock: data.stock ?? 0,
-            categoryId: data.categoryId ?? null,
-            subcategoryId: data.subcategoryId ?? null,
-            isActive: data.isActive ?? true
+            name: t.name,
+            sku: u,
+            barcode: t.barcode || null,
+            unitMeasure: t.unitMeasure ?? "UNIDAD",
+            price: z(t.price),
+            cost: z(t.cost ?? 0),
+            marginPercent: t.marginPercent ?? 0,
+            hasTax: t.hasTax ?? !1,
+            taxRate: t.hasTax ? t.taxRate ?? 0 : 0,
+            stock: t.stock ?? 0,
+            categoryId: t.categoryId ?? null,
+            subcategoryId: t.subcategoryId ?? null,
+            isActive: t.isActive ?? !0
           }
         });
-        if ((data.stock ?? 0) > 0) {
-          await tx.inventoryMovement.create({
-            data: {
-              productId: created.id,
-              type: InventoryMovementType.MANUAL_IN,
-              qty: data.stock ?? 0,
-              stockBefore: 0,
-              stockAfter: data.stock ?? 0,
-              referenceType: "PRODUCT_CREATE",
-              referenceId: created.id,
-              note: `Stock inicial registrado por ${actorLabel(currentSessionUser2)}`
-            }
-          });
-        }
-        return created;
-      });
-      await logAudit(prisma2, currentSessionUser2, "products", "create", "Product", product.id, void 0, {
-        name: product.name,
-        sku: product.sku
-      });
-      return { success: true, productId: product.id };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo crear el producto";
-      return { success: false, message };
-    }
-  });
-  ipcMain2.handle("products:update", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsEdit)) {
-      return { success: false, message: "Tu rol no puede editar productos" };
-    }
-    const parsed = updateProductSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Datos invalidos para actualizar el producto" };
-    const current = await prisma2.product.findUnique({ where: { id: parsed.data.id } });
-    if (!current)
-      return { success: false, message: "Producto no encontrado" };
-    try {
-      await prisma2.$transaction(async (tx) => {
-        await tx.product.update({
-          where: { id: parsed.data.id },
+        return (t.stock ?? 0) > 0 && await T.inventoryMovement.create({
           data: {
-            name: parsed.data.name ?? current.name,
-            sku: parsed.data.sku ?? current.sku,
-            barcode: parsed.data.barcode === void 0 ? current.barcode : parsed.data.barcode,
-            unitMeasure: parsed.data.unitMeasure ?? current.unitMeasure,
-            price: parsed.data.price === void 0 ? current.price : money$1(parsed.data.price),
-            cost: parsed.data.cost === void 0 ? current.cost : money$1(parsed.data.cost),
-            marginPercent: parsed.data.marginPercent ?? current.marginPercent,
-            hasTax: parsed.data.hasTax ?? current.hasTax,
-            taxRate: parsed.data.hasTax === false ? 0 : parsed.data.taxRate ?? current.taxRate,
-            stock: parsed.data.stock ?? current.stock,
-            categoryId: parsed.data.categoryId === void 0 ? current.categoryId : parsed.data.categoryId,
-            subcategoryId: parsed.data.subcategoryId === void 0 ? current.subcategoryId : parsed.data.subcategoryId,
-            isActive: parsed.data.isActive ?? current.isActive
+            productId: I.id,
+            type: Te.MANUAL_IN,
+            qty: t.stock ?? 0,
+            stockBefore: 0,
+            stockAfter: t.stock ?? 0,
+            referenceType: "PRODUCT_CREATE",
+            referenceId: I.id,
+            note: `Stock inicial registrado por ${_e(n)}`
           }
-        });
-        if (parsed.data.stock !== void 0 && parsed.data.stock !== current.stock) {
-          const delta = parsed.data.stock - current.stock;
-          await tx.inventoryMovement.create({
+        }), I;
+      });
+      return await V(a, n, "products", "create", "Product", g.id, void 0, {
+        name: g.name,
+        sku: g.sku
+      }), { success: !0, productId: g.id };
+    } catch (g) {
+      return { success: !1, message: g instanceof Error ? g.message : "No se pudo crear el producto" };
+    }
+  }), e.handle("products:update", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.productsEdit))
+      return { success: !1, message: "Tu rol no puede editar productos" };
+    const s = $a.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para actualizar el producto" };
+    const t = await a.product.findUnique({ where: { id: s.data.id } });
+    if (!t)
+      return { success: !1, message: "Producto no encontrado" };
+    try {
+      return await a.$transaction(async (i) => {
+        if (await i.product.update({
+          where: { id: s.data.id },
+          data: {
+            name: s.data.name ?? t.name,
+            sku: s.data.sku ?? t.sku,
+            barcode: s.data.barcode === void 0 ? t.barcode : s.data.barcode,
+            unitMeasure: s.data.unitMeasure ?? t.unitMeasure,
+            price: s.data.price === void 0 ? t.price : z(s.data.price),
+            cost: s.data.cost === void 0 ? t.cost : z(s.data.cost),
+            marginPercent: s.data.marginPercent ?? t.marginPercent,
+            hasTax: s.data.hasTax ?? t.hasTax,
+            taxRate: s.data.hasTax === !1 ? 0 : s.data.taxRate ?? t.taxRate,
+            stock: s.data.stock ?? t.stock,
+            categoryId: s.data.categoryId === void 0 ? t.categoryId : s.data.categoryId,
+            subcategoryId: s.data.subcategoryId === void 0 ? t.subcategoryId : s.data.subcategoryId,
+            isActive: s.data.isActive ?? t.isActive
+          }
+        }), s.data.stock !== void 0 && s.data.stock !== t.stock) {
+          const u = s.data.stock - t.stock;
+          await i.inventoryMovement.create({
             data: {
-              productId: current.id,
-              type: delta > 0 ? InventoryMovementType.ADJUSTMENT_IN : InventoryMovementType.ADJUSTMENT_OUT,
-              qty: Math.abs(delta),
-              stockBefore: current.stock,
-              stockAfter: parsed.data.stock,
+              productId: t.id,
+              type: u > 0 ? Te.ADJUSTMENT_IN : Te.ADJUSTMENT_OUT,
+              qty: Math.abs(u),
+              stockBefore: t.stock,
+              stockAfter: s.data.stock,
               referenceType: "PRODUCT_EDIT",
-              referenceId: current.id,
-              note: `Ajuste manual por ${actorLabel(currentSessionUser2)}`
+              referenceId: t.id,
+              note: `Ajuste manual por ${_e(n)}`
             }
           });
         }
-      });
-      await logAudit(prisma2, currentSessionUser2, "products", "update", "Product", current.id, current, parsed.data);
-      return { success: true };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo actualizar el producto";
-      return { success: false, message };
+      }), await V(a, n, "products", "update", "Product", t.id, t, s.data), { success: !0 };
+    } catch (i) {
+      return { success: !1, message: i instanceof Error ? i.message : "No se pudo actualizar el producto" };
     }
-  });
-  ipcMain2.handle("products:delete", async (_event, payload) => {
-    const currentSessionUser2 = await ensureAdminSession(getCurrentSessionUser);
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsDelete)) {
-      return { success: false, message: "Tu rol no puede archivar productos" };
-    }
-    const parsed = deleteByIdSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Producto invalido" };
-    const current = await prisma2.product.findUnique({ where: { id: parsed.data.id } });
-    if (!current)
-      return { success: false, message: "Producto no encontrado" };
-    await prisma2.product.update({
-      where: { id: parsed.data.id },
-      data: { isActive: false }
-    });
-    await logAudit(prisma2, currentSessionUser2, "products", "archive", "Product", current.id, current, {
-      isActive: false
-    });
-    return { success: true };
-  });
-  ipcMain2.handle("products:category:create", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsEdit)) {
-      return { success: false, message: "Tu rol no puede administrar categorias" };
-    }
-    const parsed = createCategorySchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Categoria invalida" };
+  }), e.handle("products:delete", async (m, c) => {
+    const n = await ot(r);
+    if (!M(n, E.productsDelete))
+      return { success: !1, message: "Tu rol no puede archivar productos" };
+    const s = Ee.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Producto invalido" };
+    const t = await a.product.findUnique({ where: { id: s.data.id } });
+    return t ? (await a.product.update({
+      where: { id: s.data.id },
+      data: { isActive: !1 }
+    }), await V(a, n, "products", "archive", "Product", t.id, t, {
+      isActive: !1
+    }), { success: !0 }) : { success: !1, message: "Producto no encontrado" };
+  }), e.handle("products:category:create", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.productsEdit))
+      return { success: !1, message: "Tu rol no puede administrar categorias" };
+    const s = Ka.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Categoria invalida" };
     try {
-      await prisma2.productCategory.create({
-        data: { name: parsed.data.name, isActive: true }
-      });
-      return { success: true };
+      return await a.productCategory.create({
+        data: { name: s.data.name, isActive: !0 }
+      }), { success: !0 };
     } catch {
-      return { success: false, message: "La categoria ya existe" };
+      return { success: !1, message: "La categoria ya existe" };
     }
-  });
-  ipcMain2.handle("products:category:delete", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsEdit)) {
-      return { success: false, message: "Tu rol no puede administrar categorias" };
-    }
-    const parsed = deleteByIdSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Categoria invalida" };
-    await prisma2.productCategory.delete({
-      where: { id: parsed.data.id }
-    });
-    return { success: true };
-  });
-  ipcMain2.handle("products:subcategory:create", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsEdit)) {
-      return { success: false, message: "Tu rol no puede administrar subcategorias" };
-    }
-    const parsed = createSubcategorySchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Subcategoria invalida" };
+  }), e.handle("products:category:delete", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.productsEdit))
+      return { success: !1, message: "Tu rol no puede administrar categorias" };
+    const s = Ee.safeParse(c);
+    return s.success ? (await a.productCategory.delete({
+      where: { id: s.data.id }
+    }), { success: !0 }) : { success: !1, message: "Categoria invalida" };
+  }), e.handle("products:subcategory:create", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.productsEdit))
+      return { success: !1, message: "Tu rol no puede administrar subcategorias" };
+    const s = Ha.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Subcategoria invalida" };
     try {
-      await prisma2.productSubcategory.create({
+      return await a.productSubcategory.create({
         data: {
-          categoryId: parsed.data.categoryId,
-          name: parsed.data.name,
-          isActive: true
+          categoryId: s.data.categoryId,
+          name: s.data.name,
+          isActive: !0
         }
-      });
-      return { success: true };
+      }), { success: !0 };
     } catch {
-      return { success: false, message: "La subcategoria ya existe en esa categoria" };
+      return { success: !1, message: "La subcategoria ya existe en esa categoria" };
     }
-  });
-  ipcMain2.handle("products:subcategory:delete", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.productsEdit)) {
-      return { success: false, message: "Tu rol no puede administrar subcategorias" };
-    }
-    const parsed = deleteByIdSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Subcategoria invalida" };
-    await prisma2.productSubcategory.delete({
-      where: { id: parsed.data.id }
-    });
-    return { success: true };
-  });
-  ipcMain2.handle("customers:list", async () => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion", customers: [] };
-    const customers = await prisma2.customer.findMany({
+  }), e.handle("products:subcategory:delete", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.productsEdit))
+      return { success: !1, message: "Tu rol no puede administrar subcategorias" };
+    const s = Ee.safeParse(c);
+    return s.success ? (await a.productSubcategory.delete({
+      where: { id: s.data.id }
+    }), { success: !0 }) : { success: !1, message: "Subcategoria invalida" };
+  }), e.handle("customers:list", async () => {
+    if (!r())
+      return { success: !1, message: "Debes iniciar sesion", customers: [] };
+    const c = await a.customer.findMany({
       orderBy: { createdAt: "desc" },
       include: {
         _count: {
-          select: { sales: true, credits: true }
+          select: { sales: !0, credits: !0 }
         }
       }
-    });
-    const customerIds = customers.map((customer) => customer.id);
-    const createdByMap = await getAuditUserMap(prisma2, "Customer", customerIds, "create");
+    }), n = c.map((t) => t.id), s = await de(a, "Customer", n, "create");
     return {
-      success: true,
-      customers: customers.map((customer) => ({
-        id: customer.id,
-        internalCode: customer.internalCode,
-        name: customer.name,
-        document: customer.document,
-        phone: customer.phone,
-        email: customer.email,
-        address: customer.address,
-        isActive: customer.isActive,
-        salesCount: customer._count.sales,
-        creditsCount: customer._count.credits,
-        createdAt: customer.createdAt.toISOString(),
-        createdBy: createdByMap.get(customer.id) ?? null
+      success: !0,
+      customers: c.map((t) => ({
+        id: t.id,
+        internalCode: t.internalCode,
+        name: t.name,
+        document: t.document,
+        phone: t.phone,
+        email: t.email,
+        address: t.address,
+        isActive: t.isActive,
+        salesCount: t._count.sales,
+        creditsCount: t._count.credits,
+        createdAt: t.createdAt.toISOString(),
+        createdBy: s.get(t.id) ?? null
       }))
     };
-  });
-  ipcMain2.handle("customers:create", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.customersCreate)) {
-      return { success: false, message: "Tu rol no puede crear clientes" };
-    }
-    const parsed = createCustomerSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Datos invalidos para el cliente" };
+  }), e.handle("customers:sales-history", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion", sales: [] };
+    if (!M(n, E.salesHistory))
+      return { success: !1, message: "Tu rol no puede ver facturas del POS", sales: [] };
+    const s = Ee.safeParse(c);
+    return s.success ? {
+      success: !0,
+      sales: (await a.sale.findMany({
+        where: { customerId: s.data.id },
+        include: {
+          cashier: {
+            select: { username: !0, name: !0 }
+          },
+          items: {
+            select: { qty: !0 }
+          }
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50
+      })).map((i) => ({
+        id: i.id,
+        invoiceNumber: i.invoiceNumber,
+        total: i.total,
+        status: i.status,
+        paymentMethod: i.paymentMethod,
+        createdAt: i.createdAt.toISOString(),
+        cashier: ye(i.cashier),
+        itemsCount: i.items.reduce((u, f) => u + f.qty, 0)
+      }))
+    } : { success: !1, message: "Cliente invalido", sales: [] };
+  }), e.handle("customers:create", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.customersCreate))
+      return { success: !1, message: "Tu rol no puede crear clientes" };
+    const s = wt.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para el cliente" };
     try {
-      const existingInternalCodes = (await prisma2.customer.findMany({
-        select: { internalCode: true }
-      })).map((customer2) => customer2.internalCode);
-      const internalCode = resolveManagedCode({
-        desiredCode: parsed.data.internalCode,
-        existingCodes: existingInternalCodes,
+      const t = (await a.customer.findMany({
+        select: { internalCode: !0 }
+      })).map((f) => f.internalCode), i = Z({
+        desiredCode: null,
+        existingCodes: t,
         prefix: "CLI",
         digits: 4,
         maxLength: 30
-      });
-      const customer = await prisma2.customer.create({
+      }), u = await a.customer.create({
         data: {
-          internalCode,
-          name: buildFullName(parsed.data.firstName, parsed.data.lastName),
-          document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
-          phone: parsed.data.phone || null,
-          email: parsed.data.email || null,
-          address: parsed.data.address || null,
+          internalCode: i,
+          name: it(s.data.firstName, s.data.lastName),
+          document: be(s.data.documentType, s.data.documentNumber),
+          phone: s.data.phone || null,
+          email: s.data.email || null,
+          address: s.data.address || null,
           creditLimit: 0,
           notes: null,
-          isActive: parsed.data.isActive ?? true
+          isActive: !0
         }
       });
-      await logAudit(prisma2, currentSessionUser2, "customers", "create", "Customer", customer.id, void 0, {
-        name: customer.name,
-        document: customer.document
-      });
-      return { success: true, customerId: customer.id };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo crear el cliente. Verifica documento o correo duplicado.";
-      return { success: false, message };
+      return await V(a, n, "customers", "create", "Customer", u.id, void 0, {
+        name: u.name,
+        document: u.document
+      }), { success: !0, customerId: u.id };
+    } catch (t) {
+      return { success: !1, message: t instanceof Error ? t.message : "No se pudo crear el cliente. Verifica documento o correo duplicado." };
     }
-  });
-  ipcMain2.handle("customers:update", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.customersEdit)) {
-      return { success: false, message: "Tu rol no puede editar clientes" };
-    }
-    const parsed = updateCustomerSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Datos invalidos para actualizar el cliente" };
-    const current = await prisma2.customer.findUnique({ where: { id: parsed.data.id } });
-    if (!current)
-      return { success: false, message: "Cliente no encontrado" };
+  }), e.handle("customers:update", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.customersEdit))
+      return { success: !1, message: "Tu rol no puede editar clientes" };
+    const s = Ya.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para actualizar el cliente" };
+    const t = await a.customer.findUnique({ where: { id: s.data.id } });
+    if (!t)
+      return { success: !1, message: "Cliente no encontrado" };
     try {
-      const existingInternalCodes = (await prisma2.customer.findMany({
-        where: { NOT: { id: current.id } },
-        select: { internalCode: true }
-      })).map((customer) => customer.internalCode);
-      const internalCode = resolveManagedCode({
-        desiredCode: parsed.data.internalCode,
-        existingCodes: existingInternalCodes,
-        prefix: "CLI",
-        digits: 4,
-        maxLength: 30
-      });
-      const nextData = {
-        internalCode,
-        name: buildFullName(parsed.data.firstName, parsed.data.lastName),
-        document: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
-        phone: parsed.data.phone || null,
-        email: parsed.data.email || null,
-        address: parsed.data.address || null,
-        isActive: parsed.data.isActive ?? current.isActive
+      const i = (await a.customer.findMany({
+        where: { NOT: { id: t.id } },
+        select: { internalCode: !0 }
+      })).map((g) => g.internalCode), f = {
+        internalCode: Z({
+          desiredCode: t.internalCode,
+          existingCodes: i,
+          prefix: "CLI",
+          digits: 4,
+          maxLength: 30
+        }),
+        name: it(s.data.firstName, s.data.lastName),
+        document: be(s.data.documentType, s.data.documentNumber),
+        phone: s.data.phone || null,
+        email: s.data.email || null,
+        address: s.data.address || null,
+        isActive: s.data.isActive ?? t.isActive
       };
-      await prisma2.customer.update({
-        where: { id: current.id },
+      return await a.customer.update({
+        where: { id: t.id },
         data: {
-          ...nextData,
+          ...f,
           creditLimit: 0,
           notes: null
         }
-      });
-      await logAudit(prisma2, currentSessionUser2, "customers", "update", "Customer", current.id, current, nextData);
-      return { success: true };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo actualizar el cliente. Verifica documento o correo duplicado.";
-      return { success: false, message };
+      }), await V(a, n, "customers", "update", "Customer", t.id, t, f), { success: !0 };
+    } catch (i) {
+      return { success: !1, message: i instanceof Error ? i.message : "No se pudo actualizar el cliente. Verifica documento o correo duplicado." };
     }
-  });
-  ipcMain2.handle("suppliers:list", async () => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion", suppliers: [] };
-    const suppliers = await prisma2.supplier.findMany({
+  }), e.handle("suppliers:list", async () => {
+    if (!r())
+      return { success: !1, message: "Debes iniciar sesion", suppliers: [] };
+    const c = await a.supplier.findMany({
       orderBy: { createdAt: "desc" },
       include: {
         _count: {
-          select: { purchases: true }
+          select: { purchases: !0 }
         }
       }
-    });
-    const supplierIds = suppliers.map((supplier) => supplier.id);
-    const createdByMap = await getAuditUserMap(prisma2, "Supplier", supplierIds, "create");
+    }), n = c.map((t) => t.id), s = await de(a, "Supplier", n, "create");
     return {
-      success: true,
-      suppliers: suppliers.map((supplier) => ({
-        id: supplier.id,
-        internalCode: supplier.internalCode,
-        name: supplier.name,
-        document: supplier.taxId,
-        phone: supplier.phone,
-        email: supplier.email,
-        address: supplier.address,
-        contactName: supplier.contactName,
-        isActive: supplier.isActive,
-        purchasesCount: supplier._count.purchases,
-        createdAt: supplier.createdAt.toISOString(),
-        createdBy: createdByMap.get(supplier.id) ?? null
+      success: !0,
+      suppliers: c.map((t) => ({
+        id: t.id,
+        internalCode: t.internalCode,
+        name: t.name,
+        document: t.taxId,
+        phone: t.phone,
+        email: t.email,
+        address: t.address,
+        contactName: t.contactName,
+        isActive: t.isActive,
+        purchasesCount: t._count.purchases,
+        createdAt: t.createdAt.toISOString(),
+        createdBy: s.get(t.id) ?? null
       }))
     };
-  });
-  ipcMain2.handle("suppliers:create", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.suppliersCreate)) {
-      return { success: false, message: "Tu rol no puede crear proveedores" };
-    }
-    const parsed = createSupplierSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Datos invalidos para el proveedor" };
+  }), e.handle("suppliers:create", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.suppliersCreate))
+      return { success: !1, message: "Tu rol no puede crear proveedores" };
+    const s = Ot.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para el proveedor" };
     try {
-      const existingInternalCodes = (await prisma2.supplier.findMany({
-        select: { internalCode: true }
-      })).map((supplier2) => supplier2.internalCode);
-      const internalCode = resolveManagedCode({
-        desiredCode: parsed.data.internalCode,
-        existingCodes: existingInternalCodes,
+      const t = (await a.supplier.findMany({
+        select: { internalCode: !0 }
+      })).map((f) => f.internalCode), i = Z({
+        desiredCode: null,
+        existingCodes: t,
         prefix: "PRV",
         digits: 4,
         maxLength: 30
-      });
-      const supplier = await prisma2.supplier.create({
+      }), u = await a.supplier.create({
         data: {
-          internalCode,
-          name: parsed.data.name,
-          taxId: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
-          phone: parsed.data.phone || null,
-          email: parsed.data.email || null,
-          address: parsed.data.address || null,
-          contactName: parsed.data.contactName || null,
-          isActive: parsed.data.isActive ?? true
+          internalCode: i,
+          name: s.data.name,
+          taxId: be(s.data.documentType, s.data.documentNumber),
+          phone: s.data.phone || null,
+          email: s.data.email || null,
+          address: s.data.address || null,
+          contactName: s.data.contactName || null,
+          isActive: !0
         }
       });
-      await logAudit(prisma2, currentSessionUser2, "suppliers", "create", "Supplier", supplier.id, void 0, {
-        name: supplier.name,
-        taxId: supplier.taxId
-      });
-      return { success: true, supplierId: supplier.id };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo crear el proveedor. Verifica documento o correo duplicado.";
-      return { success: false, message };
+      return await V(a, n, "suppliers", "create", "Supplier", u.id, void 0, {
+        name: u.name,
+        taxId: u.taxId
+      }), { success: !0, supplierId: u.id };
+    } catch (t) {
+      return { success: !1, message: t instanceof Error ? t.message : "No se pudo crear el proveedor. Verifica documento o correo duplicado." };
     }
-  });
-  ipcMain2.handle("suppliers:update", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.suppliersEdit)) {
-      return { success: false, message: "Tu rol no puede editar proveedores" };
-    }
-    const parsed = updateSupplierSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Datos invalidos para actualizar el proveedor" };
-    const current = await prisma2.supplier.findUnique({ where: { id: parsed.data.id } });
-    if (!current)
-      return { success: false, message: "Proveedor no encontrado" };
+  }), e.handle("suppliers:update", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.suppliersEdit))
+      return { success: !1, message: "Tu rol no puede editar proveedores" };
+    const s = Ja.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para actualizar el proveedor" };
+    const t = await a.supplier.findUnique({ where: { id: s.data.id } });
+    if (!t)
+      return { success: !1, message: "Proveedor no encontrado" };
     try {
-      const existingInternalCodes = (await prisma2.supplier.findMany({
-        where: { NOT: { id: current.id } },
-        select: { internalCode: true }
-      })).map((supplier) => supplier.internalCode);
-      const internalCode = resolveManagedCode({
-        desiredCode: parsed.data.internalCode,
-        existingCodes: existingInternalCodes,
-        prefix: "PRV",
-        digits: 4,
-        maxLength: 30
-      });
-      const nextData = {
-        internalCode,
-        name: parsed.data.name,
-        taxId: buildDocumentValue(parsed.data.documentType, parsed.data.documentNumber),
-        phone: parsed.data.phone || null,
-        email: parsed.data.email || null,
-        address: parsed.data.address || null,
-        contactName: parsed.data.contactName || null,
-        isActive: parsed.data.isActive ?? current.isActive
+      const i = (await a.supplier.findMany({
+        where: { NOT: { id: t.id } },
+        select: { internalCode: !0 }
+      })).map((g) => g.internalCode), f = {
+        internalCode: Z({
+          desiredCode: t.internalCode,
+          existingCodes: i,
+          prefix: "PRV",
+          digits: 4,
+          maxLength: 30
+        }),
+        name: s.data.name,
+        taxId: be(s.data.documentType, s.data.documentNumber),
+        phone: s.data.phone || null,
+        email: s.data.email || null,
+        address: s.data.address || null,
+        contactName: s.data.contactName || null,
+        isActive: s.data.isActive ?? t.isActive
       };
-      await prisma2.supplier.update({
-        where: { id: current.id },
-        data: nextData
-      });
-      await logAudit(prisma2, currentSessionUser2, "suppliers", "update", "Supplier", current.id, current, nextData);
-      return { success: true };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo actualizar el proveedor. Verifica documento o correo duplicado.";
-      return { success: false, message };
+      return await a.supplier.update({
+        where: { id: t.id },
+        data: f
+      }), await V(a, n, "suppliers", "update", "Supplier", t.id, t, f), { success: !0 };
+    } catch (i) {
+      return { success: !1, message: i instanceof Error ? i.message : "No se pudo actualizar el proveedor. Verifica documento o correo duplicado." };
     }
-  });
-  ipcMain2.handle("purchases:list", async () => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion", purchases: [] };
-    const purchases = await prisma2.purchase.findMany({
+  }), e.handle("purchases:list", async () => {
+    if (!r())
+      return { success: !1, message: "Debes iniciar sesion", purchases: [] };
+    const c = await a.purchase.findMany({
       include: {
         supplier: {
-          select: { name: true }
+          select: { name: !0 }
         },
         items: {
-          select: { qty: true }
+          select: { qty: !0 }
         }
       },
       orderBy: { purchasedAt: "desc" },
       take: 200
-    });
-    const purchaseIds = purchases.map((purchase) => purchase.id);
-    const createdByMap = await getAuditUserMap(prisma2, "Purchase", purchaseIds, "create");
+    }), n = c.map((t) => t.id), s = await de(a, "Purchase", n, "create");
     return {
-      success: true,
-      purchases: purchases.map((purchase) => ({
-        id: purchase.id,
-        number: purchase.number,
-        supplierId: purchase.supplierId,
-        supplier: purchase.supplier.name,
-        status: purchase.status,
-        subtotal: purchase.subtotal,
-        tax: purchase.tax,
-        total: purchase.total,
-        balance: purchase.balance,
-        note: purchase.note,
-        purchasedAt: purchase.purchasedAt.toISOString(),
-        itemsCount: purchase.items.reduce((sum, item) => sum + item.qty, 0),
-        createdBy: createdByMap.get(purchase.id) ?? null
+      success: !0,
+      purchases: c.map((t) => ({
+        id: t.id,
+        number: t.number,
+        supplierId: t.supplierId,
+        supplier: t.supplier.name,
+        status: t.status,
+        subtotal: t.subtotal,
+        tax: t.tax,
+        total: t.total,
+        balance: t.balance,
+        note: t.note,
+        purchasedAt: t.purchasedAt.toISOString(),
+        itemsCount: t.items.reduce((i, u) => i + u.qty, 0),
+        createdBy: s.get(t.id) ?? null
       }))
     };
-  });
-  ipcMain2.handle("purchases:get-detail", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.purchasesDetails)) {
-      return { success: false, message: "Tu rol no puede ver el detalle de compras" };
-    }
-    const parsed = deleteByIdSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Compra invalida" };
-    const purchase = await prisma2.purchase.findUnique({
-      where: { id: parsed.data.id },
+  }), e.handle("purchases:get-detail", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.purchasesDetails))
+      return { success: !1, message: "Tu rol no puede ver el detalle de compras" };
+    const s = Ee.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Compra invalida" };
+    const t = await a.purchase.findUnique({
+      where: { id: s.data.id },
       include: {
-        supplier: true,
+        supplier: !0,
         items: {
           include: {
             product: {
-              select: { name: true, sku: true }
+              select: { name: !0, sku: !0 }
             }
           },
           orderBy: { createdAt: "asc" }
         }
       }
     });
-    if (!purchase)
-      return { success: false, message: "Compra no encontrada" };
-    const createdByMap = await getAuditUserMap(prisma2, "Purchase", [purchase.id], "create");
+    if (!t)
+      return { success: !1, message: "Compra no encontrada" };
+    const i = await de(a, "Purchase", [t.id], "create");
     return {
-      success: true,
+      success: !0,
       purchase: {
-        id: purchase.id,
-        number: purchase.number,
-        supplier: purchase.supplier.name,
-        status: purchase.status,
-        subtotal: purchase.subtotal,
-        tax: purchase.tax,
-        total: purchase.total,
-        balance: purchase.balance,
-        note: purchase.note,
-        purchasedAt: purchase.purchasedAt.toISOString(),
-        createdBy: createdByMap.get(purchase.id) ?? null,
-        items: purchase.items.map((item) => ({
-          id: item.id,
-          productName: item.product.name,
-          productSku: item.product.sku,
-          qty: item.qty,
-          cost: item.cost,
-          taxRate: item.taxRate,
-          subtotal: item.subtotal,
-          total: item.subtotal + money$1(item.subtotal * item.taxRate)
+        id: t.id,
+        number: t.number,
+        supplier: t.supplier.name,
+        status: t.status,
+        subtotal: t.subtotal,
+        tax: t.tax,
+        total: t.total,
+        balance: t.balance,
+        note: t.note,
+        purchasedAt: t.purchasedAt.toISOString(),
+        createdBy: i.get(t.id) ?? null,
+        items: t.items.map((u) => ({
+          id: u.id,
+          productName: u.product.name,
+          productSku: u.product.sku,
+          qty: u.qty,
+          cost: u.cost,
+          taxRate: u.taxRate,
+          subtotal: u.subtotal,
+          total: u.subtotal + z(u.subtotal * u.taxRate)
         }))
       }
     };
-  });
-  ipcMain2.handle("purchases:create", async (_event, payload) => {
-    const currentSessionUser2 = await ensureAdminSession(getCurrentSessionUser);
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.purchasesCreate)) {
-      return { success: false, message: "Tu rol no puede registrar compras" };
-    }
-    const parsed = createPurchaseSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Datos invalidos para la compra" };
-    const supplier = await prisma2.supplier.findUnique({ where: { id: parsed.data.supplierId } });
-    if (!supplier)
-      return { success: false, message: "Proveedor no encontrado" };
-    const productIds = parsed.data.items.map((item) => item.productId);
-    const products = await prisma2.product.findMany({
+  }), e.handle("purchases:create", async (m, c) => {
+    const n = await ot(r);
+    if (!M(n, E.purchasesCreate))
+      return { success: !1, message: "Tu rol no puede registrar compras" };
+    const s = Wa.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para la compra" };
+    const t = await a.supplier.findUnique({ where: { id: s.data.supplierId } });
+    if (!t)
+      return { success: !1, message: "Proveedor no encontrado" };
+    const i = s.data.items.map((b) => b.productId), u = await a.product.findMany({
       where: {
-        id: { in: productIds },
-        isActive: true
+        id: { in: i },
+        isActive: !0
       }
     });
-    if (products.length !== productIds.length) {
-      return { success: false, message: "Uno o más productos no están disponibles" };
-    }
-    const productMap = new Map(products.map((product) => [product.id, product]));
-    const normalizedItems = parsed.data.items.map((item) => {
-      const product = productMap.get(item.productId);
-      if (!product) {
+    if (u.length !== i.length)
+      return { success: !1, message: "Uno o más productos no están disponibles" };
+    const f = new Map(u.map((b) => [b.id, b])), g = s.data.items.map((b) => {
+      const d = f.get(b.productId);
+      if (!d)
         throw new Error("Producto no encontrado");
-      }
-      const subtotal2 = money$1(item.cost * item.qty);
-      const tax2 = money$1(subtotal2 * (item.taxRate ?? 0));
+      const A = z(b.cost * b.qty), S = z(A * (b.taxRate ?? 0));
       return {
-        product,
-        qty: item.qty,
-        cost: money$1(item.cost),
-        taxRate: item.taxRate ?? 0,
-        subtotal: subtotal2,
-        tax: tax2,
-        total: subtotal2 + tax2
+        product: d,
+        qty: b.qty,
+        cost: z(b.cost),
+        taxRate: b.taxRate ?? 0,
+        subtotal: A,
+        tax: S,
+        total: A + S
       };
-    });
-    const subtotal = normalizedItems.reduce((sum, item) => sum + item.subtotal, 0);
-    const tax = normalizedItems.reduce((sum, item) => sum + item.tax, 0);
-    const total = subtotal + tax;
-    const purchasedAt = parsed.data.purchasedAt ? new Date(parsed.data.purchasedAt) : /* @__PURE__ */ new Date();
-    const status = parsed.data.markAsPaid ? PurchaseStatus.PAID : PurchaseStatus.RECEIVED;
-    const balance = parsed.data.markAsPaid ? 0 : total;
-    const paymentMedium = normalizeTreasuryMedium(parsed.data.paymentMedium);
-    const paymentPlatform = paymentMedium === "CORRESPONDENT" && parsed.data.paymentPlatformId ? await prisma2.correspondentPlatform.findUnique({
-      where: { id: parsed.data.paymentPlatformId },
-      select: { id: true, name: true }
+    }), T = g.reduce((b, d) => b + d.subtotal, 0), I = g.reduce((b, d) => b + d.tax, 0), p = T + I, N = s.data.purchasedAt ? new Date(s.data.purchasedAt) : /* @__PURE__ */ new Date(), C = s.data.markAsPaid ? Qe.PAID : Qe.RECEIVED, h = s.data.markAsPaid ? 0 : p, v = ke(s.data.paymentMedium), D = v === "CORRESPONDENT" && s.data.paymentPlatformId ? await a.correspondentPlatform.findUnique({
+      where: { id: s.data.paymentPlatformId },
+      select: { id: !0, name: !0 }
     }) : null;
-    if (paymentMedium === "CORRESPONDENT" && !paymentPlatform) {
-      return { success: false, message: "Selecciona un corresponsal valido para pagar la compra" };
-    }
-    const activeSession = parsed.data.markAsPaid ? await prisma2.cashSession.findFirst({
-      where: { status: CashSessionStatus.OPEN },
+    if (v === "CORRESPONDENT" && !D)
+      return { success: !1, message: "Selecciona un corresponsal valido para pagar la compra" };
+    const P = s.data.markAsPaid ? await a.cashSession.findFirst({
+      where: { status: W.OPEN },
       orderBy: { openedAt: "desc" }
     }) : null;
-    if (parsed.data.markAsPaid && !activeSession) {
-      return { success: false, message: "Abre el control diario antes de registrar compras pagadas" };
-    }
+    if (s.data.markAsPaid && !P)
+      return { success: !1, message: "Abre el control diario antes de registrar compras pagadas" };
     try {
-      const purchase = await prisma2.$transaction(async (tx) => {
-        const number = await generatePurchaseNumber(tx);
-        const createdPurchase = await tx.purchase.create({
+      const b = await a.$transaction(async (d) => {
+        const A = await Is(d), S = await d.purchase.create({
           data: {
-            supplierId: parsed.data.supplierId,
-            number,
-            status,
-            subtotal,
-            tax,
-            total,
-            balance,
-            note: parsed.data.note || null,
-            purchasedAt,
+            supplierId: s.data.supplierId,
+            number: A,
+            status: C,
+            subtotal: T,
+            tax: I,
+            total: p,
+            balance: h,
+            note: s.data.note || null,
+            purchasedAt: N,
             items: {
-              create: normalizedItems.map((item) => ({
-                productId: item.product.id,
-                qty: item.qty,
-                cost: item.cost,
-                taxRate: item.taxRate,
-                subtotal: item.subtotal
+              create: g.map((y) => ({
+                productId: y.product.id,
+                qty: y.qty,
+                cost: y.cost,
+                taxRate: y.taxRate,
+                subtotal: y.subtotal
               }))
             }
           }
         });
-        for (const item of normalizedItems) {
-          const nextStock = item.product.stock + item.qty;
-          const weightedCost = nextStock <= 0 ? item.cost : money$1((item.product.stock * item.product.cost + item.subtotal) / nextStock);
-          const nextPrice = calculateSalePrice(
-            weightedCost,
-            item.product.marginPercent,
-            item.product.hasTax,
-            item.product.taxRate
+        for (const y of g) {
+          const w = y.product.stock + y.qty, $ = w <= 0 ? y.cost : z((y.product.stock * y.product.cost + y.subtotal) / w), U = is(
+            $,
+            y.product.marginPercent,
+            y.product.hasTax,
+            y.product.taxRate
           );
-          await tx.product.update({
-            where: { id: item.product.id },
+          await d.product.update({
+            where: { id: y.product.id },
             data: {
-              stock: nextStock,
-              cost: weightedCost,
-              price: nextPrice
+              stock: w,
+              cost: $,
+              price: U
             }
-          });
-          await tx.inventoryMovement.create({
+          }), await d.inventoryMovement.create({
             data: {
-              productId: item.product.id,
-              type: InventoryMovementType.PURCHASE_IN,
-              qty: item.qty,
-              stockBefore: item.product.stock,
-              stockAfter: nextStock,
+              productId: y.product.id,
+              type: Te.PURCHASE_IN,
+              qty: y.qty,
+              stockBefore: y.product.stock,
+              stockAfter: w,
               referenceType: "PURCHASE",
-              referenceId: createdPurchase.id,
-              note: `${createdPurchase.number} - ${supplier.name} - registrado por ${actorLabel(currentSessionUser2)}`
+              referenceId: S.id,
+              note: `${S.number} - ${t.name} - registrado por ${_e(n)}`
             }
           });
         }
-        if (parsed.data.markAsPaid && activeSession) {
-          await tx.cashMovement.create({
-            data: {
-              sessionId: activeSession.id,
-              type: CashMovementType.EXPENSE_OUT,
-              amount: total,
-              note: buildTreasuryMovementNote({
-                label: `Compra pagada ${createdPurchase.number} - ${supplier.name}`,
-                medium: paymentMedium,
-                platformId: (paymentPlatform == null ? void 0 : paymentPlatform.id) ?? null,
-                platformName: (paymentPlatform == null ? void 0 : paymentPlatform.name) ?? null,
-                sourceType: "PURCHASE",
-                userNote: parsed.data.note || null
-              })
-            }
-          });
-        }
-        return createdPurchase;
+        return s.data.markAsPaid && P && await d.cashMovement.create({
+          data: {
+            sessionId: P.id,
+            type: B.EXPENSE_OUT,
+            amount: p,
+            note: Se({
+              label: `Compra pagada ${S.number} - ${t.name}`,
+              medium: v,
+              platformId: (D == null ? void 0 : D.id) ?? null,
+              platformName: (D == null ? void 0 : D.name) ?? null,
+              sourceType: "PURCHASE",
+              userNote: s.data.note || null
+            })
+          }
+        }), S;
       });
-      await logAudit(prisma2, currentSessionUser2, "purchases", "create", "Purchase", purchase.id, void 0, {
-        number: purchase.number,
-        supplier: supplier.name,
-        total: purchase.total,
-        markAsPaid: parsed.data.markAsPaid,
-        paymentMedium,
-        paymentPlatform: (paymentPlatform == null ? void 0 : paymentPlatform.name) ?? null
-      });
-      return { success: true, purchaseId: purchase.id };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo registrar la compra";
-      return { success: false, message };
+      return await V(a, n, "purchases", "create", "Purchase", b.id, void 0, {
+        number: b.number,
+        supplier: t.name,
+        total: b.total,
+        markAsPaid: s.data.markAsPaid,
+        paymentMedium: v,
+        paymentPlatform: (D == null ? void 0 : D.name) ?? null
+      }), { success: !0, purchaseId: b.id };
+    } catch (b) {
+      return { success: !1, message: b instanceof Error ? b.message : "No se pudo registrar la compra" };
     }
-  });
-  ipcMain2.handle("inventory:list", async () => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion", moves: [] };
-    const moves = await prisma2.inventoryMovement.findMany({
+  }), e.handle("inventory:list", async () => r() ? {
+    success: !0,
+    moves: (await a.inventoryMovement.findMany({
       include: {
         product: {
-          select: { id: true, name: true, sku: true }
+          select: { id: !0, name: !0, sku: !0 }
         }
       },
       orderBy: { createdAt: "desc" },
       take: 200
-    });
+    })).map((n) => ({
+      id: n.id,
+      productId: n.productId,
+      productName: n.product.name,
+      productSku: n.product.sku,
+      type: n.type,
+      qty: n.qty,
+      stockBefore: n.stockBefore,
+      stockAfter: n.stockAfter,
+      referenceType: n.referenceType,
+      referenceId: n.referenceId,
+      note: n.note,
+      createdAt: n.createdAt.toISOString()
+    }))
+  } : { success: !1, message: "Debes iniciar sesion", moves: [] }), e.handle("sales:list", async (m, c) => {
+    var f;
+    if (!r())
+      return { success: !1, message: "Debes iniciar sesion", sales: [] };
+    const s = ns.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Filtros invalidos", sales: [] };
+    const t = s.data, i = (f = t.search) == null ? void 0 : f.trim();
     return {
-      success: true,
-      moves: moves.map((move) => ({
-        id: move.id,
-        productId: move.productId,
-        productName: move.product.name,
-        productSku: move.product.sku,
-        type: move.type,
-        qty: move.qty,
-        stockBefore: move.stockBefore,
-        stockAfter: move.stockAfter,
-        referenceType: move.referenceType,
-        referenceId: move.referenceId,
-        note: move.note,
-        createdAt: move.createdAt.toISOString()
-      }))
-    };
-  });
-  ipcMain2.handle("sales:list", async (_event, payload) => {
-    var _a;
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion", sales: [] };
-    const parsed = salesListFilterSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Filtros invalidos", sales: [] };
-    const filters = parsed.data;
-    const query = (_a = filters.search) == null ? void 0 : _a.trim();
-    const sales = await prisma2.sale.findMany({
-      where: {
-        createdAt: filters.dateFrom || filters.dateTo ? {
-          ...filters.dateFrom ? { gte: new Date(filters.dateFrom) } : {},
-          ...filters.dateTo ? { lt: new Date(filters.dateTo) } : {}
-        } : void 0,
-        cashierId: filters.cashierId,
-        status: filters.status,
-        OR: query ? [
-          { invoiceNumber: { contains: query } },
-          { customer: { contains: query } }
-        ] : void 0
-      },
-      include: {
-        cashier: {
-          select: { username: true, name: true }
+      success: !0,
+      sales: (await a.sale.findMany({
+        where: {
+          createdAt: t.dateFrom || t.dateTo ? {
+            ...t.dateFrom ? { gte: new Date(t.dateFrom) } : {},
+            ...t.dateTo ? { lt: new Date(t.dateTo) } : {}
+          } : void 0,
+          cashierId: t.cashierId,
+          status: t.status,
+          OR: i ? [
+            { invoiceNumber: { contains: i } },
+            { customer: { contains: i } }
+          ] : void 0
         },
-        items: {
-          select: { qty: true }
-        }
-      },
-      orderBy: { createdAt: "desc" },
-      take: 200
-    });
-    return {
-      success: true,
-      sales: sales.map((sale) => ({
-        id: sale.id,
-        invoiceNumber: sale.invoiceNumber,
-        customer: sale.customer,
-        paymentMethod: sale.paymentMethod,
-        subtotal: sale.subtotal,
-        tax: sale.tax,
-        total: sale.total,
-        status: sale.status,
-        createdAt: sale.createdAt.toISOString(),
-        cashier: sale.cashier.name ?? sale.cashier.username,
-        itemsCount: sale.items.reduce((sum, item) => sum + item.qty, 0)
+        include: {
+          cashier: {
+            select: { username: !0, name: !0 }
+          },
+          items: {
+            select: { qty: !0 }
+          }
+        },
+        orderBy: { createdAt: "desc" },
+        take: 200
+      })).map((g) => ({
+        id: g.id,
+        invoiceNumber: g.invoiceNumber,
+        customer: g.customer,
+        paymentMethod: g.paymentMethod,
+        subtotal: g.subtotal,
+        tax: g.tax,
+        total: g.total,
+        status: g.status,
+        createdAt: g.createdAt.toISOString(),
+        cashier: ye(g.cashier),
+        itemsCount: g.items.reduce((T, I) => T + I.qty, 0)
       }))
     };
-  });
-  ipcMain2.handle("sales:get-detail", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    const parsed = saleByIdSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Venta invalida" };
-    const sale = await prisma2.sale.findUnique({
-      where: { id: parsed.data.saleId },
+  }), e.handle("sales:get-detail", async (m, c) => {
+    if (!r())
+      return { success: !1, message: "Debes iniciar sesion" };
+    const s = st.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Venta invalida" };
+    const t = await a.sale.findUnique({
+      where: { id: s.data.saleId },
       include: {
         cashier: {
-          select: { username: true, name: true }
+          select: { username: !0, name: !0 }
         },
         items: {
           orderBy: { createdAt: "asc" }
         },
-        payments: true
+        payments: !0
       }
     });
-    if (!sale)
-      return { success: false, message: "Venta no encontrada" };
-    return {
-      success: true,
+    return t ? {
+      success: !0,
       sale: {
-        id: sale.id,
-        invoiceNumber: sale.invoiceNumber,
-        customer: sale.customer,
-        paymentMethod: sale.paymentMethod,
-        subtotal: sale.subtotal,
-        tax: sale.tax,
-        total: sale.total,
-        status: sale.status,
-        createdAt: sale.createdAt.toISOString(),
-        cashier: sale.cashier.name ?? sale.cashier.username,
-        items: sale.items.map((item) => ({
-          id: item.id,
-          name: item.name,
-          qty: item.qty,
-          price: item.price,
-          taxRate: item.taxRate,
-          lineSubtotal: item.lineSubtotal,
-          lineTax: item.lineTax,
-          lineTotal: item.lineTotal
+        id: t.id,
+        invoiceNumber: t.invoiceNumber,
+        customer: t.customer,
+        paymentMethod: t.paymentMethod,
+        subtotal: t.subtotal,
+        tax: t.tax,
+        total: t.total,
+        status: t.status,
+        createdAt: t.createdAt.toISOString(),
+        cashier: ye(t.cashier),
+        items: t.items.map((i) => ({
+          id: i.id,
+          name: i.name,
+          qty: i.qty,
+          price: i.price,
+          taxRate: i.taxRate,
+          lineSubtotal: i.lineSubtotal,
+          lineTax: i.lineTax,
+          lineTotal: i.lineTotal
         })),
-        payments: sale.payments.map((payment) => ({
-          id: payment.id,
-          method: payment.method,
-          amount: payment.amount,
-          reference: payment.reference
+        payments: t.payments.map((i) => ({
+          id: i.id,
+          method: i.method,
+          amount: i.amount,
+          reference: i.reference
         }))
       }
-    };
-  });
-  ipcMain2.handle("sales:print-invoice", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.salesPrint)) {
-      return { success: false, message: "Tu rol no puede imprimir facturas" };
-    }
-    const parsed = saleByIdSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Venta invalida" };
-    const [sale, settings] = await Promise.all([
-      prisma2.sale.findUnique({
-        where: { id: parsed.data.saleId },
+    } : { success: !1, message: "Venta no encontrada" };
+  }), e.handle("sales:print-invoice", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.salesPrint))
+      return { success: !1, message: "Tu rol no puede imprimir facturas" };
+    const s = st.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Venta invalida" };
+    const [t, i] = await Promise.all([
+      a.sale.findUnique({
+        where: { id: s.data.saleId },
         include: {
-          cashier: { select: { username: true, name: true } },
+          cashier: { select: { username: !0, name: !0 } },
           items: { orderBy: { createdAt: "asc" } },
-          payments: true
+          payments: !0
         }
       }),
-      prisma2.businessSettings.findUnique({
+      a.businessSettings.findUnique({
         where: { id: "default" }
       })
     ]);
-    if (!sale)
-      return { success: false, message: "Venta no encontrada" };
-    const addressParts = splitBusinessAddress(settings == null ? void 0 : settings.address);
-    const html = buildInvoiceHtml({
-      businessName: settings == null ? void 0 : settings.businessName,
-      taxId: settings == null ? void 0 : settings.taxId,
-      address: addressParts.address,
-      city: addressParts.city,
-      receiptFooter: settings == null ? void 0 : settings.receiptFooter,
-      invoiceNumber: sale.invoiceNumber,
-      customer: sale.customer,
-      paymentSummary: paymentSummaryLabel(sale.payments, sale.paymentMethod),
-      total: sale.total,
-      subtotal: sale.subtotal,
-      tax: sale.tax,
-      createdAt: sale.createdAt,
-      cashier: sale.cashier,
-      items: sale.items.map((item) => ({
-        name: item.name,
-        qty: item.qty,
-        price: item.price,
-        lineTotal: item.lineTotal
+    if (!t)
+      return { success: !1, message: "Venta no encontrada" };
+    const u = nt(i == null ? void 0 : i.address), f = us({
+      businessName: i == null ? void 0 : i.businessName,
+      taxId: i == null ? void 0 : i.taxId,
+      address: u.address,
+      city: u.city,
+      receiptFooter: i == null ? void 0 : i.receiptFooter,
+      invoiceNumber: t.invoiceNumber,
+      customer: t.customer,
+      paymentSummary: cs(t.payments, t.paymentMethod),
+      total: t.total,
+      subtotal: t.subtotal,
+      tax: t.tax,
+      createdAt: t.createdAt,
+      cashier: t.cashier,
+      items: t.items.map((T) => ({
+        name: T.name,
+        qty: T.qty,
+        price: T.price,
+        lineTotal: T.lineTotal
       }))
-    });
-    const printWindow = new BrowserWindow({
-      show: false,
+    }, s.data.template), g = new qe({
+      show: !1,
       webPreferences: {
-        sandbox: false
+        sandbox: !1
       }
     });
-    await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-    return await new Promise((resolve) => {
-      printWindow.webContents.print(
+    return await g.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(f)}`), await new Promise((T) => {
+      g.webContents.print(
         {
-          silent: false,
-          printBackground: true
+          silent: !1,
+          printBackground: !0
         },
-        (success, failureReason) => {
-          printWindow.close();
-          if (!success) {
-            resolve({ success: false, message: failureReason || "No se pudo imprimir" });
+        (I, p) => {
+          if (g.close(), !I) {
+            T({ success: !1, message: p || "No se pudo imprimir" });
             return;
           }
-          resolve({ success: true });
+          T({ success: !0 });
         }
       );
     });
-  });
-  ipcMain2.handle("accounting:summary", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.reportsView)) {
-      return { success: false, message: "Tu rol no puede consultar contabilidad" };
-    }
-    const parsed = accountingRangeSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Filtros invalidos" };
-    const createdAt = buildDateRangeFilter(parsed.data.dateFrom, parsed.data.dateTo);
-    const [customers, sales, credits, payments, creditNotes, expenses] = await Promise.all([
-      prisma2.customer.findMany({
-        where: { isActive: true },
+  }), e.handle("accounting:summary", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.reportsView))
+      return { success: !1, message: "Tu rol no puede consultar contabilidad" };
+    const s = Pa.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Filtros invalidos" };
+    const t = ms(s.data.dateFrom, s.data.dateTo), [i, u, f, g, T, I] = await Promise.all([
+      a.customer.findMany({
+        where: { isActive: !0 },
         orderBy: { name: "asc" },
         select: {
-          id: true,
-          internalCode: true,
-          name: true,
-          document: true,
-          phone: true
+          id: !0,
+          internalCode: !0,
+          name: !0,
+          document: !0,
+          phone: !0
         }
       }),
-      prisma2.sale.findMany({
+      a.sale.findMany({
         where: {
-          ...createdAt ? { createdAt } : {},
-          status: { not: SaleStatus.CANCELLED }
+          ...t ? { createdAt: t } : {},
+          status: { not: me.CANCELLED }
         },
         include: {
           customerRef: {
             select: {
-              id: true,
-              name: true
+              id: !0,
+              name: !0
             }
           },
           credits: {
             orderBy: { createdAt: "desc" }
           },
-          returns: true,
+          returns: !0,
           payments: {
             orderBy: { createdAt: "asc" },
             select: {
-              method: true,
-              amount: true
+              method: !0,
+              amount: !0
             }
           }
         },
         orderBy: { createdAt: "desc" },
         take: 150
       }),
-      prisma2.customerCredit.findMany({
-        where: createdAt ? { createdAt } : void 0,
+      a.customerCredit.findMany({
+        where: t ? { createdAt: t } : void 0,
         include: {
           customer: {
             select: {
-              id: true,
-              name: true
+              id: !0,
+              name: !0
             }
           },
           sale: {
             select: {
-              id: true,
-              invoiceNumber: true
+              id: !0,
+              invoiceNumber: !0
             }
           },
           payments: {
             select: {
-              amount: true
+              amount: !0
             }
           }
         },
         orderBy: { createdAt: "desc" },
         take: 150
       }),
-      prisma2.customerPayment.findMany({
-        where: createdAt ? { createdAt } : void 0,
+      a.customerPayment.findMany({
+        where: t ? { createdAt: t } : void 0,
         include: {
           customer: {
             select: {
-              name: true
+              name: !0
             }
           },
           credit: {
             select: {
-              id: true,
+              id: !0,
               sale: {
                 select: {
-                  id: true,
-                  invoiceNumber: true
+                  id: !0,
+                  invoiceNumber: !0
                 }
               }
             }
@@ -4566,33 +4450,33 @@ function registerBackofficeIpcHandlers({
         orderBy: { createdAt: "desc" },
         take: 150
       }),
-      prisma2.saleReturn.findMany({
-        where: createdAt ? { createdAt } : void 0,
+      a.saleReturn.findMany({
+        where: t ? { createdAt: t } : void 0,
         include: {
           sale: {
             select: {
-              id: true,
-              invoiceNumber: true,
-              customer: true
+              id: !0,
+              invoiceNumber: !0,
+              customer: !0
             }
           }
         },
         orderBy: { createdAt: "desc" },
         take: 150
       }),
-      prisma2.cashMovement.findMany({
+      a.cashMovement.findMany({
         where: {
-          ...createdAt ? { createdAt } : {},
-          type: { in: [CashMovementType.EXPENSE_OUT, CashMovementType.WITHDRAWAL_OUT] }
+          ...t ? { createdAt: t } : {},
+          type: { in: [B.EXPENSE_OUT, B.WITHDRAWAL_OUT] }
         },
         include: {
           session: {
             include: {
               register: {
-                select: { name: true }
+                select: { name: !0 }
               },
               user: {
-                select: { username: true, name: true }
+                select: { username: !0, name: !0 }
               }
             }
           }
@@ -4600,552 +4484,485 @@ function registerBackofficeIpcHandlers({
         orderBy: { createdAt: "desc" },
         take: 150
       })
-    ]);
-    const mappedCredits = credits.map((credit) => {
-      var _a;
-      const status = deriveCreditStatus(credit.balance, credit.total, credit.dueDate);
+    ]), p = f.map((d) => {
+      var S;
+      const A = Ae(d.balance, d.total, d.dueDate);
       return {
-        id: credit.id,
-        saleId: credit.saleId,
-        invoiceNumber: credit.sale.invoiceNumber,
-        customerId: credit.customerId,
-        customerName: credit.customer.name,
-        total: credit.total,
-        balance: credit.balance,
-        paidAmount: credit.payments.reduce((sum, payment) => sum + payment.amount, 0),
-        status,
-        dueDate: ((_a = credit.dueDate) == null ? void 0 : _a.toISOString()) ?? null,
-        createdAt: credit.createdAt.toISOString()
+        id: d.id,
+        saleId: d.saleId,
+        invoiceNumber: d.sale.invoiceNumber,
+        customerId: d.customerId,
+        customerName: d.customer.name,
+        total: d.total,
+        balance: d.balance,
+        paidAmount: d.payments.reduce((y, w) => y + w.amount, 0),
+        status: A,
+        dueDate: ((S = d.dueDate) == null ? void 0 : S.toISOString()) ?? null,
+        createdAt: d.createdAt.toISOString()
       };
-    });
-    const mappedSales = sales.map((sale) => {
-      var _a, _b;
-      const returnedTotal = sale.returns.reduce((sum, entry) => sum + entry.total, 0);
-      const credit = sale.credits[0] ?? null;
-      const paidAtSale = sale.payments.reduce((sum, payment) => sum + payment.amount, 0);
-      const netSaleTotal = Math.max(sale.total - returnedTotal, 0);
-      const pendingAmount = credit ? credit.balance : Math.max(netSaleTotal - paidAtSale, 0);
-      const collectionStatus = returnedTotal >= sale.total ? "RETURNED" : pendingAmount <= 0 ? "PAID" : paidAtSale > 0 ? "PARTIAL" : "PENDING";
-      const paymentSummary = sale.payments.length ? sale.payments.map((payment) => `${paymentMethodLabel(payment.method)} $${payment.amount.toLocaleString("es-CO")}`).join(" + ") : credit ? "Pendiente por cartera" : paymentMethodLabel(sale.paymentMethod);
+    }), N = u.map((d) => {
+      var q, k;
+      const A = d.returns.reduce((L, xe) => L + xe.total, 0), S = d.credits[0] ?? null, y = d.payments.reduce((L, xe) => L + xe.amount, 0), w = Math.max(d.total - A, 0), $ = S ? S.balance : Math.max(w - y, 0), U = A >= d.total ? "RETURNED" : $ <= 0 ? "PAID" : y > 0 ? "PARTIAL" : "PENDING", Y = d.payments.length ? d.payments.map((L) => `${le(L.method)} $${L.amount.toLocaleString("es-CO")}`).join(" + ") : S ? "Pendiente por cartera" : le(d.paymentMethod);
       return {
-        id: sale.id,
-        invoiceNumber: sale.invoiceNumber,
-        customer: sale.customer,
-        customerId: ((_a = sale.customerRef) == null ? void 0 : _a.id) ?? null,
-        total: sale.total,
-        paidAtSale,
-        pendingAmount,
-        returnedTotal,
-        grossProfit: sale.profit,
-        paymentSummary,
-        collectionStatus,
-        status: sale.status,
-        createdAt: sale.createdAt.toISOString(),
-        availableCreditTotal: Math.max(sale.total - returnedTotal, 0),
-        availableCreditNoteTotal: Math.max(sale.total - returnedTotal, 0),
-        credit: credit ? {
-          id: credit.id,
-          total: credit.total,
-          balance: credit.balance,
-          status: deriveCreditStatus(credit.balance, credit.total, credit.dueDate),
-          dueDate: ((_b = credit.dueDate) == null ? void 0 : _b.toISOString()) ?? null
+        id: d.id,
+        invoiceNumber: d.invoiceNumber,
+        customer: d.customer,
+        customerId: ((q = d.customerRef) == null ? void 0 : q.id) ?? null,
+        total: d.total,
+        paidAtSale: y,
+        pendingAmount: $,
+        returnedTotal: A,
+        grossProfit: d.profit,
+        paymentSummary: Y,
+        collectionStatus: U,
+        status: d.status,
+        createdAt: d.createdAt.toISOString(),
+        availableCreditTotal: Math.max(d.total - A, 0),
+        availableCreditNoteTotal: Math.max(d.total - A, 0),
+        credit: S ? {
+          id: S.id,
+          total: S.total,
+          balance: S.balance,
+          status: Ae(S.balance, S.total, S.dueDate),
+          dueDate: ((k = S.dueDate) == null ? void 0 : k.toISOString()) ?? null
         } : null
       };
-    });
-    const paymentSummaryMap = /* @__PURE__ */ new Map();
-    for (const method of [PaymentMethod.CASH, PaymentMethod.CARD, PaymentMethod.TRANSFER]) {
-      paymentSummaryMap.set(method, { salesAmount: 0, collectionsAmount: 0 });
-    }
-    for (const sale of sales) {
-      if (sale.payments.length === 0) {
-        const current = paymentSummaryMap.get(sale.paymentMethod) ?? { salesAmount: 0, collectionsAmount: 0 };
-        current.salesAmount += sale.total;
-        paymentSummaryMap.set(sale.paymentMethod, current);
+    }), C = /* @__PURE__ */ new Map();
+    for (const d of [j.CASH, j.CARD, j.TRANSFER])
+      C.set(d, { salesAmount: 0, collectionsAmount: 0 });
+    for (const d of u) {
+      if (d.payments.length === 0) {
+        const A = C.get(d.paymentMethod) ?? { salesAmount: 0, collectionsAmount: 0 };
+        A.salesAmount += d.total, C.set(d.paymentMethod, A);
         continue;
       }
-      for (const payment of sale.payments) {
-        const current = paymentSummaryMap.get(payment.method) ?? { salesAmount: 0, collectionsAmount: 0 };
-        current.salesAmount += payment.amount;
-        paymentSummaryMap.set(payment.method, current);
+      for (const A of d.payments) {
+        const S = C.get(A.method) ?? { salesAmount: 0, collectionsAmount: 0 };
+        S.salesAmount += A.amount, C.set(A.method, S);
       }
     }
-    for (const payment of payments) {
-      const current = paymentSummaryMap.get(payment.method) ?? { salesAmount: 0, collectionsAmount: 0 };
-      current.collectionsAmount += payment.amount;
-      paymentSummaryMap.set(payment.method, current);
+    for (const d of g) {
+      const A = C.get(d.method) ?? { salesAmount: 0, collectionsAmount: 0 };
+      A.collectionsAmount += d.amount, C.set(d.method, A);
     }
-    const collectedSalesTotal = mappedSales.reduce((sum, sale) => sum + sale.paidAtSale, 0);
-    const collectionsTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
-    const pendingSalesBalance = mappedSales.reduce((sum, sale) => sum + sale.pendingAmount, 0);
-    const grossProfitTotal = mappedSales.reduce((sum, sale) => sum + sale.grossProfit, 0);
-    const movementHistory = [
-      ...mappedSales.map((sale) => ({
-        id: `sale-${sale.id}`,
-        createdAt: sale.createdAt,
+    const h = N.reduce((d, A) => d + A.paidAtSale, 0), v = g.reduce((d, A) => d + A.amount, 0), D = N.reduce((d, A) => d + A.pendingAmount, 0), P = N.reduce((d, A) => d + A.grossProfit, 0), b = [
+      ...N.map((d) => ({
+        id: `sale-${d.id}`,
+        createdAt: d.createdAt,
         category: "SALE",
-        title: `Venta ${sale.invoiceNumber}`,
-        detail: `${sale.customer} | cobrado al momento $${sale.paidAtSale.toLocaleString("es-CO")} | pendiente $${sale.pendingAmount.toLocaleString("es-CO")}`,
-        medium: sale.paymentSummary,
-        amount: sale.total,
+        title: `Venta ${d.invoiceNumber}`,
+        detail: `${d.customer} | cobrado al momento $${d.paidAtSale.toLocaleString("es-CO")} | pendiente $${d.pendingAmount.toLocaleString("es-CO")}`,
+        medium: d.paymentSummary,
+        amount: d.total,
         direction: "IN",
-        reference: sale.invoiceNumber,
-        operationalImpact: sale.paidAtSale
+        reference: d.invoiceNumber,
+        operationalImpact: d.paidAtSale
       })),
-      ...payments.map((payment) => {
-        var _a, _b;
+      ...g.map((d) => {
+        var A, S;
         return {
-          id: `collection-${payment.id}`,
-          createdAt: payment.createdAt.toISOString(),
+          id: `collection-${d.id}`,
+          createdAt: d.createdAt.toISOString(),
           category: "COLLECTION",
-          title: `Abono cartera ${((_a = payment.credit) == null ? void 0 : _a.sale.invoiceNumber) ?? ""}`.trim(),
-          detail: `${payment.customer.name} | ${payment.note || "Sin detalle"}`,
-          medium: paymentMethodLabel(payment.method),
-          amount: payment.amount,
+          title: `Abono cartera ${((A = d.credit) == null ? void 0 : A.sale.invoiceNumber) ?? ""}`.trim(),
+          detail: `${d.customer.name} | ${d.note || "Sin detalle"}`,
+          medium: le(d.method),
+          amount: d.amount,
           direction: "IN",
-          reference: ((_b = payment.credit) == null ? void 0 : _b.sale.invoiceNumber) ?? null,
-          operationalImpact: payment.amount
+          reference: ((S = d.credit) == null ? void 0 : S.sale.invoiceNumber) ?? null,
+          operationalImpact: d.amount
         };
       }),
-      ...creditNotes.map((note) => ({
-        id: `credit-note-${note.id}`,
-        createdAt: note.createdAt.toISOString(),
+      ...T.map((d) => ({
+        id: `credit-note-${d.id}`,
+        createdAt: d.createdAt.toISOString(),
         category: "CREDIT_NOTE",
-        title: `Nota credito ${note.sale.invoiceNumber}`,
-        detail: `${note.sale.customer} | ${note.reason || "Ajuste sobre venta"}`,
+        title: `Nota credito ${d.sale.invoiceNumber}`,
+        detail: `${d.sale.customer} | ${d.reason || "Ajuste sobre venta"}`,
         medium: "Ajuste comercial",
-        amount: note.total,
+        amount: d.total,
         direction: "OUT",
-        reference: note.sale.invoiceNumber,
-        operationalImpact: -note.total
+        reference: d.sale.invoiceNumber,
+        operationalImpact: -d.total
       })),
-      ...expenses.map((expense) => {
-        var _a, _b, _c;
+      ...I.map((d) => {
+        var A, S, y;
         return {
-          id: `expense-${expense.id}`,
-          createdAt: expense.createdAt.toISOString(),
+          id: `expense-${d.id}`,
+          createdAt: d.createdAt.toISOString(),
           category: "EXPENSE",
-          title: expense.type === CashMovementType.WITHDRAWAL_OUT ? "Retiro operativo" : "Gasto operativo",
-          detail: resolveMovementLabel(expense.note),
-          medium: ((_a = parseTreasuryMovementMeta(expense.note)) == null ? void 0 : _a.medium) === "CORRESPONDENT" ? ((_b = parseTreasuryMovementMeta(expense.note)) == null ? void 0 : _b.platformName) || "Corresponsal" : ((_c = parseTreasuryMovementMeta(expense.note)) == null ? void 0 : _c.medium) === "TRANSFER" ? "Transferencias" : "Efectivo",
-          amount: expense.amount,
+          title: d.type === B.WITHDRAWAL_OUT ? "Retiro operativo" : "Gasto operativo",
+          detail: Be(d.note),
+          medium: ((A = se(d.note)) == null ? void 0 : A.medium) === "CORRESPONDENT" ? ((S = se(d.note)) == null ? void 0 : S.platformName) || "Corresponsal" : ((y = se(d.note)) == null ? void 0 : y.medium) === "TRANSFER" ? "Transferencias" : "Efectivo",
+          amount: d.amount,
           direction: "OUT",
           reference: null,
-          operationalImpact: -expense.amount
+          operationalImpact: -d.amount
         };
       })
-    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 250);
+    ].sort((d, A) => new Date(A.createdAt).getTime() - new Date(d.createdAt).getTime()).slice(0, 250);
     return {
-      success: true,
+      success: !0,
       summary: {
-        salesCount: mappedSales.length,
-        salesTotal: mappedSales.reduce((sum, sale) => sum + sale.total, 0),
-        collectedSalesTotal,
-        pendingSalesBalance,
-        pendingCreditsCount: mappedCredits.filter((credit) => credit.balance > 0).length,
-        pendingCreditsBalance: mappedCredits.reduce((sum, credit) => sum + credit.balance, 0),
-        paymentsTotal: collectionsTotal,
-        collectionsTotal,
-        operationalIncomeTotal: collectedSalesTotal + collectionsTotal,
-        creditNotesTotal: creditNotes.reduce((sum, note) => sum + note.total, 0),
-        expensesTotal: expenses.reduce((sum, expense) => sum + expense.amount, 0),
-        grossProfitTotal,
-        averageTicket: mappedSales.length > 0 ? money$1(mappedSales.reduce((sum, sale) => sum + sale.total, 0) / mappedSales.length) : 0,
-        netOperationalBalance: collectedSalesTotal + collectionsTotal - creditNotes.reduce((sum, note) => sum + note.total, 0) - expenses.reduce((sum, expense) => sum + expense.amount, 0)
+        salesCount: N.length,
+        salesTotal: N.reduce((d, A) => d + A.total, 0),
+        collectedSalesTotal: h,
+        pendingSalesBalance: D,
+        pendingCreditsCount: p.filter((d) => d.balance > 0).length,
+        pendingCreditsBalance: p.reduce((d, A) => d + A.balance, 0),
+        paymentsTotal: v,
+        collectionsTotal: v,
+        operationalIncomeTotal: h + v,
+        creditNotesTotal: T.reduce((d, A) => d + A.total, 0),
+        expensesTotal: I.reduce((d, A) => d + A.amount, 0),
+        grossProfitTotal: P,
+        averageTicket: N.length > 0 ? z(N.reduce((d, A) => d + A.total, 0) / N.length) : 0,
+        netOperationalBalance: h + v - T.reduce((d, A) => d + A.total, 0) - I.reduce((d, A) => d + A.amount, 0)
       },
-      customers: customers.map((customer) => ({
-        id: customer.id,
-        internalCode: customer.internalCode,
-        name: customer.name,
-        document: customer.document,
-        phone: customer.phone
+      customers: i.map((d) => ({
+        id: d.id,
+        internalCode: d.internalCode,
+        name: d.name,
+        document: d.document,
+        phone: d.phone
       })),
-      paymentSummary: [...paymentSummaryMap.entries()].map(([method, totals]) => ({
-        method,
-        label: paymentMethodLabel(method),
-        salesAmount: totals.salesAmount,
-        collectionsAmount: totals.collectionsAmount,
-        totalAmount: totals.salesAmount + totals.collectionsAmount
+      paymentSummary: [...C.entries()].map(([d, A]) => ({
+        method: d,
+        label: le(d),
+        salesAmount: A.salesAmount,
+        collectionsAmount: A.collectionsAmount,
+        totalAmount: A.salesAmount + A.collectionsAmount
       })),
-      movementHistory,
-      sales: mappedSales,
-      credits: mappedCredits,
-      payments: payments.map((payment) => {
-        var _a, _b;
+      movementHistory: b,
+      sales: N,
+      credits: p,
+      payments: g.map((d) => {
+        var A, S;
         return {
-          id: payment.id,
-          creditId: payment.creditId,
-          saleId: ((_a = payment.credit) == null ? void 0 : _a.sale.id) ?? null,
-          invoiceNumber: ((_b = payment.credit) == null ? void 0 : _b.sale.invoiceNumber) ?? null,
-          customerName: payment.customer.name,
-          method: payment.method,
-          amount: payment.amount,
-          note: payment.note,
-          createdAt: payment.createdAt.toISOString()
+          id: d.id,
+          creditId: d.creditId,
+          saleId: ((A = d.credit) == null ? void 0 : A.sale.id) ?? null,
+          invoiceNumber: ((S = d.credit) == null ? void 0 : S.sale.invoiceNumber) ?? null,
+          customerName: d.customer.name,
+          method: d.method,
+          amount: d.amount,
+          note: d.note,
+          createdAt: d.createdAt.toISOString()
         };
       }),
-      creditNotes: creditNotes.map((note) => ({
-        id: note.id,
-        saleId: note.saleId,
-        invoiceNumber: note.sale.invoiceNumber,
-        customerName: note.sale.customer,
-        total: note.total,
-        reason: note.reason,
-        createdAt: note.createdAt.toISOString()
+      creditNotes: T.map((d) => ({
+        id: d.id,
+        saleId: d.saleId,
+        invoiceNumber: d.sale.invoiceNumber,
+        customerName: d.sale.customer,
+        total: d.total,
+        reason: d.reason,
+        createdAt: d.createdAt.toISOString()
       })),
-      expenses: expenses.map((expense) => {
-        const meta = parseTreasuryMovementMeta(expense.note);
+      expenses: I.map((d) => {
+        const A = se(d.note);
         return {
-          id: expense.id,
-          sessionId: expense.sessionId,
-          registerName: expense.session.register.name,
-          userName: expense.session.user.name ?? expense.session.user.username,
-          type: expense.type,
-          amount: expense.amount,
-          note: resolveMovementLabel(expense.note),
-          sourceMedium: (meta == null ? void 0 : meta.medium) ?? "CASH",
-          sourcePlatform: (meta == null ? void 0 : meta.platformName) ?? null,
-          createdAt: expense.createdAt.toISOString()
+          id: d.id,
+          sessionId: d.sessionId,
+          registerName: d.session.register.name,
+          userName: d.session.user.name ?? d.session.user.username,
+          type: d.type,
+          amount: d.amount,
+          note: Be(d.note),
+          sourceMedium: (A == null ? void 0 : A.medium) ?? "CASH",
+          sourcePlatform: (A == null ? void 0 : A.platformName) ?? null,
+          createdAt: d.createdAt.toISOString()
         };
       })
     };
-  });
-  ipcMain2.handle("accounting:credit:create", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.reportsView)) {
-      return { success: false, message: "Tu rol no puede registrar cartera" };
-    }
-    const parsed = createAccountingCreditSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Datos invalidos para la cartera" };
-    const sale = await prisma2.sale.findUnique({
-      where: { id: parsed.data.saleId },
+  }), e.handle("accounting:credit:create", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.reportsView))
+      return { success: !1, message: "Tu rol no puede registrar cartera" };
+    const s = La.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para la cartera" };
+    const t = await a.sale.findUnique({
+      where: { id: s.data.saleId },
       include: {
-        credits: true,
-        returns: true
+        credits: !0,
+        returns: !0
       }
     });
-    if (!sale)
-      return { success: false, message: "La venta ya no existe" };
-    if (sale.credits.length > 0)
-      return { success: false, message: "La venta ya tiene una cuenta por cobrar asociada" };
-    const customer = await prisma2.customer.findUnique({
-      where: { id: parsed.data.customerId },
-      select: { id: true, name: true, isActive: true }
+    if (!t)
+      return { success: !1, message: "La venta ya no existe" };
+    if (t.credits.length > 0)
+      return { success: !1, message: "La venta ya tiene una cuenta por cobrar asociada" };
+    const i = await a.customer.findUnique({
+      where: { id: s.data.customerId },
+      select: { id: !0, name: !0, isActive: !0 }
     });
-    if (!customer || !customer.isActive) {
-      return { success: false, message: "Selecciona un cliente activo para crear la cuenta por cobrar" };
-    }
-    const returnedTotal = sale.returns.reduce((sum, entry) => sum + entry.total, 0);
-    const availableTotal = Math.max(sale.total - returnedTotal, 0);
-    const total = parsed.data.total ?? availableTotal;
-    if (availableTotal <= 0)
-      return { success: false, message: "La venta no tiene saldo disponible para cartera" };
-    if (total > availableTotal)
-      return { success: false, message: "El valor supera el saldo disponible de la venta" };
+    if (!i || !i.isActive)
+      return { success: !1, message: "Selecciona un cliente activo para crear la cuenta por cobrar" };
+    const u = t.returns.reduce((T, I) => T + I.total, 0), f = Math.max(t.total - u, 0), g = s.data.total ?? f;
+    if (f <= 0)
+      return { success: !1, message: "La venta no tiene saldo disponible para cartera" };
+    if (g > f)
+      return { success: !1, message: "El valor supera el saldo disponible de la venta" };
     try {
-      const result = await prisma2.$transaction(async (tx) => {
-        const credit = await tx.customerCredit.create({
+      const T = await a.$transaction(async (I) => {
+        const p = await I.customerCredit.create({
           data: {
-            customerId: customer.id,
-            saleId: sale.id,
-            total,
-            balance: total,
-            dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
-            status: deriveCreditStatus(total, total, parsed.data.dueDate ? new Date(parsed.data.dueDate) : null)
+            customerId: i.id,
+            saleId: t.id,
+            total: g,
+            balance: g,
+            dueDate: s.data.dueDate ? new Date(s.data.dueDate) : null,
+            status: Ae(g, g, s.data.dueDate ? new Date(s.data.dueDate) : null)
           }
         });
-        await tx.sale.update({
-          where: { id: sale.id },
+        return await I.sale.update({
+          where: { id: t.id },
           data: {
-            customerId: customer.id,
-            customer: customer.name,
-            status: SaleStatus.CREDIT
+            customerId: i.id,
+            customer: i.name,
+            status: me.CREDIT
           }
-        });
-        return credit;
+        }), p;
       });
-      await logAudit(prisma2, currentSessionUser2, "accounting", "create", "CustomerCredit", result.id, void 0, {
-        saleId: sale.id,
-        customerId: customer.id,
-        total
-      });
-      return { success: true, creditId: result.id, message: "Cuenta por cobrar creada correctamente." };
-    } catch (error) {
-      return { success: false, message: error instanceof Error ? error.message : "No se pudo crear la cuenta por cobrar" };
+      return await V(a, n, "accounting", "create", "CustomerCredit", T.id, void 0, {
+        saleId: t.id,
+        customerId: i.id,
+        total: g
+      }), { success: !0, creditId: T.id, message: "Cuenta por cobrar creada correctamente." };
+    } catch (T) {
+      return { success: !1, message: T instanceof Error ? T.message : "No se pudo crear la cuenta por cobrar" };
     }
-  });
-  ipcMain2.handle("accounting:payment:create", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.reportsView)) {
-      return { success: false, message: "Tu rol no puede registrar pagos" };
-    }
-    const parsed = createAccountingPaymentSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Datos invalidos para el abono" };
-    const credit = await prisma2.customerCredit.findUnique({
-      where: { id: parsed.data.creditId },
+  }), e.handle("accounting:payment:create", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.reportsView))
+      return { success: !1, message: "Tu rol no puede registrar pagos" };
+    const s = Ua.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para el abono" };
+    const t = await a.customerCredit.findUnique({
+      where: { id: s.data.creditId },
       include: {
         sale: {
           include: {
-            returns: true
+            returns: !0
           }
         }
       }
     });
-    if (!credit)
-      return { success: false, message: "La cuenta por cobrar ya no existe" };
-    if (credit.balance <= 0)
-      return { success: false, message: "La cuenta por cobrar ya se encuentra saldada" };
-    if (parsed.data.amount > credit.balance)
-      return { success: false, message: "El abono supera el saldo pendiente" };
-    const cashSession = await prisma2.cashSession.findFirst({
-      where: { status: CashSessionStatus.OPEN },
+    if (!t)
+      return { success: !1, message: "La cuenta por cobrar ya no existe" };
+    if (t.balance <= 0)
+      return { success: !1, message: "La cuenta por cobrar ya se encuentra saldada" };
+    if (s.data.amount > t.balance)
+      return { success: !1, message: "El abono supera el saldo pendiente" };
+    const i = await a.cashSession.findFirst({
+      where: { status: W.OPEN },
       orderBy: { openedAt: "desc" }
     });
-    if (!cashSession) {
-      return { success: false, message: "Abre el control diario antes de registrar abonos" };
-    }
+    if (!i)
+      return { success: !1, message: "Abre el control diario antes de registrar abonos" };
     try {
-      const result = await prisma2.$transaction(async (tx) => {
-        const payment = await tx.customerPayment.create({
+      const u = await a.$transaction(async (f) => {
+        const g = await f.customerPayment.create({
           data: {
-            customerId: credit.customerId,
-            creditId: credit.id,
-            method: parsed.data.method,
-            amount: parsed.data.amount,
-            note: parsed.data.note || null
+            customerId: t.customerId,
+            creditId: t.id,
+            method: s.data.method,
+            amount: s.data.amount,
+            note: s.data.note || null
           }
-        });
-        const paidAmount = credit.total - credit.balance + parsed.data.amount;
-        const nextBalance = Math.max(credit.total - paidAmount, 0);
-        const nextStatus = deriveCreditStatus(nextBalance, credit.total, credit.dueDate);
-        await tx.customerCredit.update({
-          where: { id: credit.id },
+        }), T = t.total - t.balance + s.data.amount, I = Math.max(t.total - T, 0), p = Ae(I, t.total, t.dueDate);
+        if (await f.customerCredit.update({
+          where: { id: t.id },
           data: {
-            balance: nextBalance,
-            status: nextStatus
+            balance: I,
+            status: p
           }
-        });
-        await tx.cashMovement.create({
+        }), await f.cashMovement.create({
           data: {
-            sessionId: cashSession.id,
-            type: CashMovementType.INCOME_IN,
-            amount: parsed.data.amount,
-            note: buildTreasuryMovementNote({
-              label: `Abono cartera ${credit.sale.invoiceNumber}`,
-              medium: parsed.data.method === PaymentMethod.CASH ? "CASH" : "TRANSFER",
+            sessionId: i.id,
+            type: B.INCOME_IN,
+            amount: s.data.amount,
+            note: Se({
+              label: `Abono cartera ${t.sale.invoiceNumber}`,
+              medium: s.data.method === j.CASH ? "CASH" : "TRANSFER",
               sourceType: "ACCOUNTING_PAYMENT",
-              userNote: parsed.data.note || null
+              userNote: s.data.note || null
             })
           }
-        });
-        if (nextBalance <= 0) {
-          const returnedTotal = credit.sale.returns.reduce((sum, entry) => sum + entry.total, 0);
-          await tx.sale.update({
-            where: { id: credit.saleId },
+        }), I <= 0) {
+          const N = t.sale.returns.reduce((C, h) => C + h.total, 0);
+          await f.sale.update({
+            where: { id: t.saleId },
             data: {
-              status: mapSaleStatusFromReturns(credit.sale.total, returnedTotal)
+              status: ut(t.sale.total, N)
             }
           });
         }
-        return payment;
+        return g;
       });
-      await logAudit(prisma2, currentSessionUser2, "accounting", "create", "CustomerPayment", result.id, void 0, {
-        creditId: credit.id,
-        amount: parsed.data.amount,
-        method: parsed.data.method
-      });
-      return { success: true, paymentId: result.id, message: "Abono registrado correctamente." };
-    } catch (error) {
-      return { success: false, message: error instanceof Error ? error.message : "No se pudo registrar el abono" };
+      return await V(a, n, "accounting", "create", "CustomerPayment", u.id, void 0, {
+        creditId: t.id,
+        amount: s.data.amount,
+        method: s.data.method
+      }), { success: !0, paymentId: u.id, message: "Abono registrado correctamente." };
+    } catch (u) {
+      return { success: !1, message: u instanceof Error ? u.message : "No se pudo registrar el abono" };
     }
-  });
-  ipcMain2.handle("accounting:credit-note:create", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.reportsView)) {
-      return { success: false, message: "Tu rol no puede registrar notas credito" };
-    }
-    const parsed = createAccountingCreditNoteSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Datos invalidos para la nota credito" };
-    const sale = await prisma2.sale.findUnique({
-      where: { id: parsed.data.saleId },
+  }), e.handle("accounting:credit-note:create", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.reportsView))
+      return { success: !1, message: "Tu rol no puede registrar notas credito" };
+    const s = Ma.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para la nota credito" };
+    const t = await a.sale.findUnique({
+      where: { id: s.data.saleId },
       include: {
-        returns: true,
-        credits: true
+        returns: !0,
+        credits: !0
       }
     });
-    if (!sale)
-      return { success: false, message: "La venta ya no existe" };
-    const returnedTotal = sale.returns.reduce((sum, entry) => sum + entry.total, 0);
-    const availableAmount = Math.max(sale.total - returnedTotal, 0);
-    if (availableAmount <= 0)
-      return { success: false, message: "La venta no tiene saldo disponible para nota credito" };
-    if (parsed.data.amount > availableAmount)
-      return { success: false, message: "La nota credito supera el saldo disponible de la venta" };
+    if (!t)
+      return { success: !1, message: "La venta ya no existe" };
+    const i = t.returns.reduce((f, g) => f + g.total, 0), u = Math.max(t.total - i, 0);
+    if (u <= 0)
+      return { success: !1, message: "La venta no tiene saldo disponible para nota credito" };
+    if (s.data.amount > u)
+      return { success: !1, message: "La nota credito supera el saldo disponible de la venta" };
     try {
-      const result = await prisma2.$transaction(async (tx) => {
-        const creditNote = await tx.saleReturn.create({
+      const f = await a.$transaction(async (g) => {
+        const T = await g.saleReturn.create({
           data: {
-            saleId: sale.id,
-            total: parsed.data.amount,
-            reason: parsed.data.reason || null
+            saleId: t.id,
+            total: s.data.amount,
+            reason: s.data.reason || null
+          }
+        }), I = i + s.data.amount;
+        await g.sale.update({
+          where: { id: t.id },
+          data: {
+            status: ut(t.total, I)
           }
         });
-        const nextReturnedTotal = returnedTotal + parsed.data.amount;
-        await tx.sale.update({
-          where: { id: sale.id },
-          data: {
-            status: mapSaleStatusFromReturns(sale.total, nextReturnedTotal)
-          }
-        });
-        const credit = sale.credits[0];
-        if (credit) {
-          const paidAmount = Math.max(credit.total - credit.balance, 0);
-          const nextTotal = Math.max(credit.total - parsed.data.amount, 0);
-          const nextBalance = Math.max(nextTotal - paidAmount, 0);
-          await tx.customerCredit.update({
-            where: { id: credit.id },
+        const p = t.credits[0];
+        if (p) {
+          const N = Math.max(p.total - p.balance, 0), C = Math.max(p.total - s.data.amount, 0), h = Math.max(C - N, 0);
+          await g.customerCredit.update({
+            where: { id: p.id },
             data: {
-              total: nextTotal,
-              balance: nextBalance,
-              status: deriveCreditStatus(nextBalance, nextTotal, credit.dueDate)
+              total: C,
+              balance: h,
+              status: Ae(h, C, p.dueDate)
             }
           });
         }
-        return creditNote;
+        return T;
       });
-      await logAudit(prisma2, currentSessionUser2, "accounting", "create", "SaleReturn", result.id, void 0, {
-        saleId: sale.id,
-        total: parsed.data.amount
-      });
-      return { success: true, creditNoteId: result.id, message: "Nota credito registrada correctamente." };
-    } catch (error) {
-      return { success: false, message: error instanceof Error ? error.message : "No se pudo registrar la nota credito" };
+      return await V(a, n, "accounting", "create", "SaleReturn", f.id, void 0, {
+        saleId: t.id,
+        total: s.data.amount
+      }), { success: !0, creditNoteId: f.id, message: "Nota credito registrada correctamente." };
+    } catch (f) {
+      return { success: !1, message: f instanceof Error ? f.message : "No se pudo registrar la nota credito" };
     }
-  });
-  ipcMain2.handle("accounting:expense:create", async (_event, payload) => {
-    const currentSessionUser2 = getCurrentSessionUser();
-    if (!currentSessionUser2)
-      return { success: false, message: "Debes iniciar sesion" };
-    if (!hasSessionPermission(currentSessionUser2, APP_PERMISSION_KEYS.reportsView)) {
-      return { success: false, message: "Tu rol no puede registrar gastos" };
-    }
-    const parsed = createAccountingExpenseSchema.safeParse(payload);
-    if (!parsed.success)
-      return { success: false, message: "Datos invalidos para el gasto" };
-    const activeSession = await prisma2.cashSession.findFirst({
-      where: { status: CashSessionStatus.OPEN },
+  }), e.handle("accounting:expense:create", async (m, c) => {
+    const n = r();
+    if (!n)
+      return { success: !1, message: "Debes iniciar sesion" };
+    if (!M(n, E.reportsView))
+      return { success: !1, message: "Tu rol no puede registrar gastos" };
+    const s = _a.safeParse(c);
+    if (!s.success)
+      return { success: !1, message: "Datos invalidos para el gasto" };
+    const t = await a.cashSession.findFirst({
+      where: { status: W.OPEN },
       orderBy: { openedAt: "desc" }
     });
-    if (!activeSession)
-      return { success: false, message: "Abre caja general antes de registrar gastos o retiros" };
-    const sourceMedium = normalizeTreasuryMedium(parsed.data.sourceMedium);
-    const sourcePlatform = sourceMedium === "CORRESPONDENT" && parsed.data.sourcePlatformId ? await prisma2.correspondentPlatform.findUnique({
-      where: { id: parsed.data.sourcePlatformId },
-      select: { id: true, name: true }
+    if (!t)
+      return { success: !1, message: "Abre caja general antes de registrar gastos o retiros" };
+    const i = ke(s.data.sourceMedium), u = i === "CORRESPONDENT" && s.data.sourcePlatformId ? await a.correspondentPlatform.findUnique({
+      where: { id: s.data.sourcePlatformId },
+      select: { id: !0, name: !0 }
     }) : null;
-    if (sourceMedium === "CORRESPONDENT" && !sourcePlatform) {
-      return { success: false, message: "Selecciona un corresponsal valido para registrar el egreso" };
-    }
+    if (i === "CORRESPONDENT" && !u)
+      return { success: !1, message: "Selecciona un corresponsal valido para registrar el egreso" };
     try {
-      const expense = await prisma2.cashMovement.create({
+      const f = await a.cashMovement.create({
         data: {
-          sessionId: activeSession.id,
-          type: parsed.data.type,
-          amount: parsed.data.amount,
-          note: buildTreasuryMovementNote({
-            label: parsed.data.note,
-            medium: sourceMedium,
-            platformId: (sourcePlatform == null ? void 0 : sourcePlatform.id) ?? null,
-            platformName: (sourcePlatform == null ? void 0 : sourcePlatform.name) ?? null,
+          sessionId: t.id,
+          type: s.data.type,
+          amount: s.data.amount,
+          note: Se({
+            label: s.data.note,
+            medium: i,
+            platformId: (u == null ? void 0 : u.id) ?? null,
+            platformName: (u == null ? void 0 : u.name) ?? null,
             sourceType: "EXPENSE",
-            userNote: parsed.data.note
+            userNote: s.data.note
           })
         }
       });
-      await logAudit(prisma2, currentSessionUser2, "accounting", "create", "CashMovement", expense.id, void 0, {
-        type: parsed.data.type,
-        amount: parsed.data.amount,
-        note: parsed.data.note,
-        sourceMedium,
-        sourcePlatform: (sourcePlatform == null ? void 0 : sourcePlatform.name) ?? null
-      });
-      return { success: true, expenseId: expense.id, message: "Gasto registrado correctamente." };
-    } catch (error) {
-      return { success: false, message: error instanceof Error ? error.message : "No se pudo registrar el gasto" };
+      return await V(a, n, "accounting", "create", "CashMovement", f.id, void 0, {
+        type: s.data.type,
+        amount: s.data.amount,
+        note: s.data.note,
+        sourceMedium: i,
+        sourcePlatform: (u == null ? void 0 : u.name) ?? null
+      }), { success: !0, expenseId: f.id, message: "Gasto registrado correctamente." };
+    } catch (f) {
+      return { success: !1, message: f instanceof Error ? f.message : "No se pudo registrar el gasto" };
     }
   });
 }
-const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
-process.env.APP_ROOT = path.join(__dirname$1, "..");
-const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
-const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
-const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
-process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
-let win = null;
-let prisma;
-let appConnectedAt = /* @__PURE__ */ new Date();
-let currentSessionUser = null;
-function createWindow() {
-  win = new BrowserWindow({
-    icon: path.join(process.env.VITE_PUBLIC, "mascot.png"),
+const Lt = H.dirname(Ft(import.meta.url));
+process.env.APP_ROOT = H.join(Lt, "..");
+const Ve = process.env.VITE_DEV_SERVER_URL, zs = H.join(process.env.APP_ROOT, "dist-electron"), Ut = H.join(process.env.APP_ROOT, "dist");
+process.env.VITE_PUBLIC = Ve ? H.join(process.env.APP_ROOT, "public") : Ut;
+let ue = null, R, lt = /* @__PURE__ */ new Date(), x = null;
+function Mt() {
+  ue = new qe({
+    icon: H.join(process.env.VITE_PUBLIC, "mascot.png"),
     webPreferences: {
-      preload: path.join(__dirname$1, "preload.mjs"),
-      contextIsolation: true,
-      nodeIntegration: false
+      preload: H.join(Lt, "preload.mjs"),
+      contextIsolation: !0,
+      nodeIntegration: !1
     },
-    show: false
-  });
-  Menu.setApplicationMenu(null);
-  win.maximize();
-  win.show();
-  if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL);
-  } else {
-    win.loadFile(path.join(RENDERER_DIST, "index.html"));
-  }
+    show: !1
+  }), Bt.setApplicationMenu(null), ue.maximize(), ue.show(), Ve ? ue.loadURL(Ve) : ue.loadFile(H.join(Ut, "index.html"));
 }
-function getSeedConfig() {
-  const enabled = (process.env.SEED_ADMIN_ENABLED ?? "false").toLowerCase() === "true";
-  const username = process.env.SEED_ADMIN_USERNAME ?? "admin";
-  const name = process.env.SEED_ADMIN_NAME ?? "Administrador";
-  const password = process.env.SEED_ADMIN_PASSWORD ?? "";
-  const bcryptRounds = Number(process.env.BCRYPT_ROUNDS ?? "10");
-  if (enabled && password.trim().length < 8) {
+function Ns() {
+  const e = (process.env.SEED_ADMIN_ENABLED ?? "false").toLowerCase() === "true", a = process.env.SEED_ADMIN_USERNAME ?? "admin", r = process.env.SEED_ADMIN_NAME ?? "Administrador", l = process.env.SEED_ADMIN_PASSWORD ?? "", m = Number(process.env.BCRYPT_ROUNDS ?? "10");
+  if (e && l.trim().length < 8)
     throw new Error("SEED_ADMIN_PASSWORD es obligatorio y debe tener minimo 8 caracteres.");
-  }
-  if (!Number.isFinite(bcryptRounds) || bcryptRounds < 8 || bcryptRounds > 15) {
+  if (!Number.isFinite(m) || m < 8 || m > 15)
     throw new Error("BCRYPT_ROUNDS invalido. Usa un valor entre 8 y 15.");
-  }
-  return { enabled, username, name, password, bcryptRounds };
+  return { enabled: e, username: a, name: r, password: l, bcryptRounds: m };
 }
-async function seedAdminIfNeeded(prismaClient) {
-  const cfg = getSeedConfig();
-  if (!cfg.enabled)
+async function Cs(e) {
+  const a = Ns();
+  if (!a.enabled || await e.user.findFirst({ where: { role: F.ADMIN } }))
     return;
-  const adminExists = await prismaClient.user.findFirst({ where: { role: Role.ADMIN } });
-  if (adminExists)
-    return;
-  const passwordHash = await bcrypt.hash(cfg.password, cfg.bcryptRounds);
-  await prismaClient.user.create({
+  const l = await ce.hash(a.password, a.bcryptRounds);
+  await e.user.create({
     data: {
-      username: cfg.username,
-      name: cfg.name,
-      role: Role.ADMIN,
-      passwordHash,
-      isActive: true
+      username: a.username,
+      name: a.name,
+      role: F.ADMIN,
+      passwordHash: l,
+      isActive: !0
     }
   });
 }
-async function seedCoreConfigIfNeeded(prismaClient) {
-  await prismaClient.businessSettings.upsert({
+async function hs(e) {
+  await e.businessSettings.upsert({
     where: { id: "default" },
     update: {},
     create: {
@@ -5156,244 +4973,208 @@ async function seedCoreConfigIfNeeded(prismaClient) {
       invoicePrefix: "FV",
       lowStockThreshold: 5
     }
-  });
-  await prismaClient.cashRegister.upsert({
+  }), await e.cashRegister.upsert({
     where: { name: "Caja principal" },
     update: {},
     create: {
       name: "Caja principal",
       branchName: "Tienda principal",
-      isActive: true
+      isActive: !0
     }
   });
 }
-async function logLoginEvent(params) {
+async function we(e) {
   try {
-    await prisma.loginEvent.create({
+    await R.loginEvent.create({
       data: {
-        userId: params.userId ?? null,
-        username: params.username,
-        success: params.success,
-        reason: params.reason,
+        userId: e.userId ?? null,
+        username: e.username,
+        success: e.success,
+        reason: e.reason,
         occurredAt: /* @__PURE__ */ new Date(),
-        appVersion: app.getVersion(),
-        osPlatform: os.platform(),
-        osRelease: os.release(),
-        deviceName: os.hostname()
+        appVersion: te.getVersion(),
+        osPlatform: Pe.platform(),
+        osRelease: Pe.release(),
+        deviceName: Pe.hostname()
       }
     });
-  } catch (error) {
-    console.error("Error registrando login:", error);
+  } catch (a) {
+    console.error("Error registrando login:", a);
   }
 }
-function money(value) {
-  return Math.round(value);
+function Ie(e) {
+  return Math.round(e);
 }
-function startOfRange(range) {
-  const now = /* @__PURE__ */ new Date();
-  if (range === "day") {
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+function vs(e) {
+  const a = /* @__PURE__ */ new Date();
+  if (e === "day")
+    return new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  if (e === "week") {
+    const r = new Date(a), l = r.getDay(), m = l === 0 ? 6 : l - 1;
+    return r.setDate(r.getDate() - m), r.setHours(0, 0, 0, 0), r;
   }
-  if (range === "week") {
-    const start = new Date(now);
-    const day = start.getDay();
-    const diff = day === 0 ? 6 : day - 1;
-    start.setDate(start.getDate() - diff);
-    start.setHours(0, 0, 0, 0);
-    return start;
+  return new Date(a.getFullYear(), a.getMonth(), 1);
+}
+function bs(e, a) {
+  return `${e}-${String(a).padStart(6, "0")}`;
+}
+function J(e) {
+  const a = e == null ? void 0 : e.trim();
+  return a || null;
+}
+function Ye(e, a) {
+  return [e.trim(), a.trim()].filter(Boolean).join(" ");
+}
+function mt(e) {
+  return e.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+}
+function Ss(e, a, r) {
+  const l = mt(e).slice(0, 3).padEnd(3, "x"), m = mt(a).slice(0, 3).padEnd(3, "x"), n = r.replace(/\D/g, "").slice(-3).padStart(3, "0");
+  return `${l}${m}${n}`;
+}
+async function _t(e) {
+  const a = Ss(e.firstName, e.lastName, e.documentNumber);
+  let r = 0, l = a, m = !0;
+  for (; m; ) {
+    const c = r === 0 ? "" : String(r + 1).padStart(2, "0");
+    l = `${a}${c}`, m = !!await e.prismaClient.user.findFirst({
+      where: {
+        username: l,
+        ...e.excludeUserId ? { NOT: { id: e.excludeUserId } } : {}
+      },
+      select: { id: !0 }
+    }), r += 1;
   }
-  return new Date(now.getFullYear(), now.getMonth(), 1);
+  return l;
 }
-function buildInvoiceNumber(prefix, sequence) {
-  return `${prefix}-${String(sequence).padStart(6, "0")}`;
-}
-function normalizeOptionalText(value) {
-  const normalized = value == null ? void 0 : value.trim();
-  return normalized ? normalized : null;
-}
-function buildUserDisplayName(firstName, lastName) {
-  return [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
-}
-function normalizeUsernamePart(value) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
-}
-function buildUsernameBase(firstName, lastName, documentNumber) {
-  const firstPart = normalizeUsernamePart(firstName).slice(0, 3).padEnd(3, "x");
-  const lastPart = normalizeUsernamePart(lastName).slice(0, 3).padEnd(3, "x");
-  const documentDigits = documentNumber.replace(/\D/g, "");
-  const documentPart = documentDigits.slice(-3).padStart(3, "0");
-  return `${firstPart}${lastPart}${documentPart}`;
-}
-async function generateUniqueUsername(params) {
-  const baseUsername = buildUsernameBase(params.firstName, params.lastName, params.documentNumber);
-  let counter = 0;
-  let candidate = baseUsername;
-  let existing = true;
-  while (existing) {
-    const suffix = counter === 0 ? "" : String(counter + 1).padStart(2, "0");
-    candidate = `${baseUsername}${suffix}`;
-    existing = Boolean(
-      await params.prismaClient.user.findFirst({
-        where: {
-          username: candidate,
-          ...params.excludeUserId ? { NOT: { id: params.excludeUserId } } : {}
-        },
-        select: { id: true }
-      })
-    );
-    counter += 1;
-  }
-  return candidate;
-}
-function parseBirthDate(value) {
-  if (!value)
+function Je(e) {
+  if (!e)
     return null;
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day)
-    return null;
-  return new Date(Date.UTC(year, month - 1, day));
+  const [a, r, l] = e.split("-").map(Number);
+  return !a || !r || !l ? null : new Date(Date.UTC(a, r - 1, l));
 }
-function mapRoleKeyToPrismaRole(roleKey) {
-  return roleKey === "ADMIN" ? Role.ADMIN : Role.EMPLOYEE;
+function pt(e) {
+  return e === "ADMIN" ? F.ADMIN : F.EMPLOYEE;
 }
-function roleProfileSystemKey(roleKey) {
-  return `SYSTEM_${roleKey}`;
+function pe(e) {
+  return `SYSTEM_${e}`;
 }
-function hasCurrentSessionPermission(permissionKey) {
-  var _a;
-  if (!permissionKey)
-    return true;
-  return Boolean((_a = currentSessionUser == null ? void 0 : currentSessionUser.permissions) == null ? void 0 : _a.includes(permissionKey));
+function ae(e) {
+  return e ? bt(x == null ? void 0 : x.permissions, e) : !0;
 }
-async function loadPermissionKeysForRoleProfile(prismaClient, roleProfileId) {
-  if (!roleProfileId)
+async function ws(e, a) {
+  if (!a)
     return [];
-  const records = await prismaClient.rolePermission.findMany({
+  const r = await e.rolePermission.findMany({
     where: {
-      roleProfileId,
-      allowed: true
+      roleProfileId: a,
+      allowed: !0
     },
-    select: { permissionKey: true },
+    select: { permissionKey: !0 },
     orderBy: { permissionKey: "asc" }
   });
-  return records.map((record) => record.permissionKey);
+  return Ne(r.map((l) => l.permissionKey));
 }
-async function resolveRoleProfileForUser(prismaClient, userId) {
-  var _a, _b, _c, _d;
-  const user = await prismaClient.user.findUnique({
-    where: { id: userId },
+async function Os(e, a) {
+  var m, c, n, s;
+  const r = await e.user.findUnique({
+    where: { id: a },
     include: {
       roleProfile: {
         include: {
           permissions: {
-            where: { allowed: true },
+            where: { allowed: !0 },
             orderBy: { permissionKey: "asc" }
           }
         }
       }
     }
   });
-  if (!user)
+  if (!r)
     return null;
-  const permissions = ((_a = user.roleProfile) == null ? void 0 : _a.permissions.map((permission) => permission.permissionKey)) ?? ((_b = await prismaClient.roleProfile.findUnique({
-    where: { key: roleProfileSystemKey(user.role) },
-    include: {
-      permissions: {
-        where: { allowed: true },
-        orderBy: { permissionKey: "asc" }
+  const l = Ne(
+    ((m = r.roleProfile) == null ? void 0 : m.permissions.map((t) => t.permissionKey)) ?? ((c = await e.roleProfile.findUnique({
+      where: { key: pe(r.role) },
+      include: {
+        permissions: {
+          where: { allowed: !0 },
+          orderBy: { permissionKey: "asc" }
+        }
       }
-    }
-  })) == null ? void 0 : _b.permissions.map((permission) => permission.permissionKey)) ?? [];
+    })) == null ? void 0 : c.permissions.map((t) => t.permissionKey)) ?? []
+  );
   return {
-    roleProfileId: ((_c = user.roleProfile) == null ? void 0 : _c.id) ?? null,
-    roleProfileName: ((_d = user.roleProfile) == null ? void 0 : _d.name) ?? null,
-    permissions
+    roleProfileId: ((n = r.roleProfile) == null ? void 0 : n.id) ?? null,
+    roleProfileName: ((s = r.roleProfile) == null ? void 0 : s.name) ?? null,
+    permissions: l
   };
 }
-async function ensureUserSchemaIfNeeded(prismaClient) {
-  const columns = await prismaClient.$queryRawUnsafe(`PRAGMA table_info("User");`);
-  const existingColumns = new Set(columns.map((column) => column.name));
-  const statements = [];
-  if (!existingColumns.has("firstName")) {
-    statements.push(`ALTER TABLE "User" ADD COLUMN "firstName" TEXT;`);
-  }
-  if (!existingColumns.has("lastName")) {
-    statements.push(`ALTER TABLE "User" ADD COLUMN "lastName" TEXT;`);
-  }
-  if (!existingColumns.has("documentNumber")) {
-    statements.push(`ALTER TABLE "User" ADD COLUMN "documentNumber" TEXT;`);
-  }
-  if (!existingColumns.has("email")) {
-    statements.push(`ALTER TABLE "User" ADD COLUMN "email" TEXT;`);
-  }
-  if (!existingColumns.has("phone")) {
-    statements.push(`ALTER TABLE "User" ADD COLUMN "phone" TEXT;`);
-  }
-  if (!existingColumns.has("address")) {
-    statements.push(`ALTER TABLE "User" ADD COLUMN "address" TEXT;`);
-  }
-  if (!existingColumns.has("birthDate")) {
-    statements.push(`ALTER TABLE "User" ADD COLUMN "birthDate" DATETIME;`);
-  }
-  if (!existingColumns.has("internalCode")) {
-    statements.push(`ALTER TABLE "User" ADD COLUMN "internalCode" TEXT;`);
-  }
-  for (const statement of statements) {
-    await prismaClient.$executeRawUnsafe(statement);
-  }
-  await prismaClient.$executeRawUnsafe(`
+async function Rs(e) {
+  const a = await e.$queryRawUnsafe('PRAGMA table_info("User");'), r = new Set(a.map((n) => n.name)), l = [];
+  r.has("firstName") || l.push('ALTER TABLE "User" ADD COLUMN "firstName" TEXT;'), r.has("lastName") || l.push('ALTER TABLE "User" ADD COLUMN "lastName" TEXT;'), r.has("documentNumber") || l.push('ALTER TABLE "User" ADD COLUMN "documentNumber" TEXT;'), r.has("email") || l.push('ALTER TABLE "User" ADD COLUMN "email" TEXT;'), r.has("phone") || l.push('ALTER TABLE "User" ADD COLUMN "phone" TEXT;'), r.has("address") || l.push('ALTER TABLE "User" ADD COLUMN "address" TEXT;'), r.has("birthDate") || l.push('ALTER TABLE "User" ADD COLUMN "birthDate" DATETIME;'), r.has("internalCode") || l.push('ALTER TABLE "User" ADD COLUMN "internalCode" TEXT;');
+  for (const n of l)
+    await e.$executeRawUnsafe(n);
+  await e.$executeRawUnsafe(`
     UPDATE "User"
     SET "firstName" = "name"
     WHERE "name" IS NOT NULL
       AND ("firstName" IS NULL OR TRIM("firstName") = '');
-  `);
-  await prismaClient.$executeRawUnsafe(
-    `CREATE UNIQUE INDEX IF NOT EXISTS "User_documentNumber_key" ON "User"("documentNumber");`
+  `), await e.$executeRawUnsafe(
+    'CREATE UNIQUE INDEX IF NOT EXISTS "User_documentNumber_key" ON "User"("documentNumber");'
   );
-  const users = await prismaClient.user.findMany({
+  const m = await e.user.findMany({
     select: {
-      id: true,
-      internalCode: true
+      id: !0,
+      internalCode: !0
     },
     orderBy: [{ createdAt: "asc" }, { username: "asc" }]
-  });
-  const assignedCodes = [];
-  for (const user of users) {
-    const internalCode = resolveManagedCode({
-      desiredCode: user.internalCode,
-      existingCodes: assignedCodes,
+  }), c = [];
+  for (const n of m) {
+    const s = Z({
+      desiredCode: n.internalCode,
+      existingCodes: c,
       prefix: "USR",
       digits: 4,
       maxLength: 30
     });
-    if (internalCode !== user.internalCode) {
-      await prismaClient.user.update({
-        where: { id: user.id },
-        data: { internalCode }
-      });
-    }
-    assignedCodes.push(internalCode);
+    s !== n.internalCode && await e.user.update({
+      where: { id: n.id },
+      data: { internalCode: s }
+    }), c.push(s);
   }
-  await prismaClient.$executeRawUnsafe(
-    `CREATE UNIQUE INDEX IF NOT EXISTS "User_internalCode_key" ON "User"("internalCode");`
+  await e.$executeRawUnsafe(
+    'CREATE UNIQUE INDEX IF NOT EXISTS "User_internalCode_key" ON "User"("internalCode");'
   );
 }
-async function ensureProductSchemaIfNeeded(prismaClient) {
-  const columns = await prismaClient.$queryRawUnsafe(`PRAGMA table_info("Product");`);
-  const existingColumns = new Set(columns.map((column) => column.name));
-  if (!existingColumns.has("unitMeasure")) {
-    await prismaClient.$executeRawUnsafe(
-      `ALTER TABLE "Product" ADD COLUMN "unitMeasure" TEXT NOT NULL DEFAULT 'UNIDAD';`
+async function Ds(e) {
+  await e.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "NotificationRead" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "userId" TEXT NOT NULL,
+      "readKey" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "NotificationRead_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
     );
-  }
-  await prismaClient.$executeRawUnsafe(`
+  `), await e.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "NotificationRead_userId_readKey_key"
+    ON "NotificationRead"("userId", "readKey");
+  `), await e.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "NotificationRead_userId_idx"
+    ON "NotificationRead"("userId");
+  `);
+}
+async function xs(e) {
+  const a = await e.$queryRawUnsafe('PRAGMA table_info("Product");');
+  new Set(a.map((l) => l.name)).has("unitMeasure") || await e.$executeRawUnsafe(
+    `ALTER TABLE "Product" ADD COLUMN "unitMeasure" TEXT NOT NULL DEFAULT 'UNIDAD';`
+  ), await e.$executeRawUnsafe(`
     UPDATE "Product"
     SET "unitMeasure" = 'UNIDAD'
     WHERE "unitMeasure" IS NULL OR TRIM("unitMeasure") = '';
   `);
 }
-async function ensureRoleSchemaIfNeeded(prismaClient) {
-  await prismaClient.$executeRawUnsafe(`
+async function Ps(e) {
+  await e.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "RoleProfile" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "key" TEXT,
@@ -5405,14 +5186,11 @@ async function ensureRoleSchemaIfNeeded(prismaClient) {
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
-  `);
-  await prismaClient.$executeRawUnsafe(`
+  `), await e.$executeRawUnsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS "RoleProfile_key_key" ON "RoleProfile"("key");
-  `);
-  await prismaClient.$executeRawUnsafe(`
+  `), await e.$executeRawUnsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS "RoleProfile_name_key" ON "RoleProfile"("name");
-  `);
-  await prismaClient.$executeRawUnsafe(`
+  `), await e.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "RolePermission" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "roleProfileId" TEXT NOT NULL,
@@ -5421,930 +5199,805 @@ async function ensureRoleSchemaIfNeeded(prismaClient) {
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "RolePermission_roleProfileId_fkey" FOREIGN KEY ("roleProfileId") REFERENCES "RoleProfile" ("id") ON DELETE CASCADE ON UPDATE CASCADE
     );
-  `);
-  await prismaClient.$executeRawUnsafe(`
+  `), await e.$executeRawUnsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS "RolePermission_roleProfileId_permissionKey_key"
     ON "RolePermission"("roleProfileId", "permissionKey");
-  `);
-  await prismaClient.$executeRawUnsafe(`
+  `), await e.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "RolePermission_roleProfileId_idx"
     ON "RolePermission"("roleProfileId");
   `);
-  const userColumns = await prismaClient.$queryRawUnsafe(`PRAGMA table_info("User");`);
-  const existingUserColumns = new Set(userColumns.map((column) => column.name));
-  if (!existingUserColumns.has("roleProfileId")) {
-    await prismaClient.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN "roleProfileId" TEXT;`);
-  }
-  await prismaClient.$executeRawUnsafe(`
+  const a = await e.$queryRawUnsafe('PRAGMA table_info("User");');
+  new Set(a.map((l) => l.name)).has("roleProfileId") || await e.$executeRawUnsafe('ALTER TABLE "User" ADD COLUMN "roleProfileId" TEXT;'), await e.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "User_roleProfileId_idx"
     ON "User"("roleProfileId");
   `);
 }
-async function seedRoleProfilesIfNeeded(prismaClient) {
-  for (const definition of ROLE_DEFINITIONS) {
-    const permissionCatalog = flattenRolePermissionCatalog(definition);
-    const existingProfile = await prismaClient.roleProfile.findUnique({
-      where: { key: roleProfileSystemKey(definition.key) },
-      select: { id: true }
-    });
-    const roleProfile = existingProfile ? await prismaClient.roleProfile.update({
-      where: { id: existingProfile.id },
+async function Ls(e) {
+  for (const r of De) {
+    const l = Nt(r), m = await e.roleProfile.findUnique({
+      where: { key: pe(r.key) },
+      select: { id: !0 }
+    }), c = m ? await e.roleProfile.update({
+      where: { id: m.id },
       data: {
-        name: definition.name,
-        description: definition.description,
-        baseRole: mapRoleKeyToPrismaRole(definition.key),
-        isSystem: true
+        name: r.name,
+        description: r.description,
+        baseRole: pt(r.key),
+        isSystem: !0
       }
-    }) : await prismaClient.roleProfile.create({
+    }) : await e.roleProfile.create({
       data: {
-        key: roleProfileSystemKey(definition.key),
-        name: definition.name,
-        description: definition.description,
-        baseRole: mapRoleKeyToPrismaRole(definition.key),
-        isSystem: true,
-        isActive: true
+        key: pe(r.key),
+        name: r.name,
+        description: r.description,
+        baseRole: pt(r.key),
+        isSystem: !0,
+        isActive: !0
       }
-    });
-    const existingPermissionCount = await prismaClient.rolePermission.count({
-      where: { roleProfileId: roleProfile.id }
-    });
-    if (existingPermissionCount === 0 && permissionCatalog.length > 0) {
-      await prismaClient.rolePermission.createMany({
-        data: permissionCatalog.map((permission) => ({
-          roleProfileId: roleProfile.id,
-          permissionKey: permission.key,
-          allowed: true
-        }))
-      });
-    }
-  }
-  const systemProfiles = await prismaClient.roleProfile.findMany({
-    where: { key: { in: ROLE_DEFINITIONS.map((definition) => roleProfileSystemKey(definition.key)) } },
-    select: { id: true, baseRole: true }
-  });
-  for (const profile of systemProfiles) {
-    await prismaClient.user.updateMany({
+    }), n = await e.rolePermission.findMany({
       where: {
-        role: profile.baseRole,
+        roleProfileId: c.id,
+        allowed: !0
+      },
+      select: {
+        permissionKey: !0
+      }
+    }), s = new Set(n.map((i) => i.permissionKey)), t = l.filter(
+      (i) => !s.has(i.key)
+    );
+    t.length > 0 && await e.rolePermission.createMany({
+      data: t.map((i) => ({
+        roleProfileId: c.id,
+        permissionKey: i.key,
+        allowed: !0
+      }))
+    });
+  }
+  const a = await e.roleProfile.findMany({
+    where: { key: { in: De.map((r) => pe(r.key)) } },
+    select: { id: !0, baseRole: !0 }
+  });
+  for (const r of a)
+    await e.user.updateMany({
+      where: {
+        role: r.baseRole,
         roleProfileId: null
       },
       data: {
-        roleProfileId: profile.id
+        roleProfileId: r.id
       }
     });
-  }
 }
-async function bootstrapAppData() {
-  await ensureCorrespondentSchemaIfNeeded(prisma);
-  await seedCoreConfigIfNeeded(prisma);
-  await seedCorrespondentCatalogIfNeeded(prisma);
-  registerCorrespondentIpcHandlers({
-    app,
-    ipcMain,
-    prisma,
-    getCurrentSessionUser: () => currentSessionUser
+async function Us() {
+  await ba(R), await hs(R), await Sa(R), Da({
+    app: te,
+    ipcMain: X,
+    prisma: R,
+    getCurrentSessionUser: () => x
   });
 }
-app.whenReady().then(async () => {
-  const dbPath = path.join(app.getPath("userData"), "app.db").replace(/\\/g, "/");
-  process.env.DATABASE_URL = `file:${dbPath}`;
-  prisma = new PrismaClient();
-  appConnectedAt = /* @__PURE__ */ new Date();
-  await ensureUserSchemaIfNeeded(prisma);
-  await ensureRoleSchemaIfNeeded(prisma);
-  await ensureBackofficeSchemaIfNeeded(prisma);
-  await seedAdminIfNeeded(prisma);
-  await seedRoleProfilesIfNeeded(prisma);
-  await ensureProductSchemaIfNeeded(prisma);
-  registerBackofficeIpcHandlers({
-    ipcMain,
-    prisma,
-    getCurrentSessionUser: () => currentSessionUser,
-    getConnectedAt: () => appConnectedAt
-  });
-  await bootstrapAppData();
-  createWindow();
-}).catch((error) => {
-  console.error("No se pudo inicializar la aplicacion POS.", error);
-  app.quit();
+te.whenReady().then(async () => {
+  const e = H.join(te.getPath("userData"), "app.db").replace(/\\/g, "/");
+  process.env.DATABASE_URL = `file:${e}`, R = new kt(), lt = /* @__PURE__ */ new Date(), await Rs(R), await Ds(R), await Ps(R), await Es(R), await Cs(R), await Ls(R), await xs(R), ys({
+    ipcMain: X,
+    prisma: R,
+    getCurrentSessionUser: () => x,
+    getConnectedAt: () => lt
+  }), await Us(), Mt();
+}).catch((e) => {
+  console.error("No se pudo inicializar la aplicacion POS.", e), te.quit();
 });
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
+te.on("activate", () => {
+  qe.getAllWindows().length === 0 && Mt();
 });
-ipcMain.handle("auth:login", async (_event, payload) => {
-  const parsed = loginInputSchema.safeParse(payload);
-  if (!parsed.success) {
-    await logLoginEvent({
-      username: String((payload == null ? void 0 : payload.username) ?? ""),
-      success: false,
+X.handle("auth:login", async (e, a) => {
+  const r = jt.safeParse(a);
+  if (!r.success)
+    return await we({
+      username: String((a == null ? void 0 : a.username) ?? ""),
+      success: !1,
       reason: "invalid_payload"
-    });
-    return { success: false, message: "Datos invalidos" };
-  }
-  const { username, password } = parsed.data;
-  const user = await prisma.user.findUnique({
-    where: { username }
+    }), { success: !1, message: "Datos invalidos" };
+  const { username: l, password: m } = r.data, c = await R.user.findUnique({
+    where: { username: l }
   });
-  if (!user || !user.isActive) {
-    await logLoginEvent({
-      username,
-      success: false,
+  if (!c || !c.isActive)
+    return await we({
+      username: l,
+      success: !1,
       reason: "user_not_found_or_inactive"
-    });
-    return { success: false, message: "Usuario o contrasena incorrectos" };
-  }
-  const match = await bcrypt.compare(password, user.passwordHash);
-  if (!match) {
-    await logLoginEvent({
-      userId: user.id,
-      username,
-      success: false,
+    }), { success: !1, message: "Usuario o contrasena incorrectos" };
+  if (!await ce.compare(m, c.passwordHash))
+    return await we({
+      userId: c.id,
+      username: l,
+      success: !1,
       reason: "wrong_password"
-    });
-    return { success: false, message: "Usuario o contrasena incorrectos" };
-  }
-  await logLoginEvent({
-    userId: user.id,
-    username,
-    success: true
+    }), { success: !1, message: "Usuario o contrasena incorrectos" };
+  await we({
+    userId: c.id,
+    username: l,
+    success: !0
   });
-  const roleProfile = await resolveRoleProfileForUser(prisma, user.id);
-  currentSessionUser = {
-    id: user.id,
-    username: user.username,
-    name: user.name ?? void 0,
-    role: user.role,
-    roleProfileId: (roleProfile == null ? void 0 : roleProfile.roleProfileId) ?? null,
-    roleProfileName: (roleProfile == null ? void 0 : roleProfile.roleProfileName) ?? null,
-    permissions: (roleProfile == null ? void 0 : roleProfile.permissions) ?? []
-  };
-  return {
-    success: true,
-    user: currentSessionUser
+  const s = await Os(R, c.id);
+  return x = {
+    id: c.id,
+    username: c.username,
+    name: c.name ?? void 0,
+    role: c.role,
+    roleProfileId: (s == null ? void 0 : s.roleProfileId) ?? null,
+    roleProfileName: (s == null ? void 0 : s.roleProfileName) ?? null,
+    permissions: (s == null ? void 0 : s.permissions) ?? []
+  }, {
+    success: !0,
+    user: x
   };
 });
-ipcMain.handle("auth:createUser", async (_event, payload) => {
-  const parsed = createUserInputSchema.safeParse(payload);
-  if (!parsed.success)
-    return { success: false, message: "Datos invalidos" };
-  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
-    return { success: false, message: "Solo admins pueden crear usuarios" };
-  }
-  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.usersCreate)) {
-    return { success: false, message: "Tu rol no puede crear usuarios" };
-  }
+X.handle("auth:createUser", async (e, a) => {
+  const r = zt.safeParse(a);
+  if (!r.success)
+    return { success: !1, message: "Datos invalidos" };
+  if (!x || x.role !== F.ADMIN)
+    return { success: !1, message: "Solo admins pueden crear usuarios" };
+  if (!ae(E.usersCreate))
+    return { success: !1, message: "Tu rol no puede crear usuarios" };
   const {
-    internalCode: desiredInternalCode,
-    firstName,
-    lastName,
-    documentNumber,
-    email,
-    phone,
-    address,
-    birthDate,
-    newPassword,
-    role,
-    roleProfileId,
-    isActive
-  } = parsed.data;
-  const passwordHash = await bcrypt.hash(newPassword, 10);
-  const fullName = buildUserDisplayName(firstName, lastName);
+    internalCode: l,
+    firstName: m,
+    lastName: c,
+    documentNumber: n,
+    email: s,
+    phone: t,
+    address: i,
+    birthDate: u,
+    newPassword: f,
+    roleProfileId: g,
+    isActive: T
+  } = r.data, I = await ce.hash(f, 10), p = Ye(m, c);
   try {
-    const duplicateDocument = await prisma.user.findFirst({
-      where: { documentNumber },
-      select: { id: true }
+    if (await R.user.findFirst({
+      where: { documentNumber: n },
+      select: { id: !0 }
+    }))
+      return { success: !1, message: "La cedula ya esta registrada para otro usuario" };
+    const C = g ? await R.roleProfile.findUnique({
+      where: { id: g },
+      select: { id: !0, baseRole: !0, isActive: !0 }
+    }) : await R.roleProfile.findUnique({
+      where: { key: pe("EMPLOYEE") },
+      select: { id: !0, baseRole: !0, isActive: !0 }
     });
-    if (duplicateDocument) {
-      return { success: false, message: "La cedula ya esta registrada para otro usuario" };
-    }
-    const selectedRoleProfile = roleProfileId ? await prisma.roleProfile.findUnique({
-      where: { id: roleProfileId },
-      select: { id: true, baseRole: true, isActive: true }
-    }) : await prisma.roleProfile.findUnique({
-      where: { key: roleProfileSystemKey(role ?? Role.EMPLOYEE) },
-      select: { id: true, baseRole: true, isActive: true }
-    });
-    if (!selectedRoleProfile || !selectedRoleProfile.isActive) {
-      return { success: false, message: "El perfil de rol seleccionado no esta disponible" };
-    }
-    const username = await generateUniqueUsername({
-      prismaClient: prisma,
-      firstName,
-      lastName,
-      documentNumber
-    });
-    const existingInternalCodes = (await prisma.user.findMany({
-      select: { internalCode: true }
-    })).map((user) => user.internalCode);
-    const internalCode = resolveManagedCode({
-      desiredCode: desiredInternalCode,
-      existingCodes: existingInternalCodes,
+    if (!C || !C.isActive)
+      return { success: !1, message: "El perfil de rol seleccionado no esta disponible" };
+    const h = await _t({
+      prismaClient: R,
+      firstName: m,
+      lastName: c,
+      documentNumber: n
+    }), v = (await R.user.findMany({
+      select: { internalCode: !0 }
+    })).map((P) => P.internalCode), D = Z({
+      desiredCode: l,
+      existingCodes: v,
       prefix: "USR",
       digits: 4,
       maxLength: 30
     });
-    await prisma.user.create({
+    return await R.user.create({
       data: {
-        internalCode,
-        username,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        name: fullName,
-        documentNumber,
-        email: normalizeOptionalText(email),
-        phone: normalizeOptionalText(phone),
-        address: normalizeOptionalText(address),
-        birthDate: parseBirthDate(birthDate),
-        passwordHash,
-        role: selectedRoleProfile.baseRole,
-        roleProfileId: selectedRoleProfile.id,
-        isActive: isActive ?? true
+        internalCode: D,
+        username: h,
+        firstName: m.trim(),
+        lastName: c.trim(),
+        name: p,
+        documentNumber: n,
+        email: J(s),
+        phone: J(t),
+        address: J(i),
+        birthDate: Je(u),
+        passwordHash: I,
+        role: C.baseRole,
+        roleProfileId: C.id,
+        isActive: T ?? !0
       }
-    });
-    return { success: true, username };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo crear el usuario";
-    return { success: false, message };
+    }), { success: !0, username: h };
+  } catch (N) {
+    return { success: !1, message: N instanceof Error ? N.message : "No se pudo crear el usuario" };
   }
 });
-ipcMain.handle("users:update", async (_event, payload) => {
-  const parsed = updateUserInputSchema.safeParse(payload);
-  if (!parsed.success)
-    return { success: false, message: "Datos invalidos" };
-  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
-    return { success: false, message: "Solo admins pueden editar usuarios" };
-  }
-  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.usersEdit)) {
-    return { success: false, message: "Tu rol no puede editar usuarios" };
-  }
+X.handle("users:update", async (e, a) => {
+  const r = Gt.safeParse(a);
+  if (!r.success)
+    return { success: !1, message: "Datos invalidos" };
+  if (!x || x.role !== F.ADMIN)
+    return { success: !1, message: "Solo admins pueden editar usuarios" };
+  if (!ae(E.usersEdit))
+    return { success: !1, message: "Tu rol no puede editar usuarios" };
   const {
-    id,
-    internalCode: desiredInternalCode,
-    firstName,
-    lastName,
-    documentNumber,
-    email,
-    phone,
-    address,
-    birthDate,
-    newPassword,
-    role,
-    roleProfileId,
-    isActive
-  } = parsed.data;
-  const existingUser = await prisma.user.findUnique({
-    where: { id },
-    select: { id: true, role: true, isActive: true, roleProfileId: true, internalCode: true }
+    id: l,
+    internalCode: m,
+    firstName: c,
+    lastName: n,
+    documentNumber: s,
+    email: t,
+    phone: i,
+    address: u,
+    birthDate: f,
+    newPassword: g,
+    roleProfileId: T,
+    isActive: I
+  } = r.data, p = await R.user.findUnique({
+    where: { id: l },
+    select: { id: !0, role: !0, isActive: !0, roleProfileId: !0, internalCode: !0 }
   });
-  if (!existingUser) {
-    return { success: false, message: "El usuario ya no existe" };
-  }
-  const duplicateDocument = await prisma.user.findFirst({
+  if (!p)
+    return { success: !1, message: "El usuario ya no existe" };
+  if (await R.user.findFirst({
     where: {
-      documentNumber,
-      NOT: { id }
+      documentNumber: s,
+      NOT: { id: l }
     },
-    select: { id: true }
+    select: { id: !0 }
+  }))
+    return { success: !1, message: "La cedula ya esta registrada para otro usuario" };
+  const C = T ? await R.roleProfile.findUnique({
+    where: { id: T },
+    select: { id: !0, baseRole: !0, isActive: !0, name: !0 }
+  }) : await R.roleProfile.findUnique({
+    where: { key: pe(p.role ?? "EMPLOYEE") },
+    select: { id: !0, baseRole: !0, isActive: !0, name: !0 }
   });
-  if (duplicateDocument) {
-    return { success: false, message: "La cedula ya esta registrada para otro usuario" };
-  }
-  const selectedRoleProfile = roleProfileId ? await prisma.roleProfile.findUnique({
-    where: { id: roleProfileId },
-    select: { id: true, baseRole: true, isActive: true, name: true }
-  }) : await prisma.roleProfile.findUnique({
-    where: { key: roleProfileSystemKey(role ?? existingUser.role) },
-    select: { id: true, baseRole: true, isActive: true, name: true }
-  });
-  if (!selectedRoleProfile || !selectedRoleProfile.isActive) {
-    return { success: false, message: "El perfil de rol seleccionado no esta disponible" };
-  }
-  if (existingUser.role === Role.ADMIN && (selectedRoleProfile.baseRole !== Role.ADMIN || !isActive)) {
-    const remainingAdmins = await prisma.user.count({
-      where: {
-        role: Role.ADMIN,
-        isActive: true,
-        NOT: { id }
-      }
-    });
-    if (remainingAdmins === 0) {
-      return { success: false, message: "Debe existir al menos un administrador activo" };
+  if (!C || !C.isActive)
+    return { success: !1, message: "El perfil de rol seleccionado no esta disponible" };
+  if (p.role === F.ADMIN && (C.baseRole !== F.ADMIN || !I) && await R.user.count({
+    where: {
+      role: F.ADMIN,
+      isActive: !0,
+      NOT: { id: l }
     }
-  }
-  const username = await generateUniqueUsername({
-    prismaClient: prisma,
-    firstName,
-    lastName,
-    documentNumber,
-    excludeUserId: id
-  });
-  const fullName = buildUserDisplayName(firstName, lastName);
+  }) === 0)
+    return { success: !1, message: "Debe existir al menos un administrador activo" };
+  const h = await _t({
+    prismaClient: R,
+    firstName: c,
+    lastName: n,
+    documentNumber: s,
+    excludeUserId: l
+  }), v = Ye(c, n);
   try {
-    const existingInternalCodes = (await prisma.user.findMany({
-      where: { NOT: { id } },
-      select: { internalCode: true }
-    })).map((user) => user.internalCode);
-    const internalCode = resolveManagedCode({
-      desiredCode: desiredInternalCode,
-      existingCodes: existingInternalCodes,
+    const D = (await R.user.findMany({
+      where: { NOT: { id: l } },
+      select: { internalCode: !0 }
+    })).map((b) => b.internalCode), P = Z({
+      desiredCode: m,
+      existingCodes: D,
       prefix: "USR",
       digits: 4,
       maxLength: 30
     });
-    await prisma.user.update({
-      where: { id },
+    return await R.user.update({
+      where: { id: l },
       data: {
-        internalCode,
-        username,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        name: fullName,
-        documentNumber,
-        email: normalizeOptionalText(email),
-        phone: normalizeOptionalText(phone),
-        address: normalizeOptionalText(address),
-        birthDate: parseBirthDate(birthDate),
-        role: selectedRoleProfile.baseRole,
-        roleProfileId: selectedRoleProfile.id,
-        isActive,
-        ...(newPassword == null ? void 0 : newPassword.trim()) ? {
-          passwordHash: await bcrypt.hash(newPassword, 10)
+        internalCode: P,
+        username: h,
+        firstName: c.trim(),
+        lastName: n.trim(),
+        name: v,
+        documentNumber: s,
+        email: J(t),
+        phone: J(i),
+        address: J(u),
+        birthDate: Je(f),
+        role: C.baseRole,
+        roleProfileId: C.id,
+        isActive: I,
+        ...g != null && g.trim() ? {
+          passwordHash: await ce.hash(g, 10)
         } : {}
       }
-    });
-    if (currentSessionUser.id === id) {
-      currentSessionUser = {
-        ...currentSessionUser,
-        username,
-        name: fullName,
-        role: selectedRoleProfile.baseRole,
-        roleProfileId: selectedRoleProfile.id,
-        roleProfileName: selectedRoleProfile.name,
-        permissions: await loadPermissionKeysForRoleProfile(prisma, selectedRoleProfile.id)
-      };
-    }
-    return { success: true, username };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo actualizar el usuario";
-    return { success: false, message };
+    }), x.id === l && (x = {
+      ...x,
+      username: h,
+      name: v,
+      role: C.baseRole,
+      roleProfileId: C.id,
+      roleProfileName: C.name,
+      permissions: await ws(R, C.id)
+    }), { success: !0, username: h };
+  } catch (D) {
+    return { success: !1, message: D instanceof Error ? D.message : "No se pudo actualizar el usuario" };
   }
 });
-ipcMain.handle("auth:get-profile", async () => {
-  var _a;
-  if (!currentSessionUser) {
-    return { success: false, message: "Debes iniciar sesion" };
-  }
-  const profile = await prisma.user.findUnique({
-    where: { id: currentSessionUser.id },
+X.handle("auth:get-profile", async () => {
+  var a;
+  if (!x)
+    return { success: !1, message: "Debes iniciar sesion" };
+  const e = await R.user.findUnique({
+    where: { id: x.id },
     select: {
-      id: true,
-      username: true,
-      name: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      phone: true,
-      birthDate: true,
-      role: true
+      id: !0,
+      username: !0,
+      name: !0,
+      firstName: !0,
+      lastName: !0,
+      email: !0,
+      phone: !0,
+      birthDate: !0,
+      role: !0
     }
   });
-  if (!profile) {
-    return { success: false, message: "Tu usuario ya no existe" };
-  }
-  return {
-    success: true,
+  return e ? {
+    success: !0,
     profile: {
-      ...profile,
-      birthDate: ((_a = profile.birthDate) == null ? void 0 : _a.toISOString().slice(0, 10)) ?? null
+      ...e,
+      birthDate: ((a = e.birthDate) == null ? void 0 : a.toISOString().slice(0, 10)) ?? null
     }
-  };
+  } : { success: !1, message: "Tu usuario ya no existe" };
 });
-ipcMain.handle("auth:update-profile", async (_event, payload) => {
-  var _a;
-  const parsed = updateOwnProfileInputSchema.safeParse(payload);
-  if (!parsed.success) {
-    return { success: false, message: "Datos invalidos" };
-  }
-  if (!currentSessionUser) {
-    return { success: false, message: "Debes iniciar sesion" };
-  }
-  const { firstName, lastName, phone, birthDate } = parsed.data;
-  const fullName = buildUserDisplayName(firstName, lastName);
-  const updated = await prisma.user.update({
-    where: { id: currentSessionUser.id },
+X.handle("auth:update-profile", async (e, a) => {
+  var u;
+  const r = Ht.safeParse(a);
+  if (!r.success)
+    return { success: !1, message: "Datos invalidos" };
+  if (!x)
+    return { success: !1, message: "Debes iniciar sesion" };
+  const { firstName: l, lastName: m, email: c, phone: n, birthDate: s } = r.data, t = Ye(l, m), i = await R.user.update({
+    where: { id: x.id },
     data: {
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      name: fullName,
-      phone: normalizeOptionalText(phone),
-      birthDate: parseBirthDate(birthDate)
+      firstName: l.trim(),
+      lastName: m.trim(),
+      name: t,
+      email: J(c),
+      phone: J(n),
+      birthDate: Je(s)
     },
     select: {
-      id: true,
-      username: true,
-      name: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      phone: true,
-      birthDate: true,
-      role: true
+      id: !0,
+      username: !0,
+      name: !0,
+      firstName: !0,
+      lastName: !0,
+      email: !0,
+      phone: !0,
+      birthDate: !0,
+      role: !0
     }
   });
-  currentSessionUser = {
-    ...currentSessionUser,
-    name: fullName
-  };
-  return {
-    success: true,
-    user: currentSessionUser,
+  return x = {
+    ...x,
+    name: t
+  }, {
+    success: !0,
+    user: x,
     profile: {
-      ...updated,
-      birthDate: ((_a = updated.birthDate) == null ? void 0 : _a.toISOString().slice(0, 10)) ?? null
+      ...i,
+      birthDate: ((u = i.birthDate) == null ? void 0 : u.toISOString().slice(0, 10)) ?? null
     }
   };
 });
-ipcMain.handle("auth:change-password", async (_event, payload) => {
-  const parsed = changeOwnPasswordInputSchema.safeParse(payload);
-  if (!parsed.success) {
-    return { success: false, message: "Datos invalidos" };
-  }
-  if (!currentSessionUser) {
-    return { success: false, message: "Debes iniciar sesion" };
-  }
-  const { currentPassword, newPassword, confirmPassword } = parsed.data;
-  if (newPassword !== confirmPassword) {
-    return { success: false, message: "La confirmacion no coincide con la nueva contrasena" };
-  }
-  const user = await prisma.user.findUnique({
-    where: { id: currentSessionUser.id },
-    select: { id: true, passwordHash: true }
+X.handle("auth:change-password", async (e, a) => {
+  const r = Yt.safeParse(a);
+  if (!r.success)
+    return { success: !1, message: "Datos invalidos" };
+  if (!x)
+    return { success: !1, message: "Debes iniciar sesion" };
+  const { currentPassword: l, newPassword: m, confirmPassword: c } = r.data;
+  if (m !== c)
+    return { success: !1, message: "La confirmacion no coincide con la nueva contrasena" };
+  const n = await R.user.findUnique({
+    where: { id: x.id },
+    select: { id: !0, passwordHash: !0 }
   });
-  if (!user) {
-    return { success: false, message: "Tu usuario ya no existe" };
-  }
-  const isCurrentValid = await bcrypt.compare(currentPassword, user.passwordHash);
-  if (!isCurrentValid) {
-    return { success: false, message: "La contrasena actual es incorrecta" };
-  }
-  const isSamePassword = await bcrypt.compare(newPassword, user.passwordHash);
-  if (isSamePassword) {
-    return { success: false, message: "La nueva contrasena debe ser diferente a la anterior" };
-  }
-  await prisma.user.update({
-    where: { id: user.id },
+  return n ? await ce.compare(l, n.passwordHash) ? await ce.compare(m, n.passwordHash) ? { success: !1, message: "La nueva contrasena debe ser diferente a la anterior" } : (await R.user.update({
+    where: { id: n.id },
     data: {
-      passwordHash: await bcrypt.hash(newPassword, 10)
+      passwordHash: await ce.hash(m, 10)
     }
-  });
-  return { success: true };
+  }), { success: !0 }) : { success: !1, message: "La contrasena actual es incorrecta" } : { success: !1, message: "Tu usuario ya no existe" };
 });
-ipcMain.handle("roles:list", async () => {
-  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
-    return { success: false, message: "Solo admins pueden ver roles", roles: [] };
-  }
-  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.rolesView)) {
-    return { success: false, message: "Tu rol no puede ver roles", roles: [] };
-  }
-  const roles = await prisma.roleProfile.findMany({
+X.handle("notifications:get-read", async () => x ? {
+  success: !0,
+  readKeys: (await R.notificationRead.findMany({
+    where: { userId: x.id },
+    select: { readKey: !0 },
+    orderBy: { createdAt: "desc" }
+  })).map((a) => a.readKey)
+} : { success: !1, message: "Debes iniciar sesion", readKeys: [] });
+X.handle("notifications:mark-read", async (e, a) => {
+  if (!x)
+    return { success: !1, message: "Debes iniciar sesion" };
+  const r = Array.isArray(a == null ? void 0 : a.readKeys) ? a.readKeys.filter((l) => typeof l == "string" && l.trim().length > 0) : [];
+  return r.length === 0 ? { success: !0 } : (await Promise.all(
+    r.map(
+      (l) => R.notificationRead.upsert({
+        where: {
+          userId_readKey: {
+            userId: x.id,
+            readKey: l
+          }
+        },
+        update: {},
+        create: {
+          userId: x.id,
+          readKey: l
+        }
+      })
+    )
+  ), { success: !0 });
+});
+X.handle("roles:list", async () => !x || x.role !== F.ADMIN ? { success: !1, message: "Solo admins pueden ver roles", roles: [] } : ae(E.rolesView) ? {
+  success: !0,
+  roles: (await R.roleProfile.findMany({
     include: {
       permissions: {
-        where: { allowed: true },
+        where: { allowed: !0 },
         orderBy: { permissionKey: "asc" },
-        select: { permissionKey: true }
+        select: { permissionKey: !0 }
       },
       _count: {
-        select: { users: true }
+        select: { users: !0 }
       }
     },
     orderBy: [{ isSystem: "desc" }, { name: "asc" }]
-  });
-  return {
-    success: true,
-    roles: roles.map((roleProfile) => ({
-      id: roleProfile.id,
-      key: roleProfile.key,
-      name: roleProfile.name,
-      description: roleProfile.description,
-      baseRole: roleProfile.baseRole,
-      isSystem: roleProfile.isSystem,
-      isActive: roleProfile.isActive,
-      permissionKeys: roleProfile.permissions.map((permission) => permission.permissionKey),
-      usersCount: roleProfile._count.users,
-      createdAt: roleProfile.createdAt.toISOString(),
-      updatedAt: roleProfile.updatedAt.toISOString()
-    }))
-  };
-});
-ipcMain.handle("roles:create", async (_event, payload) => {
-  const parsed = createRoleProfileInputSchema.safeParse(payload);
-  if (!parsed.success)
-    return { success: false, message: "Datos invalidos para el rol" };
-  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
-    return { success: false, message: "Solo admins pueden crear roles" };
-  }
-  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.rolesManage)) {
-    return { success: false, message: "Tu rol no puede crear roles" };
-  }
-  if (parsed.data.permissionKeys.length > 0) {
-    const invalidPermission = parsed.data.permissionKeys.find(
-      (permissionKey) => !getPermissionCatalogItem(parsed.data.baseRole, permissionKey)
-    );
-    if (invalidPermission) {
-      return { success: false, message: "Uno o mas permisos no pertenecen al rol base seleccionado" };
-    }
-  }
+  })).map((a) => ({
+    id: a.id,
+    key: a.key,
+    name: a.name,
+    description: a.description,
+    baseRole: a.baseRole,
+    isSystem: a.isSystem,
+    isActive: a.isActive,
+    permissionKeys: Ne(
+      a.permissions.map((r) => r.permissionKey)
+    ),
+    usersCount: a._count.users,
+    createdAt: a.createdAt.toISOString(),
+    updatedAt: a.updatedAt.toISOString()
+  }))
+} : { success: !1, message: "Tu rol no puede ver roles", roles: [] });
+X.handle("roles:create", async (e, a) => {
+  const r = Jt.safeParse(a);
+  if (!r.success)
+    return { success: !1, message: "Datos invalidos para el rol" };
+  const l = Ne(r.data.permissionKeys);
+  if (!x || x.role !== F.ADMIN)
+    return { success: !1, message: "Solo admins pueden crear roles" };
+  if (!ae(E.rolesManage))
+    return { success: !1, message: "Tu rol no puede crear roles" };
+  if (l.length > 0 && l.find(
+    (c) => !Ct(r.data.baseRole, c)
+  ))
+    return { success: !1, message: "Uno o mas permisos no pertenecen al rol base seleccionado" };
   try {
-    const created = await prisma.roleProfile.create({
+    return { success: !0, roleId: (await R.roleProfile.create({
       data: {
-        name: parsed.data.name.trim(),
-        description: normalizeOptionalText(parsed.data.description),
-        baseRole: parsed.data.baseRole,
-        isSystem: false,
-        isActive: parsed.data.isActive ?? true,
+        name: r.data.name.trim(),
+        description: J(r.data.description),
+        baseRole: r.data.baseRole,
+        isSystem: !1,
+        isActive: r.data.isActive ?? !0,
         permissions: {
-          create: parsed.data.permissionKeys.map((permissionKey) => ({
-            permissionKey,
-            allowed: true
+          create: l.map((c) => ({
+            permissionKey: c,
+            allowed: !0
           }))
         }
       },
-      select: { id: true }
-    });
-    return { success: true, roleId: created.id };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo crear el rol";
-    return { success: false, message };
+      select: { id: !0 }
+    })).id };
+  } catch (m) {
+    return { success: !1, message: m instanceof Error ? m.message : "No se pudo crear el rol" };
   }
 });
-ipcMain.handle("roles:update", async (_event, payload) => {
-  const parsed = updateRoleProfileInputSchema.safeParse(payload);
-  if (!parsed.success)
-    return { success: false, message: "Datos invalidos para el rol" };
-  if (!currentSessionUser || currentSessionUser.role !== Role.ADMIN) {
-    return { success: false, message: "Solo admins pueden editar roles" };
-  }
-  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.rolesManage)) {
-    return { success: false, message: "Tu rol no puede editar roles" };
-  }
-  const existing = await prisma.roleProfile.findUnique({
-    where: { id: parsed.data.id },
-    select: { id: true, baseRole: true, isSystem: true, name: true }
+X.handle("roles:update", async (e, a) => {
+  const r = Wt.safeParse(a);
+  if (!r.success)
+    return { success: !1, message: "Datos invalidos para el rol" };
+  const l = Ne(r.data.permissionKeys);
+  if (!x || x.role !== F.ADMIN)
+    return { success: !1, message: "Solo admins pueden editar roles" };
+  if (!ae(E.rolesManage))
+    return { success: !1, message: "Tu rol no puede editar roles" };
+  const m = await R.roleProfile.findUnique({
+    where: { id: r.data.id },
+    select: { id: !0, baseRole: !0, isSystem: !0, name: !0 }
   });
-  if (!existing) {
-    return { success: false, message: "El rol ya no existe" };
-  }
-  const invalidPermission = parsed.data.permissionKeys.find(
-    (permissionKey) => !getPermissionCatalogItem(existing.baseRole, permissionKey)
-  );
-  if (invalidPermission) {
-    return { success: false, message: "Uno o mas permisos no pertenecen al rol base seleccionado" };
-  }
+  if (!m)
+    return { success: !1, message: "El rol ya no existe" };
+  if (l.find(
+    (n) => !Ct(m.baseRole, n)
+  ))
+    return { success: !1, message: "Uno o mas permisos no pertenecen al rol base seleccionado" };
   try {
-    await prisma.$transaction(async (tx) => {
-      await tx.roleProfile.update({
-        where: { id: parsed.data.id },
+    return await R.$transaction(async (n) => {
+      await n.roleProfile.update({
+        where: { id: r.data.id },
         data: {
-          name: parsed.data.name.trim(),
-          description: normalizeOptionalText(parsed.data.description),
-          isActive: parsed.data.isActive ?? true
+          name: r.data.name.trim(),
+          description: J(r.data.description),
+          isActive: r.data.isActive ?? !0
         }
-      });
-      await tx.rolePermission.deleteMany({ where: { roleProfileId: parsed.data.id } });
-      await tx.rolePermission.createMany({
-        data: parsed.data.permissionKeys.map((permissionKey) => ({
-          roleProfileId: parsed.data.id,
-          permissionKey,
-          allowed: true
+      }), await n.rolePermission.deleteMany({ where: { roleProfileId: r.data.id } }), await n.rolePermission.createMany({
+        data: l.map((s) => ({
+          roleProfileId: r.data.id,
+          permissionKey: s,
+          allowed: !0
         }))
       });
-    });
-    if (currentSessionUser.roleProfileId === parsed.data.id) {
-      currentSessionUser = {
-        ...currentSessionUser,
-        roleProfileName: parsed.data.name.trim(),
-        permissions: parsed.data.permissionKeys
-      };
-    }
-    return { success: true, roleId: parsed.data.id };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo actualizar el rol";
-    return { success: false, message };
+    }), x.roleProfileId === r.data.id && (x = {
+      ...x,
+      roleProfileName: r.data.name.trim(),
+      permissions: l
+    }), { success: !0, roleId: r.data.id };
+  } catch (n) {
+    return { success: !1, message: n instanceof Error ? n.message : "No se pudo actualizar el rol" };
   }
 });
-ipcMain.handle("auth:logout", async () => {
-  currentSessionUser = null;
-  return { success: true };
-});
-ipcMain.handle("products:list", async () => {
-  const products = await prisma.product.findMany({
-    where: { isActive: true, stock: { gt: 0 } },
+X.handle("roles:delete", async (e, a) => {
+  const r = Qt.safeParse(a);
+  if (!r.success)
+    return { success: !1, message: "Datos invalidos para el rol" };
+  if (!x || x.role !== F.ADMIN)
+    return { success: !1, message: "Solo admins pueden eliminar roles" };
+  if (!ae(E.rolesManage))
+    return { success: !1, message: "Tu rol no puede eliminar roles" };
+  const l = await R.roleProfile.findUnique({
+    where: { id: r.data.id },
     include: {
-      category: true,
-      subcategory: true
-    },
-    orderBy: { name: "asc" }
-  });
-  return products.map((product) => {
-    var _a, _b;
-    return {
-      id: product.id,
-      name: product.name,
-      sku: product.sku,
-      barcode: product.barcode,
-      price: product.price,
-      cost: product.cost,
-      taxRate: product.taxRate,
-      stock: product.stock,
-      category: ((_a = product.category) == null ? void 0 : _a.name) ?? null,
-      subcategory: ((_b = product.subcategory) == null ? void 0 : _b.name) ?? null
-    };
-  });
-});
-ipcMain.handle("sales:create", async (_event, payload) => {
-  var _a, _b, _c;
-  if (!currentSessionUser) {
-    return { success: false, message: "Debes iniciar sesion para vender" };
-  }
-  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.salesCreate)) {
-    return { success: false, message: "Tu rol no puede registrar ventas" };
-  }
-  if (!hasCurrentSessionPermission(APP_PERMISSION_KEYS.salesManagePayments)) {
-    return { success: false, message: "Tu rol no puede gestionar pagos" };
-  }
-  const parsed = createSaleSchema.safeParse(payload);
-  if (!parsed.success) {
-    return { success: false, message: "Datos invalidos para la venta" };
-  }
-  let selectedCustomer = null;
-  if (parsed.data.customerId) {
-    selectedCustomer = await prisma.customer.findFirst({
-      where: {
-        id: parsed.data.customerId,
-        isActive: true
-      },
-      select: {
-        id: true,
-        name: true
+      _count: {
+        select: {
+          users: !0
+        }
       }
-    });
-    if (!selectedCustomer) {
-      return { success: false, message: "El cliente seleccionado ya no esta disponible" };
     }
-  }
-  const saleCustomerName = (selectedCustomer == null ? void 0 : selectedCustomer.name) ?? ((_a = parsed.data.customer) == null ? void 0 : _a.trim()) ?? "Consumidor final";
-  if (saleCustomerName !== "Consumidor final" && !hasCurrentSessionPermission(APP_PERMISSION_KEYS.salesChangeCustomer)) {
-    return { success: false, message: "Tu rol no puede cambiar el cliente en la factura" };
-  }
-  const productIds = parsed.data.items.map((item) => item.productId);
-  const products = await prisma.product.findMany({
+  });
+  return l ? l.isSystem ? { success: !1, message: "Los roles del sistema no se pueden eliminar" } : l._count.users > 0 ? { success: !1, message: "Reasigna los usuarios del rol antes de eliminarlo" } : (await R.roleProfile.delete({
+    where: { id: r.data.id }
+  }), { success: !0, roleId: r.data.id }) : { success: !1, message: "El rol ya no existe" };
+});
+X.handle("auth:logout", async () => (x = null, { success: !0 }));
+X.handle("products:list", async () => (await R.product.findMany({
+  where: { isActive: !0, stock: { gt: 0 } },
+  include: {
+    category: !0,
+    subcategory: !0
+  },
+  orderBy: { name: "asc" }
+})).map((a) => {
+  var r, l;
+  return {
+    id: a.id,
+    name: a.name,
+    sku: a.sku,
+    barcode: a.barcode,
+    price: a.price,
+    cost: a.cost,
+    taxRate: a.taxRate,
+    stock: a.stock,
+    category: ((r = a.category) == null ? void 0 : r.name) ?? null,
+    subcategory: ((l = a.subcategory) == null ? void 0 : l.name) ?? null
+  };
+}));
+X.handle("sales:create", async (e, a) => {
+  var d, A, S;
+  if (!x)
+    return { success: !1, message: "Debes iniciar sesion para vender" };
+  if (!ae(E.salesCreate))
+    return { success: !1, message: "Tu rol no puede registrar ventas" };
+  if (!ae(E.salesManagePayments))
+    return { success: !1, message: "Tu rol no puede gestionar pagos" };
+  const r = ta.safeParse(a);
+  if (!r.success)
+    return { success: !1, message: "Datos invalidos para la venta" };
+  let l = null;
+  if (r.data.customerId && (l = await R.customer.findFirst({
     where: {
-      id: { in: productIds },
-      isActive: true
+      id: r.data.customerId,
+      isActive: !0
+    },
+    select: {
+      id: !0,
+      name: !0
+    }
+  }), !l))
+    return { success: !1, message: "El cliente seleccionado ya no esta disponible" };
+  const m = (l == null ? void 0 : l.name) ?? ((d = r.data.customer) == null ? void 0 : d.trim()) ?? "Consumidor final";
+  if (m !== "Consumidor final" && !ae(E.salesChangeCustomer))
+    return { success: !1, message: "Tu rol no puede cambiar el cliente en la factura" };
+  const c = r.data.items.map((y) => y.productId), n = await R.product.findMany({
+    where: {
+      id: { in: c },
+      isActive: !0
     }
   });
-  if (products.length !== productIds.length) {
-    return { success: false, message: "Uno o mas productos ya no estan disponibles" };
-  }
-  const productMap = new Map(products.map((product) => [product.id, product]));
-  const normalizedItems = parsed.data.items.map((item) => {
-    const product = productMap.get(item.productId);
-    if (!product) {
+  if (n.length !== c.length)
+    return { success: !1, message: "Uno o mas productos ya no estan disponibles" };
+  const s = new Map(n.map((y) => [y.id, y])), t = r.data.items.map((y) => {
+    const w = s.get(y.productId);
+    if (!w)
       throw new Error("Producto no encontrado");
-    }
-    if (product.stock < item.qty) {
-      throw new Error(`Stock insuficiente para ${product.name}`);
-    }
-    const lineSubtotal = money(product.price * item.qty);
-    const lineTax = money(lineSubtotal * product.taxRate);
-    const lineTotal = lineSubtotal + lineTax;
-    const lineProfit = money((product.price - product.cost) * item.qty);
+    if (w.stock < y.qty)
+      throw new Error(`Stock insuficiente para ${w.name}`);
+    const $ = Ie(w.price * y.qty), U = Ie($ * w.taxRate), Y = $ + U, q = Ie((w.price - w.cost) * y.qty);
     return {
-      product,
-      qty: item.qty,
-      lineSubtotal,
-      lineTax,
-      lineTotal,
-      lineProfit
+      product: w,
+      qty: y.qty,
+      lineSubtotal: $,
+      lineTax: U,
+      lineTotal: Y,
+      lineProfit: q
     };
-  });
-  const subtotal = normalizedItems.reduce((sum, item) => sum + item.lineSubtotal, 0);
-  const tax = normalizedItems.reduce((sum, item) => sum + item.lineTax, 0);
-  const total = subtotal + tax;
-  const costTotal = normalizedItems.reduce((sum, item) => sum + item.product.cost * item.qty, 0);
-  const profit = normalizedItems.reduce((sum, item) => sum + item.lineProfit, 0);
-  const requestedPayments = parsed.data.payments && parsed.data.payments.length > 0 ? parsed.data.payments : [
+  }), i = t.reduce((y, w) => y + w.lineSubtotal, 0), u = t.reduce((y, w) => y + w.lineTax, 0), f = i + u, g = t.reduce((y, w) => y + w.product.cost * w.qty, 0), T = t.reduce((y, w) => y + w.lineProfit, 0), p = (r.data.payments && r.data.payments.length > 0 ? r.data.payments : [
     {
-      method: parsed.data.paymentMethod,
-      amount: parsed.data.amountPaid ?? total
+      method: r.data.paymentMethod,
+      amount: r.data.amountPaid ?? f
     }
-  ];
-  const normalizedPayments = requestedPayments.map((payment) => ({
-    method: payment.method,
-    amount: money(payment.amount)
-  })).filter((payment) => payment.amount > 0);
-  if (normalizedPayments.length === 0 && !parsed.data.allowDebt) {
-    return { success: false, message: "Debes registrar al menos un pago para completar la venta" };
-  }
-  const amountPaid = normalizedPayments.reduce((sum, payment) => sum + payment.amount, 0);
-  const changeAmount = Math.max(0, amountPaid - total);
-  const cashReceived = normalizedPayments.filter((payment) => payment.method === "CASH").reduce((sum, payment) => sum + payment.amount, 0);
-  if (changeAmount > cashReceived) {
-    return { success: false, message: "Las vueltas solo pueden salir de un pago en efectivo" };
-  }
-  let remainingAmount = total;
-  const appliedTotals = /* @__PURE__ */ new Map();
-  for (const payment of normalizedPayments) {
-    if (remainingAmount <= 0)
+  ]).map((y) => ({
+    method: y.method,
+    amount: Ie(y.amount)
+  })).filter((y) => y.amount > 0);
+  if (p.length === 0 && !r.data.allowDebt)
+    return { success: !1, message: "Debes registrar al menos un pago para completar la venta" };
+  const N = p.reduce((y, w) => y + w.amount, 0), C = Math.max(0, N - f), h = p.filter((y) => y.method === "CASH").reduce((y, w) => y + w.amount, 0);
+  if (C > h)
+    return { success: !1, message: "Las vueltas solo pueden salir de un pago en efectivo" };
+  let v = f;
+  const D = /* @__PURE__ */ new Map();
+  for (const y of p) {
+    if (v <= 0)
       break;
-    const appliedAmount = Math.min(payment.amount, remainingAmount);
-    if (appliedAmount <= 0)
-      continue;
-    appliedTotals.set(
-      payment.method,
-      (appliedTotals.get(payment.method) ?? 0) + appliedAmount
-    );
-    remainingAmount -= appliedAmount;
+    const w = Math.min(y.amount, v);
+    w <= 0 || (D.set(
+      y.method,
+      (D.get(y.method) ?? 0) + w
+    ), v -= w);
   }
-  const primaryPaymentMethod = ((_b = [...appliedTotals.entries()].sort((a, b) => b[1] - a[1])[0]) == null ? void 0 : _b[0]) ?? (((_c = normalizedPayments[0]) == null ? void 0 : _c.method) ?? parsed.data.paymentMethod);
-  const appliedCashAmount = appliedTotals.get(PaymentMethod.CASH) ?? 0;
-  if (parsed.data.clientTotal !== void 0 && Math.abs(parsed.data.clientTotal - total) > 1) {
-    return { success: false, message: "El total enviado no coincide con el calculo del sistema" };
-  }
-  if (amountPaid < total && !parsed.data.allowDebt) {
-    return { success: false, message: "El pago recibido no alcanza para cubrir la venta" };
-  }
+  const P = ((A = [...D.entries()].sort((y, w) => w[1] - y[1])[0]) == null ? void 0 : A[0]) ?? ((S = p[0]) == null ? void 0 : S.method) ?? r.data.paymentMethod, b = D.get(j.CASH) ?? 0;
+  if (r.data.clientTotal !== void 0 && Math.abs(r.data.clientTotal - f) > 1)
+    return { success: !1, message: "El total enviado no coincide con el calculo del sistema" };
+  if (N < f && !r.data.allowDebt)
+    return { success: !1, message: "El pago recibido no alcanza para cubrir la venta" };
   try {
-    const sale = await prisma.$transaction(async (tx) => {
-      const nextSequence = await tx.sale.count() + 1;
-      const businessSettings = await tx.businessSettings.findUnique({
+    const y = await R.$transaction(async (w) => {
+      const $ = await w.sale.count() + 1, U = await w.businessSettings.findUnique({
         where: { id: "default" },
-        select: { invoicePrefix: true }
-      });
-      const invoiceNumber = buildInvoiceNumber((businessSettings == null ? void 0 : businessSettings.invoicePrefix) || "FV", nextSequence);
-      const activeCashSession = await tx.cashSession.findFirst({
+        select: { invoicePrefix: !0 }
+      }), Y = bs((U == null ? void 0 : U.invoicePrefix) || "FV", $), q = await w.cashSession.findFirst({
         where: {
-          userId: currentSessionUser.id,
+          userId: x.id,
           status: "OPEN"
         },
         orderBy: { openedAt: "desc" }
-      });
-      const createdSale = await tx.sale.create({
+      }), k = await w.sale.create({
         data: {
-          invoiceNumber,
-          customer: saleCustomerName,
-          customerId: (selectedCustomer == null ? void 0 : selectedCustomer.id) ?? null,
-          paymentMethod: primaryPaymentMethod,
-          subtotal,
-          tax,
-          total,
-          costTotal,
-          profit,
-          cashierId: currentSessionUser.id,
-          cashSessionId: (activeCashSession == null ? void 0 : activeCashSession.id) ?? null,
+          invoiceNumber: Y,
+          customer: m,
+          customerId: (l == null ? void 0 : l.id) ?? null,
+          paymentMethod: P,
+          subtotal: i,
+          tax: u,
+          total: f,
+          costTotal: g,
+          profit: T,
+          cashierId: x.id,
+          cashSessionId: (q == null ? void 0 : q.id) ?? null,
           items: {
-            create: normalizedItems.map((item) => ({
-              productId: item.product.id,
-              sku: item.product.sku,
-              barcode: item.product.barcode,
-              name: item.product.name,
-              price: item.product.price,
-              cost: item.product.cost,
-              qty: item.qty,
-              taxRate: item.product.taxRate,
-              lineSubtotal: item.lineSubtotal,
-              lineTax: item.lineTax,
-              lineTotal: item.lineTotal,
-              lineProfit: item.lineProfit
+            create: t.map((L) => ({
+              productId: L.product.id,
+              sku: L.product.sku,
+              barcode: L.product.barcode,
+              name: L.product.name,
+              price: L.product.price,
+              cost: L.product.cost,
+              qty: L.qty,
+              taxRate: L.product.taxRate,
+              lineSubtotal: L.lineSubtotal,
+              lineTax: L.lineTax,
+              lineTotal: L.lineTotal,
+              lineProfit: L.lineProfit
             }))
           },
           payments: {
-            create: normalizedPayments.map((payment) => ({
-              method: payment.method,
-              amount: payment.amount
+            create: p.map((L) => ({
+              method: L.method,
+              amount: L.amount
             }))
           }
         }
       });
-      if (activeCashSession && appliedCashAmount > 0) {
-        await tx.cashMovement.create({
+      q && b > 0 && await w.cashMovement.create({
+        data: {
+          sessionId: q.id,
+          type: B.SALE_IN,
+          amount: b,
+          note: k.invoiceNumber
+        }
+      });
+      for (const L of t)
+        await w.product.update({
+          where: { id: L.product.id },
           data: {
-            sessionId: activeCashSession.id,
-            type: CashMovementType.SALE_IN,
-            amount: appliedCashAmount,
-            note: createdSale.invoiceNumber
+            stock: { decrement: L.qty }
           }
-        });
-      }
-      for (const item of normalizedItems) {
-        await tx.product.update({
-          where: { id: item.product.id },
+        }), await w.inventoryMovement.create({
           data: {
-            stock: { decrement: item.qty }
-          }
-        });
-        await tx.inventoryMovement.create({
-          data: {
-            productId: item.product.id,
-            type: InventoryMovementType.SALE_OUT,
-            qty: item.qty,
-            stockBefore: item.product.stock,
-            stockAfter: item.product.stock - item.qty,
+            productId: L.product.id,
+            type: Te.SALE_OUT,
+            qty: L.qty,
+            stockBefore: L.product.stock,
+            stockAfter: L.product.stock - L.qty,
             referenceType: "SALE",
-            referenceId: createdSale.id,
-            note: createdSale.invoiceNumber
+            referenceId: k.id,
+            note: k.invoiceNumber
           }
         });
-      }
-      return createdSale;
+      return k;
     });
     return {
-      success: true,
-      saleId: sale.id,
-      invoiceNumber: sale.invoiceNumber,
-      total,
-      amountPaid,
-      changeAmount
+      success: !0,
+      saleId: y.id,
+      invoiceNumber: y.invoiceNumber,
+      total: f,
+      amountPaid: N,
+      changeAmount: C
     };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo registrar la venta";
-    return { success: false, message };
+  } catch (y) {
+    return { success: !1, message: y instanceof Error ? y.message : "No se pudo registrar la venta" };
   }
 });
-ipcMain.handle("dashboard:stats", async (_event, range = "day") => {
-  const normalizedRange = ["day", "week", "month"].includes(range) ? range : "day";
-  const startDate = startOfRange(normalizedRange);
-  const sales = await prisma.sale.findMany({
-    where: { createdAt: { gte: startDate } },
-    include: { items: true },
+X.handle("dashboard:stats", async (e, a = "day") => {
+  const r = ["day", "week", "month"].includes(a) ? a : "day", l = vs(r), m = await R.sale.findMany({
+    where: { createdAt: { gte: l } },
+    include: { items: !0 },
     orderBy: { createdAt: "desc" }
-  });
-  const revenue = sales.reduce((sum, sale) => sum + sale.total, 0);
-  const profit = sales.reduce((sum, sale) => sum + sale.profit, 0);
-  const tax = sales.reduce((sum, sale) => sum + sale.tax, 0);
-  const averageTicket = sales.length > 0 ? money(revenue / sales.length) : 0;
-  const paymentSummary = sales.reduce((acc, sale) => {
-    acc[sale.paymentMethod] = (acc[sale.paymentMethod] ?? 0) + sale.total;
-    return acc;
-  }, {});
-  const topProductsMap = sales.flatMap((sale) => sale.items).reduce((acc, item) => {
-    const current = acc[item.name] ?? { name: item.name, qty: 0, total: 0 };
-    current.qty += item.qty;
-    current.total += item.lineTotal;
-    acc[item.name] = current;
-    return acc;
-  }, {});
-  const topProducts = Object.values(topProductsMap).sort((a, b) => b.qty - a.qty).slice(0, 5);
-  const lowStock = await prisma.product.findMany({
-    where: { isActive: true },
+  }), c = m.reduce((T, I) => T + I.total, 0), n = m.reduce((T, I) => T + I.profit, 0), s = m.reduce((T, I) => T + I.tax, 0), t = m.length > 0 ? Ie(c / m.length) : 0, i = m.reduce((T, I) => (T[I.paymentMethod] = (T[I.paymentMethod] ?? 0) + I.total, T), {}), u = m.flatMap((T) => T.items).reduce((T, I) => {
+    const p = T[I.name] ?? { name: I.name, qty: 0, total: 0 };
+    return p.qty += I.qty, p.total += I.lineTotal, T[I.name] = p, T;
+  }, {}), f = Object.values(u).sort((T, I) => I.qty - T.qty).slice(0, 5), g = await R.product.findMany({
+    where: { isActive: !0 },
     orderBy: [{ stock: "asc" }, { name: "asc" }],
     take: 5,
     select: {
-      id: true,
-      name: true,
-      stock: true,
-      sku: true
+      id: !0,
+      name: !0,
+      stock: !0,
+      sku: !0
     }
   });
   return {
-    range: normalizedRange,
+    range: r,
     totals: {
-      salesCount: sales.length,
-      revenue,
-      profit,
-      tax,
-      averageTicket
+      salesCount: m.length,
+      revenue: c,
+      profit: n,
+      tax: s,
+      averageTicket: t
     },
     paymentSummary: [
-      { label: "Efectivo", value: paymentSummary.CASH ?? 0 },
-      { label: "Transferencia", value: (paymentSummary.CARD ?? 0) + (paymentSummary.TRANSFER ?? 0) }
+      { label: "Efectivo", value: i.CASH ?? 0 },
+      { label: "Transferencia", value: (i.CARD ?? 0) + (i.TRANSFER ?? 0) }
     ],
-    topProducts,
-    recentSales: sales.slice(0, 6).map((sale) => ({
-      id: sale.id,
-      invoiceNumber: sale.invoiceNumber,
-      customer: sale.customer,
-      total: sale.total,
-      createdAt: sale.createdAt.toISOString(),
-      itemsCount: sale.items.length
+    topProducts: f,
+    recentSales: m.slice(0, 6).map((T) => ({
+      id: T.id,
+      invoiceNumber: T.invoiceNumber,
+      customer: T.customer,
+      total: T.total,
+      createdAt: T.createdAt.toISOString(),
+      itemsCount: T.items.length
     })),
-    lowStock
+    lowStock: g
   };
 });
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-    win = null;
-  }
+te.on("window-all-closed", () => {
+  process.platform !== "darwin" && (te.quit(), ue = null);
 });
-app.on("quit", async () => {
-  await (prisma == null ? void 0 : prisma.$disconnect());
+te.on("quit", async () => {
+  await (R == null ? void 0 : R.$disconnect());
 });
 export {
-  MAIN_DIST,
-  RENDERER_DIST,
-  VITE_DEV_SERVER_URL,
-  seedAdminIfNeeded
+  zs as MAIN_DIST,
+  Ut as RENDERER_DIST,
+  Ve as VITE_DEV_SERVER_URL,
+  Cs as seedAdminIfNeeded
 };

@@ -40,7 +40,6 @@ import { buildSuggestedManagedCode, normalizePrefixedCode } from "@/lib/internal
 import { rolLabel } from "@/lib/display";
 
 type UserRow = Awaited<ReturnType<typeof window.api.listUsers>>["users"][number];
-type UserRole = "ADMIN" | "EMPLOYEE";
 
 type UserFormState = {
   internalCode: string;
@@ -52,7 +51,6 @@ type UserFormState = {
   address: string;
   birthDate: string;
   newPassword: string;
-  role: UserRole;
   roleProfileId: string;
   isActive: boolean;
 };
@@ -67,7 +65,6 @@ const initialFormState: UserFormState = {
   address: "",
   birthDate: "",
   newPassword: "",
-  role: "EMPLOYEE",
   roleProfileId: "",
   isActive: true,
 };
@@ -108,10 +105,20 @@ function toEditForm(user: UserRow): UserFormState {
     address: user.address ?? "",
     birthDate: user.birthDate ?? "",
     newPassword: "",
-    role: user.role,
     roleProfileId: user.roleProfileId ?? "",
     isActive: user.isActive,
   };
+}
+
+function getDefaultRoleProfileId(
+  roleProfiles: Awaited<ReturnType<typeof window.api.listRoleProfiles>>["roles"],
+  baseRole: "ADMIN" | "EMPLOYEE" = "EMPLOYEE"
+) {
+  return (
+    roleProfiles.find((entry) => entry.isSystem && entry.baseRole === baseRole && entry.isActive)?.id ??
+    roleProfiles.find((entry) => entry.baseRole === baseRole && entry.isActive)?.id ??
+    ""
+  );
 }
 
 export function UserView() {
@@ -186,23 +193,17 @@ export function UserView() {
   const adminCount = users.filter((row) => row.role === "ADMIN").length;
   const employeeCount = users.filter((row) => row.role === "EMPLOYEE").length;
   const activeCount = users.filter((row) => row.isActive).length;
-  const availableRoleProfiles = roleProfiles.filter((entry) => entry.baseRole === form.role && entry.isActive);
+  const availableRoleProfiles = roleProfiles.filter((entry) => entry.isActive);
   const canCreateUsers = hasPermission(user, APP_PERMISSION_KEYS.usersCreate);
   const canEditUsers = hasPermission(user, APP_PERMISSION_KEYS.usersEdit);
   const canViewRoles = hasPermission(user, APP_PERMISSION_KEYS.rolesView);
   const usersPagination = useTablePagination(filteredUsers);
 
   const updateForm = <K extends keyof UserFormState>(key: K, value: UserFormState[K]) => {
-    setForm((prev) => {
-      const next = { ...prev, [key]: value };
-
-      if (key === "role") {
-        const matchingRole = roleProfiles.find((entry) => entry.baseRole === value && entry.isActive && entry.isSystem);
-        next.roleProfileId = matchingRole?.id ?? "";
-      }
-
-      return next;
-    });
+    setForm((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
   };
 
   const resetForm = () => {
@@ -213,6 +214,7 @@ export function UserView() {
     setForm({
       ...initialFormState,
       internalCode: buildSuggestedManagedCode(users.map((entry) => entry.internalCode), "USR", 4),
+      roleProfileId: getDefaultRoleProfileId(roleProfiles, "EMPLOYEE"),
     });
     setCreateOpen(true);
   };
@@ -243,7 +245,6 @@ export function UserView() {
       address: form.address || null,
       birthDate: form.birthDate || null,
       newPassword: form.newPassword,
-      role: form.role,
       roleProfileId: form.roleProfileId || null,
       isActive: form.isActive,
     });
@@ -275,7 +276,6 @@ export function UserView() {
       address: form.address || null,
       birthDate: form.birthDate || null,
       newPassword: form.newPassword,
-      role: form.role,
       roleProfileId: form.roleProfileId || null,
       isActive: form.isActive,
     });
@@ -386,29 +386,20 @@ export function UserView() {
         />
         <TextField
           select
-          label="Rol"
-          value={form.role}
-          onChange={(event) => updateForm("role", event.target.value as UserRole)}
-        >
-          <MenuItem value="EMPLOYEE">Empleado</MenuItem>
-          <MenuItem value="ADMIN">Administrador</MenuItem>
-        </TextField>
-      </Box>
-
-      <TextField
-        select
-        label="Perfil de rol"
+          label="Rol y permisos"
         value={form.roleProfileId}
         onChange={(event) => updateForm("roleProfileId", event.target.value)}
-        helperText="Selecciona el perfil de permisos que tendra este usuario."
-      >
-        {availableRoleProfiles.map((entry) => (
-          <MenuItem key={entry.id} value={entry.id}>
-            {entry.name}
-            {entry.isSystem ? " (sistema)" : ""}
-          </MenuItem>
-        ))}
-      </TextField>
+        helperText="Administrador y Empleado tambien salen como perfiles del sistema."
+        required
+        >
+          {availableRoleProfiles.map((entry) => (
+            <MenuItem key={entry.id} value={entry.id}>
+              {entry.name}
+              {entry.isSystem ? " (sistema)" : ""}
+            </MenuItem>
+          ))}
+        </TextField>
+      </Box>
 
       <FormControlLabel
         control={

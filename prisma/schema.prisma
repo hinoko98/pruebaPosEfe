@@ -553,10 +553,12 @@ model BusinessSettings {
   phone              String?
   address            String?
   currencyCode       String   @default("COP")
+  themeMode          String   @default("LIGHT")
   defaultTaxRate     Float    @default(0.19)
   allowNegativeStock Boolean  @default(false)
   lowStockThreshold  Int      @default(5)
   invoicePrefix      String   @default("FV")
+  defaultReceiptTemplate String @default("NORMAL")
   receiptFooter      String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt

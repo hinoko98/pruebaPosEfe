@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import InvoicePanel from "@/features/sales/components/InvoicePanel";
 import PaymentDialog, { type PaymentDialogSubmit } from "@/features/sales/components/PaymentDialog";
 import ProductShelf from "@/features/sales/components/ProductShelf";
-import SaleReceiptDialog from "@/features/sales/components/SaleReceiptDialog";
+import SaleReceiptDialog, { type ReceiptPrintTemplate } from "@/features/sales/components/SaleReceiptDialog";
 import SalesTabs from "@/features/sales/components/SalesTabs";
 import SearchBar from "@/features/sales/components/SearchBar";
 import HelpHint from "@/components/ui/HelpHint";
@@ -378,10 +378,10 @@ export default function PosView() {
     }
   };
 
-  const handlePrintCompletedSale = async () => {
+  const handlePrintCompletedSale = async (template: ReceiptPrintTemplate) => {
     if (!completedSale) return;
     setPrinting(true);
-    const response = await window.api.printSaleInvoice(completedSale.id);
+    const response = await window.api.printSaleInvoice({ saleId: completedSale.id, template });
     setPrinting(false);
     if (!response.success) {
       setFeedback(response.message || "No se pudo imprimir la factura.");
@@ -519,7 +519,7 @@ export default function PosView() {
         open={Boolean(completedSale)}
         sale={completedSale}
         onClose={() => setCompletedSale(null)}
-        onPrint={() => void handlePrintCompletedSale()}
+        onPrint={(template) => void handlePrintCompletedSale(template)}
         printing={printing}
         canPrint={canPrintSales}
       />

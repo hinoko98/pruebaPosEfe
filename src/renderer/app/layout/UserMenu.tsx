@@ -14,6 +14,7 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import SettingsIcon from "@mui/icons-material/Settings";
 import PersonIcon from "@mui/icons-material/Person";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import { APP_PERMISSION_KEYS, hasPermissionKey } from "@/features/user/app-permissions";
 
 export type Role = "ADMIN" | "EMPLOYEE";
 
@@ -25,6 +26,7 @@ export type UserMenuItem = {
   external?: boolean; // si abre afuera (en web)
   href?: string; // link externo
   roles?: Role[]; // opcional: restringe por rol
+  permissionKey?: string;
   dividerBefore?: boolean;
 };
 
@@ -33,7 +35,7 @@ export default function UserMenu({
   onLogout,
   items,
 }: {
-  user: { name: string; email?: string; role: Role };
+  user: { name: string; email?: string; role: Role; permissions?: string[] };
   onLogout: () => void;
   items: UserMenuItem[];
 }) {
@@ -44,10 +46,11 @@ export default function UserMenu({
 
   const visibleItems = useMemo(() => {
     return items.filter((i) => {
-      if (!i.roles) return true;
-      return i.roles.includes(user.role);
+      if (i.roles && !i.roles.includes(user.role)) return false;
+      if (i.permissionKey && !hasPermissionKey(user.permissions, i.permissionKey)) return false;
+      return true;
     });
-  }, [items, user.role]);
+  }, [items, user]);
 
   const initials = useMemo(() => {
     const parts = user.name.trim().split(/\s+/);
@@ -170,7 +173,7 @@ export function defaultUserMenuItems(
       label: "Configuraciones",
       icon: <SettingsIcon />,
       path: `${basePath}/settings`,
-      roles: ["ADMIN"],
+      permissionKey: APP_PERMISSION_KEYS.settingsAccess,
     },
   ];
 }

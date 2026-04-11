@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -11,6 +13,7 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
+import IconButton from "@mui/material/IconButton";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import Table from "@mui/material/Table";
@@ -20,6 +23,7 @@ import TableHead from "@mui/material/TableHead";
 import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 import FloatingAlert from "@/components/feedback/FloatingAlert";
@@ -29,10 +33,11 @@ import { hasPermission } from "@/features/auth/permissions";
 import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
 import { useTablePagination } from "@/hooks/useTablePagination";
 import { copyText } from "@/lib/clipboard";
-import { buildSuggestedManagedCode, normalizePrefixedCode } from "@/lib/internal-code";
 
 type SupplierRow = Awaited<ReturnType<typeof window.api.listSuppliers>>["suppliers"][number];
 type SupplierDocumentType = NonNullable<Parameters<typeof window.api.createSupplier>[0]["documentType"]>;
+type DialogMode = "create" | "view" | "edit";
+
 type SupplierFormState = {
   internalCode: string;
   name: string;
@@ -110,11 +115,12 @@ function validateForm(form: SupplierFormState) {
 
 export default function SuppliersView() {
   const { user } = useAuth();
-  const [suppliers, setSuppliers] = useState<Awaited<ReturnType<typeof window.api.listSuppliers>>["suppliers"]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierRow[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingSupplier, setEditingSupplier] = useState<SupplierRow | null>(null);
+  const [dialogMode, setDialogMode] = useState<DialogMode>("create");
+  const [selectedSupplier, setSelectedSupplier] = useState<SupplierRow | null>(null);
   const [form, setForm] = useState<SupplierFormState>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ severity: "success" | "error" | "info"; message: string } | null>(null);
@@ -158,22 +164,34 @@ export default function SuppliersView() {
 
   const activeCount = suppliers.filter((supplier) => supplier.isActive).length;
   const withPurchasesCount = suppliers.filter((supplier) => supplier.purchasesCount > 0).length;
-  const canCreateSuppliers = hasPermission(user, APP_PERMISSION_KEYS.suppliersCreate);
+  const canViewSuppliers = hasPermission(user, APP_PERMISSION_KEYS.suppliersView);
   const canEditSuppliers = hasPermission(user, APP_PERMISSION_KEYS.suppliersEdit);
+  const canCreateSuppliers = hasPermission(user, APP_PERMISSION_KEYS.suppliersCreate);
   const suppliersPagination = useTablePagination(filteredSuppliers);
 
+  const isCreateMode = dialogMode === "create";
+  const isViewMode = dialogMode === "view";
+  const isEditMode = dialogMode === "edit";
+
   const openCreate = () => {
-    setEditingSupplier(null);
-    setForm({
-      ...emptyForm(),
-      internalCode: buildSuggestedManagedCode(suppliers.map((supplier) => supplier.internalCode), "PRV", 4),
-    });
+    setDialogMode("create");
+    setSelectedSupplier(null);
+    setForm(emptyForm());
+    setFormError(null);
+    setDialogOpen(true);
+  };
+
+  const openView = (supplier: SupplierRow) => {
+    setDialogMode("view");
+    setSelectedSupplier(supplier);
+    setForm(supplierToForm(supplier));
     setFormError(null);
     setDialogOpen(true);
   };
 
   const openEdit = (supplier: SupplierRow) => {
-    setEditingSupplier(supplier);
+    setDialogMode("edit");
+    setSelectedSupplier(supplier);
     setForm(supplierToForm(supplier));
     setFormError(null);
     setDialogOpen(true);
@@ -181,7 +199,7 @@ export default function SuppliersView() {
 
   const closeDialog = () => {
     setDialogOpen(false);
-    setEditingSupplier(null);
+    setSelectedSupplier(null);
     setFormError(null);
   };
 
@@ -203,8 +221,7 @@ export default function SuppliersView() {
       return;
     }
 
-    const payload = {
-      internalCode: form.internalCode.trim() || undefined,
+    const basePayload = {
       name: form.name.trim(),
       contactName: form.contactName.trim() || undefined,
       documentType: form.documentType,
@@ -212,12 +229,12 @@ export default function SuppliersView() {
       phone: form.phone.trim() || undefined,
       email: form.email.trim() || undefined,
       address: form.address.trim() || undefined,
-      isActive: form.isActive,
     };
 
-    const response = editingSupplier
-      ? await window.api.updateSupplier({ id: editingSupplier.id, ...payload })
-      : await window.api.createSupplier(payload);
+    const response =
+      isEditMode && selectedSupplier
+        ? await window.api.updateSupplier({ id: selectedSupplier.id, ...basePayload, isActive: form.isActive })
+        : await window.api.createSupplier(basePayload);
 
     if (!response.success) {
       setFeedback({ severity: "error", message: response.message || "No se pudo guardar el proveedor" });
@@ -226,7 +243,7 @@ export default function SuppliersView() {
 
     setFeedback({
       severity: "success",
-      message: editingSupplier ? "Proveedor actualizado correctamente." : "Proveedor creado correctamente.",
+      message: isEditMode ? "Proveedor actualizado correctamente." : "Proveedor creado correctamente.",
     });
     closeDialog();
     await loadSuppliers();
@@ -237,7 +254,7 @@ export default function SuppliersView() {
       <Box display="flex" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
         <Box display="flex" alignItems="center" gap={0.5}>
           <Typography variant="h4">Proveedores</Typography>
-          <HelpHint title="Centraliza proveedores, códigos internos y datos de contacto para compras y control administrativo." />
+          <HelpHint title="Centraliza proveedores, codigos internos y datos de contacto para compras y control administrativo." />
         </Box>
 
         {canCreateSuppliers ? (
@@ -254,9 +271,30 @@ export default function SuppliersView() {
       />
 
       <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "repeat(3, 1fr)" }} gap={2}>
-        <Card><CardContent><Typography variant="body2" color="text.secondary">Proveedores activos</Typography><Typography variant="h5">{activeCount}</Typography></CardContent></Card>
-        <Card><CardContent><Typography variant="body2" color="text.secondary">Total proveedores</Typography><Typography variant="h5">{suppliers.length}</Typography></CardContent></Card>
-        <Card><CardContent><Typography variant="body2" color="text.secondary">Con compras registradas</Typography><Typography variant="h5">{withPurchasesCount}</Typography></CardContent></Card>
+        <Card>
+          <CardContent>
+            <Typography variant="body2" color="text.secondary">
+              Proveedores activos
+            </Typography>
+            <Typography variant="h5">{activeCount}</Typography>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <Typography variant="body2" color="text.secondary">
+              Total proveedores
+            </Typography>
+            <Typography variant="h5">{suppliers.length}</Typography>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <Typography variant="body2" color="text.secondary">
+              Con compras registradas
+            </Typography>
+            <Typography variant="h5">{withPurchasesCount}</Typography>
+          </CardContent>
+        </Card>
       </Box>
 
       <Card sx={{ p: 2 }}>
@@ -319,19 +357,35 @@ export default function SuppliersView() {
                       </TableCell>
                       <TableCell>{supplier.createdBy || "Sin registro"}</TableCell>
                       <TableCell align="right">
-                        {canEditSuppliers ? (
-                          <Button size="small" onClick={() => openEdit(supplier)}>
-                            Ver / editar
-                          </Button>
-                        ) : (
-                          <Typography variant="body2" color="text.secondary">Sin acciones</Typography>
-                        )}
+                        <Box display="inline-flex" alignItems="center" gap={0.5}>
+                          {(canViewSuppliers || canEditSuppliers) ? (
+                            <Tooltip title="Ver proveedor">
+                              <IconButton size="small" onClick={() => openView(supplier)}>
+                                <VisibilityOutlinedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          ) : null}
+                          {canEditSuppliers ? (
+                            <Tooltip title="Editar proveedor">
+                              <IconButton size="small" onClick={() => openEdit(supplier)}>
+                                <EditOutlinedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          ) : null}
+                          {!canViewSuppliers && !canEditSuppliers ? (
+                            <Typography variant="body2" color="text.secondary">
+                              Sin acciones
+                            </Typography>
+                          ) : null}
+                        </Box>
                       </TableCell>
                     </TableRow>
                   ))}
                   {filteredSuppliers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} align="center">No hay proveedores para mostrar.</TableCell>
+                      <TableCell colSpan={7} align="center">
+                        No hay proveedores para mostrar.
+                      </TableCell>
                     </TableRow>
                   ) : null}
                 </TableBody>
@@ -352,27 +406,31 @@ export default function SuppliersView() {
       </Card>
 
       <Dialog open={dialogOpen} onClose={closeDialog} fullWidth maxWidth="md">
-        <DialogTitle>{editingSupplier ? "Editar proveedor" : "Nuevo proveedor"}</DialogTitle>
+        <DialogTitle>
+          {isCreateMode ? "Nuevo proveedor" : isEditMode ? "Editar proveedor" : "Ver proveedor"}
+        </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "1fr 1fr" }} gap={2}>
-              <TextField
-                label="Codigo interno"
-                value={form.internalCode}
-                onChange={(event) => setForm((prev) => ({ ...prev, internalCode: normalizePrefixedCode(event.target.value, "PRV") }))}
-                helperText="Visible en tabla y busqueda. Si lo dejas vacio, el sistema genera uno."
-              />
-              <Box />
+              {!isCreateMode ? (
+                <TextField
+                  label="Codigo interno"
+                  value={form.internalCode || "Generado automaticamente"}
+                  InputProps={{ readOnly: true }}
+                />
+              ) : null}
               <TextField
                 label="Nombre comercial"
                 value={form.name}
                 onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
                 required
+                disabled={isViewMode}
               />
               <TextField
                 label="Contacto"
                 value={form.contactName}
                 onChange={(event) => setForm((prev) => ({ ...prev, contactName: event.target.value }))}
+                disabled={isViewMode}
               />
               <TextField
                 select
@@ -381,48 +439,70 @@ export default function SuppliersView() {
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, documentType: event.target.value as SupplierDocumentType }))
                 }
+                disabled={isViewMode}
               >
                 {DOCUMENT_TYPES.map((type) => (
-                  <MenuItem key={type} value={type}>{type}</MenuItem>
+                  <MenuItem key={type} value={type}>
+                    {type}
+                  </MenuItem>
                 ))}
               </TextField>
               <TextField
                 label="Documento"
                 value={form.documentNumber}
                 onChange={(event) => setForm((prev) => ({ ...prev, documentNumber: event.target.value }))}
+                disabled={isViewMode}
               />
               <TextField
                 label="Telefono"
                 value={form.phone}
-                onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, phone: event.target.value.replace(/\D/g, "").slice(0, 10) }))
+                }
                 helperText="Debe tener 10 numeros"
+                disabled={isViewMode}
               />
               <TextField
                 label="Correo"
                 value={form.email}
                 onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
                 type="email"
+                disabled={isViewMode}
               />
               <TextField
                 label="Direccion"
                 value={form.address}
                 onChange={(event) => setForm((prev) => ({ ...prev, address: event.target.value }))}
+                disabled={isViewMode}
               />
-              <TextField
-                select
-                label="Estado"
-                value={form.isActive ? "ACTIVO" : "INACTIVO"}
-                onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.value === "ACTIVO" }))}
-              >
-                <MenuItem value="ACTIVO">Activo</MenuItem>
-                <MenuItem value="INACTIVO">Inactivo</MenuItem>
-              </TextField>
+              {isEditMode ? (
+                <TextField
+                  select
+                  label="Estado"
+                  value={form.isActive ? "ACTIVO" : "INACTIVO"}
+                  onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.value === "ACTIVO" }))}
+                >
+                  <MenuItem value="ACTIVO">Activo</MenuItem>
+                  <MenuItem value="INACTIVO">Inactivo</MenuItem>
+                </TextField>
+              ) : null}
+              {isViewMode ? (
+                <TextField
+                  label="Estado"
+                  value={form.isActive ? "Activo" : "Inactivo"}
+                  InputProps={{ readOnly: true }}
+                />
+              ) : null}
             </Box>
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeDialog}>Cancelar</Button>
-          <Button variant="contained" onClick={() => void handleSave()}>Guardar</Button>
+          <Button onClick={closeDialog}>{isViewMode ? "Cerrar" : "Cancelar"}</Button>
+          {!isViewMode ? (
+            <Button variant="contained" onClick={() => void handleSave()}>
+              Guardar
+            </Button>
+          ) : null}
         </DialogActions>
       </Dialog>
     </Stack>

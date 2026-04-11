@@ -207,6 +207,10 @@ export default function AppRoutes() {
                   element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.accountingAccess} />,
                   children: [{ path: "accounting", element: <AccountingView /> }],
                 },
+                {
+                  element: <PermissionRoute permissionKey={APP_PERMISSION_KEYS.settingsAccess} />,
+                  children: [{ path: "settings", element: <SettingsView /> }],
+                },
                 { path: "profile", element: <ProfileView /> },
                 { path: "security", element: <SecurityView /> },
               ],
