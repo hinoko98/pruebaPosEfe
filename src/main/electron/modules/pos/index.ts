@@ -26,7 +26,6 @@ import { createProductSchema, updateProductSchema } from "../../ipc/schemas/prod
 import { APP_PERMISSION_KEYS, hasPermissionKey } from "../../../../renderer/features/user/app-permissions";
 import { resolveManagedCode } from "../../../../shared/internalCodes";
 import {
-  getReferenceUnitPrice,
   normalizeProductPricingConfig,
   parseProductPricingConfig,
   stringifyProductPricingConfig,
@@ -208,7 +207,9 @@ function splitBusinessAddress(rawAddress?: string | null) {
 }
 
 function calculateSalePrice(cost: number, marginPercent = 0, hasTax = false, taxRate = 0) {
-  const basePrice = Number(cost || 0) * (1 + Number(marginPercent || 0) / 100);
+  const normalizedCost = Number(cost || 0);
+  const normalizedMargin = Math.min(Math.max(Number(marginPercent || 0), 0), 99.99) / 100;
+  const basePrice = normalizedMargin >= 1 ? 0 : normalizedCost / (1 - normalizedMargin);
   const total = hasTax ? basePrice * (1 + Number(taxRate || 0)) : basePrice;
   return money(total);
 }
@@ -1754,11 +1755,16 @@ export function registerBackofficeIpcHandlers({
       ? await prisma.productCategory.findUnique({ where: { id: data.categoryId } })
       : null;
     const sku = data.sku?.trim() || (await generateSku(prisma, data.name, category?.name));
-    const normalizedPricingConfig = normalizeProductPricingConfig(data.pricingConfig);
+    const normalizedPricingConfig = normalizeProductPricingConfig(
+      data.pricingConfig
+        ? {
+            ...data.pricingConfig,
+            basePrice: money(data.price),
+          }
+        : null
+    );
     const pricingConfigJson = stringifyProductPricingConfig(normalizedPricingConfig);
-    const referencePrice = pricingConfigJson
-      ? getReferenceUnitPrice(data.price, normalizedPricingConfig)
-      : money(data.price);
+    const basePrice = money(data.price);
 
     try {
       const product = await prisma.$transaction(async (tx) => {
@@ -1768,7 +1774,7 @@ export function registerBackofficeIpcHandlers({
             sku,
             barcode: data.barcode || null,
             unitMeasure: data.unitMeasure ?? "UNIDAD",
-            price: referencePrice,
+            price: basePrice,
             pricingConfigJson,
             cost: money(data.cost ?? 0),
             marginPercent: data.marginPercent ?? 0,
@@ -1825,11 +1831,15 @@ export function registerBackofficeIpcHandlers({
     const nextPricingConfig =
       parsed.data.pricingConfig === undefined
         ? parseProductPricingConfig(current.pricingConfigJson)
-        : normalizeProductPricingConfig(parsed.data.pricingConfig);
-    const nextReferencePrice =
-      nextPricingConfig && nextPricingConfig.enabled
-        ? getReferenceUnitPrice(parsed.data.price ?? current.price, nextPricingConfig)
-        : money(parsed.data.price === undefined ? current.price : parsed.data.price);
+        : normalizeProductPricingConfig(
+            parsed.data.pricingConfig
+              ? {
+                  ...parsed.data.pricingConfig,
+                  basePrice: money(parsed.data.price === undefined ? current.price : parsed.data.price),
+                }
+              : null
+          );
+    const nextBasePrice = money(parsed.data.price === undefined ? current.price : parsed.data.price);
 
     try {
       await prisma.$transaction(async (tx) => {
@@ -1840,7 +1850,7 @@ export function registerBackofficeIpcHandlers({
             sku: parsed.data.sku ?? current.sku,
             barcode: parsed.data.barcode === undefined ? current.barcode : parsed.data.barcode,
             unitMeasure: parsed.data.unitMeasure ?? current.unitMeasure,
-            price: nextReferencePrice,
+            price: nextBasePrice,
             pricingConfigJson:
               parsed.data.pricingConfig === undefined
                 ? current.pricingConfigJson

@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { Theme } from "@mui/material/styles";
 import { alpha, useTheme } from "@mui/material/styles";
@@ -14,6 +15,13 @@ const MenuIcon = () => (
 const SparkIcon = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
     <path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" />
+  </svg>
+);
+
+const SearchIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.5-3.5" />
   </svg>
 );
 
@@ -38,13 +46,19 @@ const AddIcon = () => (
   </svg>
 );
 
-const UserPlusIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
-    <circle cx="9.5" cy="7" r="3.5" />
-    <path d="M19 8v6M16 11h6" />
-  </svg>
-);
+const normalizeSearchValue = (value: string | null | undefined) =>
+  (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+type CustomerOption = {
+  id: string;
+  name: string;
+  document?: string | null;
+  phone?: string | null;
+};
 
 export default function InvoicePanel({
   cart,
@@ -64,7 +78,7 @@ export default function InvoicePanel({
   cart: CartItem[];
   totals: { subtotal: number; tax: number; total: number };
   customer: string;
-  customers: Array<{ id: string; name: string; document?: string | null; phone?: string | null }>;
+  customers: CustomerOption[];
   onCustomerChange: (value: string) => void;
   onCheckout: () => void;
   onCancel: () => void;
@@ -80,6 +94,8 @@ export default function InvoicePanel({
   const isEmpty = cart.length === 0;
   const cartCount = cart.reduce((sum, item) => sum + item.qty, 0);
   const inputStyle = getFieldStyle(theme);
+  const [customerQuery, setCustomerQuery] = useState(customer || "Consumidor final");
+  const [customerMenuOpen, setCustomerMenuOpen] = useState(false);
   const colors = {
     surface: theme.palette.background.paper,
     panel: isDark ? alpha(theme.palette.common.white, 0.03) : "#fbfdff",
@@ -91,6 +107,50 @@ export default function InvoicePanel({
     primarySoft: isDark ? alpha(theme.palette.primary.main, 0.16) : alpha(theme.palette.primary.main, 0.08),
     primarySoftStrong: isDark ? alpha(theme.palette.primary.main, 0.2) : "#edf7ff",
     danger: theme.palette.error.main,
+  };
+
+  const normalizedCustomerQuery = normalizeSearchValue(customerQuery);
+  const filteredCustomers = useMemo(() => {
+    if (!normalizedCustomerQuery) {
+      return customers.slice(0, 8);
+    }
+
+    return customers
+      .filter((entry) => {
+        const normalizedName = normalizeSearchValue(entry.name);
+        const normalizedDocument = normalizeSearchValue(entry.document);
+        return normalizedName.includes(normalizedCustomerQuery) || normalizedDocument.includes(normalizedCustomerQuery);
+      })
+      .slice(0, 8);
+  }, [customers, normalizedCustomerQuery]);
+
+  useEffect(() => {
+    setCustomerQuery(customer || "Consumidor final");
+  }, [customer]);
+
+  const commitCustomerSearch = () => {
+    const exactMatch = customers.find((entry) => {
+      const normalizedName = normalizeSearchValue(entry.name);
+      const normalizedDocument = normalizeSearchValue(entry.document);
+      return normalizedName === normalizedCustomerQuery || normalizedDocument === normalizedCustomerQuery;
+    });
+
+    if (exactMatch) {
+      onCustomerChange(exactMatch.name);
+      setCustomerQuery(exactMatch.name);
+      setCustomerMenuOpen(false);
+      return;
+    }
+
+    if (!normalizedCustomerQuery || normalizedCustomerQuery === normalizeSearchValue("Consumidor final")) {
+      onCustomerChange("Consumidor final");
+      setCustomerQuery("Consumidor final");
+      setCustomerMenuOpen(false);
+      return;
+    }
+
+    setCustomerQuery(customer || "Consumidor final");
+    setCustomerMenuOpen(false);
   };
 
   return (
@@ -159,63 +219,119 @@ export default function InvoicePanel({
           padding: "12px 14px 10px",
           borderBottom: `1px solid ${colors.border}`,
           display: "grid",
-          gap: 12,
+          gap: 10,
         }}
       >
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <FieldShell label="Lista de precio">
-            <select style={inputStyle} defaultValue="General">
-              <option value="General">General</option>
-            </select>
-          </FieldShell>
-
-          <FieldShell label="Numeracion">
-            <select style={inputStyle} defaultValue="Principal">
-              <option value="Principal">Principal</option>
-            </select>
-          </FieldShell>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "end" }}>
+        <div style={{ position: "relative" }}>
           <FieldShell label="Cliente">
-            <select
-              value={customer || "Consumidor final"}
-              onChange={(event) => onCustomerChange(event.target.value)}
-              style={inputStyle}
-              disabled={!canChangeCustomer}
-            >
-              <option value="Consumidor final">Consumidor final</option>
-              {customers.map((entry) => (
-                <option key={entry.id} value={entry.name}>
-                  {entry.name}
-                  {entry.document ? ` (${entry.document})` : ""}
-                </option>
-              ))}
-            </select>
+            <div style={{ position: "relative" }}>
+              <span
+                style={{
+                  position: "absolute",
+                  left: 12,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: colors.muted,
+                  pointerEvents: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <SearchIcon />
+              </span>
+              <input
+                value={customerQuery}
+                onChange={(event) => {
+                  setCustomerQuery(event.target.value);
+                  setCustomerMenuOpen(true);
+                }}
+                onFocus={() => setCustomerMenuOpen(true)}
+                onBlur={() => {
+                  window.setTimeout(() => {
+                    commitCustomerSearch();
+                  }, 120);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitCustomerSearch();
+                  }
+                  if (event.key === "Escape") {
+                    setCustomerQuery(customer || "Consumidor final");
+                    setCustomerMenuOpen(false);
+                  }
+                }}
+                placeholder="Buscar por cedula o nombre"
+                style={{
+                  ...inputStyle,
+                  paddingLeft: 38,
+                }}
+                disabled={!canChangeCustomer}
+              />
+            </div>
           </FieldShell>
 
-          <button
-            onClick={() => onCustomerChange("Consumidor final")}
-            title="Usar consumidor final"
-            disabled={!canChangeCustomer}
-            style={{
-              width: 42,
-              height: 36,
-              borderRadius: 12,
-              border: "none",
-              background: colors.primarySoft,
-              color: colors.primary,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: canChangeCustomer ? "pointer" : "not-allowed",
-              opacity: canChangeCustomer ? 1 : 0.6,
-            }}
-          >
-            <UserPlusIcon />
-          </button>
-        </div>
+          {canChangeCustomer && customerMenuOpen ? (
+            <div
+              style={{
+                position: "absolute",
+                top: "calc(100% + 6px)",
+                left: 0,
+                right: 0,
+                zIndex: 20,
+                borderRadius: 14,
+                border: `1px solid ${colors.border}`,
+                background: colors.surface,
+                boxShadow: isDark
+                  ? `0 14px 32px ${alpha("#000000", 0.35)}`
+                  : `0 14px 32px ${alpha("#0f172a", 0.14)}`,
+                overflow: "hidden",
+              }}
+            >
+              <button
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onCustomerChange("Consumidor final");
+                  setCustomerQuery("Consumidor final");
+                  setCustomerMenuOpen(false);
+                }}
+                style={getCustomerOptionStyle(colors, customer === "Consumidor final")}
+              >
+                <span>Consumidor final</span>
+                <span style={{ color: colors.muted }}>Venta rapida</span>
+              </button>
 
+              {filteredCustomers.length > 0 ? (
+                filteredCustomers.map((entry) => (
+                  <button
+                    key={entry.id}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      onCustomerChange(entry.name);
+                      setCustomerQuery(entry.name);
+                      setCustomerMenuOpen(false);
+                    }}
+                    style={getCustomerOptionStyle(colors, customer === entry.name)}
+                  >
+                    <span>{entry.name}</span>
+                    <span style={{ color: colors.muted }}>{entry.document || "Sin cedula"}</span>
+                  </button>
+                ))
+              ) : normalizedCustomerQuery ? (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    fontSize: 12,
+                    color: colors.muted,
+                  }}
+                >
+                  No hay clientes que coincidan con esa busqueda.
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div
@@ -403,7 +519,12 @@ export default function InvoicePanel({
               height: 42,
               borderRadius: 12,
               border: "none",
-              background: isEmpty || saving || !canCheckout ? (isDark ? alpha(theme.palette.common.white, 0.14) : "#d7dee7") : colors.primary,
+              background:
+                isEmpty || saving || !canCheckout
+                  ? isDark
+                    ? alpha(theme.palette.common.white, 0.14)
+                    : "#d7dee7"
+                  : colors.primary,
               color: isEmpty || saving || !canCheckout ? theme.palette.text.secondary : theme.palette.primary.contrastText,
               display: "flex",
               alignItems: "center",
@@ -508,12 +629,47 @@ function TotalRow({
   const theme = useTheme();
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-      <span style={{ fontSize: 12, color: strong ? theme.palette.text.primary : theme.palette.text.secondary, fontWeight: strong ? 800 : 600 }}>
+      <span
+        style={{
+          fontSize: 12,
+          color: strong ? theme.palette.text.primary : theme.palette.text.secondary,
+          fontWeight: strong ? 800 : 600,
+        }}
+      >
         {label}
       </span>
       <span style={{ fontSize: 12, color: theme.palette.text.primary, fontWeight: strong ? 800 : 700 }}>{value}</span>
     </div>
   );
+}
+
+function getCustomerOptionStyle(
+  colors: {
+    surface: string;
+    text: string;
+    muted: string;
+    primarySoft: string;
+    primary: string;
+    border: string;
+  },
+  selected: boolean
+): CSSProperties {
+  return {
+    width: "100%",
+    border: "none",
+    borderBottom: `1px solid ${colors.border}`,
+    background: selected ? colors.primarySoft : colors.surface,
+    color: selected ? colors.primary : colors.text,
+    padding: "10px 12px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontSize: 12,
+    textAlign: "left",
+  };
 }
 
 const getFieldStyle = (theme: Theme): CSSProperties => ({

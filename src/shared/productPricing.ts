@@ -1,5 +1,6 @@
 export type ProductPricingScale = {
   minQty: number;
+  label?: string | null;
   unitPrice: number;
 };
 
@@ -19,6 +20,7 @@ export type ProductPricingConfig = {
 
 export type ProductPricingScaleInput = {
   minQty: number;
+  label?: string | null;
   unitPrice: number;
 };
 
@@ -59,9 +61,11 @@ export type ProductPricingQuote = {
   unitPrice: number;
   subtotal: number;
   minimumPrice: number;
+  scaleMinQty: number | null;
+  scaleLabel: string | null;
   specialRuleId: string | null;
   specialRuleLabel: string | null;
-  source: "FIXED_PRICE" | "QUANTITY_SCALE" | "SPECIAL_RULE" | "MANUAL_OVERRIDE";
+  source: "BASE_PRICE" | "AUTO_SCALE" | "MANUAL_SCALE" | "SPECIAL_RULE" | "MANUAL_OVERRIDE";
   sourceLabel: string;
   priceBeforeMinimum: number;
   minimumApplied: boolean;
@@ -71,6 +75,7 @@ export type ProductPricingQuoteInput = {
   fallbackPrice: number;
   pricingConfig?: ProductPricingConfig | null;
   qty: number;
+  selectedScaleMinQty?: number | null;
   specialRuleId?: string | null;
   manualUnitPrice?: number | null;
   canOverrideMinimum?: boolean;
@@ -83,6 +88,7 @@ function toMoney(value: number | null | undefined) {
 function normalizeScale(scale: ProductPricingScale | ProductPricingScaleInput) {
   return {
     minQty: Math.max(1, Math.round(Number(scale.minQty || 0))),
+    label: String(scale.label || "").trim() || null,
     unitPrice: toMoney(scale.unitPrice),
   };
 }
@@ -158,6 +164,18 @@ function pickQuantityScalePrice(pricingConfig: ProductPricingConfig, qty: number
   return eligibleRules[0] ?? null;
 }
 
+function pickManualScale(pricingConfig: ProductPricingConfig, selectedScaleMinQty?: number | null) {
+  if (selectedScaleMinQty === null || selectedScaleMinQty === undefined) {
+    return null;
+  }
+
+  return (
+    pricingConfig.quantityScales
+      .map(normalizeScale)
+      .find((scale) => scale.minQty === selectedScaleMinQty && scale.unitPrice > 0) ?? null
+  );
+}
+
 function pickSpecialRule(pricingConfig: ProductPricingConfig, specialRuleId?: string | null) {
   if (!specialRuleId) return null;
 
@@ -228,19 +246,14 @@ export function getReferenceUnitPrice(fallbackPrice: number, pricingConfig?: Pro
   const normalized = normalizeProductPricingConfig(pricingConfig);
   if (!normalized) return toMoney(fallbackPrice);
 
-  const pricePool = [
-    normalized.basePrice,
-    ...normalized.quantityScales.map((scale) => scale.unitPrice),
-  ];
-  const validPrices = pricePool.filter((price) => price > 0);
-
-  return validPrices.length > 0 ? Math.min(...validPrices) : toMoney(fallbackPrice);
+  return normalized.basePrice > 0 ? normalized.basePrice : toMoney(fallbackPrice);
 }
 
 export function resolveProductPricingQuote({
   fallbackPrice,
   pricingConfig,
   qty,
+  selectedScaleMinQty,
   specialRuleId,
   manualUnitPrice,
   canOverrideMinimum = false,
@@ -258,9 +271,11 @@ export function resolveProductPricingQuote({
         unitPrice: normalizedFallbackPrice,
         subtotal: normalizedFallbackPrice * normalizedQty,
         minimumPrice: 0,
+        scaleMinQty: null,
+        scaleLabel: null,
         specialRuleId: null,
         specialRuleLabel: null,
-        source: "FIXED_PRICE",
+        source: "BASE_PRICE",
         sourceLabel: "Precio fijo del producto",
         priceBeforeMinimum: normalizedFallbackPrice,
         minimumApplied: false,
@@ -285,6 +300,8 @@ export function resolveProductPricingQuote({
         unitPrice: requestedUnitPrice,
         subtotal: requestedUnitPrice * normalizedQty,
         minimumPrice,
+        scaleMinQty: null,
+        scaleLabel: null,
         specialRuleId: null,
         specialRuleLabel: null,
         source: "MANUAL_OVERRIDE",
@@ -303,8 +320,17 @@ export function resolveProductPricingQuote({
     };
   }
 
-  const quantityScale = pickQuantityScalePrice(normalizedConfig, normalizedQty);
-  const baseResolvedPrice = quantityScale?.unitPrice ?? normalizedConfig.basePrice;
+  const manualScale = pickManualScale(normalizedConfig, selectedScaleMinQty);
+  if (selectedScaleMinQty !== null && selectedScaleMinQty !== undefined && !manualScale) {
+    return {
+      ok: false,
+      message: "La escala seleccionada ya no esta disponible para este producto.",
+    };
+  }
+
+  const automaticScale = manualScale ? null : pickQuantityScalePrice(normalizedConfig, normalizedQty);
+  const appliedScale = manualScale ?? automaticScale;
+  const baseResolvedPrice = appliedScale?.unitPrice ?? normalizedConfig.basePrice;
   const computedUnitPrice = specialRule?.unitPrice ?? baseResolvedPrice;
   const enforcedUnitPrice =
     computedUnitPrice < minimumPrice && !canOverrideMinimum ? minimumPrice : computedUnitPrice;
@@ -315,14 +341,24 @@ export function resolveProductPricingQuote({
       unitPrice: enforcedUnitPrice,
       subtotal: enforcedUnitPrice * normalizedQty,
       minimumPrice,
+      scaleMinQty: appliedScale?.minQty ?? null,
+      scaleLabel: appliedScale?.label ?? null,
       specialRuleId: specialRule?.id ?? null,
       specialRuleLabel: specialRule?.label ?? null,
-      source: specialRule ? "SPECIAL_RULE" : quantityScale ? "QUANTITY_SCALE" : "FIXED_PRICE",
+      source: specialRule
+        ? "SPECIAL_RULE"
+        : manualScale
+          ? "MANUAL_SCALE"
+          : automaticScale
+            ? "AUTO_SCALE"
+            : "BASE_PRICE",
       sourceLabel: specialRule
         ? specialRule.label
-        : quantityScale
-          ? `Escala desde ${quantityScale.minQty} unidades`
-          : "Precio base",
+        : manualScale
+          ? manualScale.label || `Escala manual ${manualScale.minQty} und`
+          : automaticScale
+            ? automaticScale.label || `Escala automatica desde ${automaticScale.minQty} unidades`
+            : "Precio base",
       priceBeforeMinimum: computedUnitPrice,
       minimumApplied: enforcedUnitPrice !== computedUnitPrice,
     },

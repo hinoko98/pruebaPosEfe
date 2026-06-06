@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld("api", {
         minimumPrice: number;
         quantityScales: Array<{
           minQty: number;
+          label?: string | null;
           unitPrice: number;
         }>;
         specialPriceRules: Array<{

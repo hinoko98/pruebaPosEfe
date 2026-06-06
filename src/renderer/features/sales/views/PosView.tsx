@@ -208,12 +208,17 @@ export default function PosView() {
   const resolveLinePricing = (
     product: Product,
     qty: number,
-    pricingContext: { specialRuleId?: string | null; manualUnitPrice?: number | null }
+    pricingContext: {
+      selectedScaleMinQty?: number | null;
+      specialRuleId?: string | null;
+      manualUnitPrice?: number | null;
+    }
   ) => {
     return resolveProductPricingQuote({
       fallbackPrice: product.price,
       pricingConfig: product.pricingConfig,
       qty,
+      selectedScaleMinQty: pricingContext.selectedScaleMinQty ?? null,
       specialRuleId: pricingContext.specialRuleId ?? null,
       manualUnitPrice: pricingContext.manualUnitPrice ?? null,
       canOverrideMinimum: canEditSaleItemPrices,
@@ -232,6 +237,7 @@ export default function PosView() {
       }
 
       const pricingResult = resolveLinePricing(product, line.qty, {
+        selectedScaleMinQty: line.selectedScaleMinQty ?? null,
         specialRuleId: line.specialRuleId,
         manualUnitPrice: line.manualUnitPrice ?? null,
       });
@@ -244,8 +250,11 @@ export default function PosView() {
         ...line,
         name: product.name,
         price: pricingResult.quote.unitPrice,
+        selectedScaleMinQty: pricingResult.quote.scaleMinQty,
+        selectedScaleLabel: pricingResult.quote.scaleLabel,
         specialRuleId: pricingResult.quote.specialRuleId,
         specialRuleLabel: pricingResult.quote.specialRuleLabel,
+        pricingSource: pricingResult.quote.source,
         pricingSourceLabel: pricingResult.quote.sourceLabel,
         minimumPrice: pricingResult.quote.minimumPrice,
         manualUnitPrice: line.manualUnitPrice ?? null,
@@ -305,17 +314,20 @@ export default function PosView() {
   const addConfiguredProductToCart = (payload: {
     product: Product;
     qty: number;
+    selectedScaleMinQty?: number | null;
     specialRuleId?: string | null;
     manualUnitPrice?: number | null;
   }) => {
     const currentLine = activeTab.cart.find(
       (item) =>
         item.productId === payload.product.id &&
+        (item.selectedScaleMinQty ?? null) === (payload.selectedScaleMinQty ?? null) &&
         (item.specialRuleId ?? null) === (payload.specialRuleId ?? null) &&
         (item.manualUnitPrice ?? null) === (payload.manualUnitPrice ?? null)
     );
     const mergedQty = (currentLine?.qty ?? 0) + payload.qty;
     const pricingResult = resolveLinePricing(payload.product, mergedQty, {
+      selectedScaleMinQty: payload.selectedScaleMinQty ?? null,
       specialRuleId: payload.specialRuleId ?? null,
       manualUnitPrice: payload.manualUnitPrice ?? null,
     });
@@ -333,8 +345,11 @@ export default function PosView() {
                 qty: mergedQty,
                 price: pricingResult.quote.unitPrice,
                 name: payload.product.name,
+                selectedScaleMinQty: pricingResult.quote.scaleMinQty,
+                selectedScaleLabel: pricingResult.quote.scaleLabel,
                 specialRuleId: pricingResult.quote.specialRuleId,
                 specialRuleLabel: pricingResult.quote.specialRuleLabel,
+                pricingSource: pricingResult.quote.source,
                 pricingSourceLabel: pricingResult.quote.sourceLabel,
                 minimumPrice: pricingResult.quote.minimumPrice,
                 manualUnitPrice: payload.manualUnitPrice ?? null,
@@ -351,8 +366,11 @@ export default function PosView() {
             price: pricingResult.quote.unitPrice,
             qty: payload.qty,
             taxRate: payload.product.taxRate ?? 0,
+            selectedScaleMinQty: pricingResult.quote.scaleMinQty,
+            selectedScaleLabel: pricingResult.quote.scaleLabel,
             specialRuleId: pricingResult.quote.specialRuleId,
             specialRuleLabel: pricingResult.quote.specialRuleLabel,
+            pricingSource: pricingResult.quote.source,
             pricingSourceLabel: pricingResult.quote.sourceLabel,
             minimumPrice: pricingResult.quote.minimumPrice,
             pricingEnabled: true,
@@ -374,6 +392,7 @@ export default function PosView() {
 
     if (line.pricingEnabled && product) {
       const pricingResult = resolveLinePricing(product, nextQty, {
+        selectedScaleMinQty: line.selectedScaleMinQty ?? null,
         specialRuleId: line.specialRuleId,
         manualUnitPrice: line.manualUnitPrice ?? null,
       });
@@ -390,8 +409,11 @@ export default function PosView() {
                 name: product.name,
                 qty: nextQty,
                 price: pricingResult.quote.unitPrice,
+                selectedScaleMinQty: pricingResult.quote.scaleMinQty,
+                selectedScaleLabel: pricingResult.quote.scaleLabel,
                 specialRuleId: pricingResult.quote.specialRuleId,
                 specialRuleLabel: pricingResult.quote.specialRuleLabel,
+                pricingSource: pricingResult.quote.source,
                 pricingSourceLabel: pricingResult.quote.sourceLabel,
                 minimumPrice: pricingResult.quote.minimumPrice,
                 manualUnitPrice: line.manualUnitPrice ?? null,
@@ -473,13 +495,13 @@ export default function PosView() {
         customerId: selectedCustomer?.id ?? null,
         paymentMethod,
         amountPaid,
-        payments: paymentsPlan,
         items: activeTab.cart.map((item) => ({
           productId: item.productId,
           qty: item.qty,
           pricingContext:
             item.pricingEnabled
               ? {
+                  selectedScaleMinQty: item.selectedScaleMinQty ?? null,
                   specialRuleId: item.specialRuleId ?? null,
                   manualUnitPrice: item.manualUnitPrice ?? null,
                 }
@@ -487,6 +509,7 @@ export default function PosView() {
         })),
         clientTotal: totals.total,
         allowDebt: registerDebt,
+        ...(paymentsPlan.length > 0 ? { payments: paymentsPlan } : {}),
       });
 
       if (!response.success) {

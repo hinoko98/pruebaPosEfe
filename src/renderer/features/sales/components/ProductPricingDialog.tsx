@@ -3,12 +3,17 @@ import { useEffect, useMemo, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
+import Radio from "@mui/material/Radio";
 import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
@@ -23,10 +28,13 @@ type ProductPricingDialogProps = {
   onClose: () => void;
   onConfirm: (payload: {
     qty: number;
+    selectedScaleMinQty?: number | null;
     specialRuleId?: string | null;
     manualUnitPrice?: number | null;
   }) => void;
 };
+
+type SelectionMode = "BASE" | "SCALE" | "SPECIAL" | "MANUAL";
 
 function normalizeManualValue(value: string) {
   const parsed = Number(value || 0);
@@ -40,52 +48,91 @@ export default function ProductPricingDialog({
   onClose,
   onConfirm,
 }: ProductPricingDialogProps) {
-  const [specialRuleId, setSpecialRuleId] = useState("");
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>("BASE");
+  const [selectedScaleMinQty, setSelectedScaleMinQty] = useState<number | null>(null);
   const [qty, setQty] = useState("1");
   const [manualUnitPrice, setManualUnitPrice] = useState("");
 
   useEffect(() => {
     if (!open || !product?.pricingConfig?.enabled) return;
-    setSpecialRuleId("");
+    setSelectionMode("BASE");
+    setSelectedScaleMinQty(null);
     setQty("1");
     setManualUnitPrice("");
   }, [open, product]);
 
   const normalizedQty = Math.max(1, Math.round(Number(qty || 1)));
   const normalizedManualUnitPrice = normalizeManualValue(manualUnitPrice);
+  const specialRule = product?.pricingConfig?.specialPriceRules[0] ?? null;
 
-  const pricingResult = useMemo(() => {
+  const preview = useMemo(() => {
     if (!product) return null;
 
     return resolveProductPricingQuote({
       fallbackPrice: product.price,
       pricingConfig: product.pricingConfig,
       qty: normalizedQty,
-      specialRuleId: specialRuleId || null,
-      manualUnitPrice: normalizedManualUnitPrice,
+      selectedScaleMinQty: selectionMode === "SCALE" ? selectedScaleMinQty : null,
+      specialRuleId: selectionMode === "SPECIAL" ? specialRule?.id ?? null : null,
+      manualUnitPrice: selectionMode === "MANUAL" ? normalizedManualUnitPrice : null,
       canOverrideMinimum: canEditManualPrice,
     });
-  }, [canEditManualPrice, normalizedManualUnitPrice, normalizedQty, product, specialRuleId]);
+  }, [
+    canEditManualPrice,
+    normalizedManualUnitPrice,
+    normalizedQty,
+    product,
+    selectedScaleMinQty,
+    selectionMode,
+    specialRule?.id,
+  ]);
 
-  const quantityButtons = useMemo(() => {
+  const scaleRows = useMemo(() => {
     const config = product?.pricingConfig;
     if (!config?.enabled) return [];
-    return config.quantityScales.map((scale) => scale.minQty);
+    return [...config.quantityScales].sort((left, right) => left.minQty - right.minQty);
   }, [product]);
 
+  const handleSelectBase = () => {
+    setSelectionMode("BASE");
+    setSelectedScaleMinQty(null);
+    setQty("1");
+  };
+
+  const handleSelectScale = (scaleMinQty: number) => {
+    setSelectionMode("SCALE");
+    setSelectedScaleMinQty(scaleMinQty);
+    setQty(String(scaleMinQty));
+  };
+
+  const handleSelectSpecial = () => {
+    setSelectionMode("SPECIAL");
+    setSelectedScaleMinQty(null);
+    if (normalizedQty < 1) {
+      setQty("1");
+    }
+  };
+
+  const handleManualPriceChange = (value: string) => {
+    setManualUnitPrice(value);
+    setSelectionMode("MANUAL");
+    setSelectedScaleMinQty(null);
+  };
+
   const handleConfirm = () => {
-    if (!pricingResult?.ok) return;
+    if (!preview?.ok) return;
 
     onConfirm({
       qty: normalizedQty,
-      specialRuleId: pricingResult.quote.specialRuleId,
-      manualUnitPrice: normalizedManualUnitPrice,
+      selectedScaleMinQty: selectionMode === "SCALE" ? selectedScaleMinQty : null,
+      specialRuleId: selectionMode === "SPECIAL" ? specialRule?.id ?? null : null,
+      manualUnitPrice: selectionMode === "MANUAL" ? normalizedManualUnitPrice : null,
     });
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Configurar precio por cantidad</DialogTitle>
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
+      <DialogTitle>Seleccionar precio por escala</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
           {product ? (
@@ -94,118 +141,119 @@ export default function ProductPricingDialog({
                 {product.name}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Define la cantidad, usa un atajo de escala si te sirve y activa una tarifa especial solo si aplica.
+                Elige una opcion de precio. El producto se agregara con la cantidad sugerida de la opcion seleccionada y
+                luego podras ajustar la cantidad en la factura.
               </Typography>
             </Box>
           ) : null}
 
           {!product?.pricingConfig?.enabled ? (
-            <Alert severity="warning">Este producto no tiene reglas de precio por cantidad activas.</Alert>
+            <Alert severity="warning">Este producto no tiene escalas configuradas.</Alert>
           ) : (
             <>
-              <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: "160px 1fr" }} gap={2}>
-                <TextField
-                  label="Cantidad"
-                  type="number"
-                  inputProps={{ min: 1, step: 1 }}
-                  value={qty}
-                  onChange={(event) => setQty(event.target.value)}
-                />
-                <Stack spacing={1}>
-                  <Typography variant="body2" color="text.secondary">
-                    Atajos por escala
-                  </Typography>
-                  <Box display="flex" gap={1} flexWrap="wrap">
-                    {[1, ...quantityButtons].filter((value, index, values) => values.indexOf(value) === index).map((value) => (
-                      <Chip
-                        key={value}
-                        label={`${value} und`}
-                        color={normalizedQty === value ? "primary" : "default"}
-                        variant={normalizedQty === value ? "filled" : "outlined"}
-                        onClick={() => setQty(String(value))}
-                        clickable
-                      />
-                    ))}
-                  </Box>
-                </Stack>
-              </Box>
+              <Alert severity="info">
+                Precio base {fmt(product.price)}
+                {product.pricingConfig.minimumPrice > 0 ? ` | Minimo permitido ${fmt(product.pricingConfig.minimumPrice)}` : ""}
+                {specialRule ? ` | Tarifa especial ${fmt(specialRule.unitPrice)}` : ""}
+              </Alert>
 
               <Box
                 sx={{
                   border: "1px solid",
                   borderColor: "divider",
                   borderRadius: 2,
-                  p: 1.5,
+                  overflow: "hidden",
                 }}
               >
-                <Stack spacing={1}>
-                  <Typography variant="subtitle2" fontWeight={800}>
-                    Tarifas especiales
-                  </Typography>
-                  {product.pricingConfig.specialPriceRules.length === 0 ? (
-                    <Typography variant="body2" color="text.secondary">
-                      Este producto no tiene tarifas especiales configuradas.
-                    </Typography>
-                  ) : (
-                    <Box display="flex" gap={1} flexWrap="wrap">
-                      <Chip
-                        label="Sin tarifa especial"
-                        color={!specialRuleId ? "primary" : "default"}
-                        variant={!specialRuleId ? "filled" : "outlined"}
-                        onClick={() => setSpecialRuleId("")}
-                        clickable
-                      />
-                      {product.pricingConfig.specialPriceRules.map((rule) => (
-                        <Chip
-                          key={rule.id}
-                          label={`${rule.label} · ${fmt(rule.unitPrice)}`}
-                          color={specialRuleId === rule.id ? "primary" : "default"}
-                          variant={specialRuleId === rule.id ? "filled" : "outlined"}
-                          onClick={() => setSpecialRuleId(rule.id)}
-                          clickable
-                        />
-                      ))}
-                    </Box>
-                  )}
-                </Stack>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell width={72}>Sel.</TableCell>
+                      <TableCell>Cantidad</TableCell>
+                      <TableCell>Referencia</TableCell>
+                      <TableCell align="right">Precio</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    <TableRow hover selected={selectionMode === "BASE"} onClick={handleSelectBase} sx={{ cursor: "pointer" }}>
+                      <TableCell padding="checkbox">
+                        <Radio checked={selectionMode === "BASE"} onChange={handleSelectBase} />
+                      </TableCell>
+                      <TableCell>1</TableCell>
+                      <TableCell>Precio base</TableCell>
+                      <TableCell align="right">{fmt(product.price)}</TableCell>
+                    </TableRow>
+                    {scaleRows.map((scale) => (
+                      <TableRow
+                        key={scale.minQty}
+                        hover
+                        selected={selectionMode === "SCALE" && selectedScaleMinQty === scale.minQty}
+                        onClick={() => handleSelectScale(scale.minQty)}
+                        sx={{ cursor: "pointer" }}
+                      >
+                        <TableCell padding="checkbox">
+                          <Radio
+                            checked={selectionMode === "SCALE" && selectedScaleMinQty === scale.minQty}
+                            onChange={() => handleSelectScale(scale.minQty)}
+                          />
+                        </TableCell>
+                        <TableCell>{scale.minQty}</TableCell>
+                        <TableCell>{scale.label || `Escala desde ${scale.minQty} und`}</TableCell>
+                        <TableCell align="right">{fmt(scale.unitPrice)}</TableCell>
+                      </TableRow>
+                    ))}
+                    {specialRule ? (
+                      <TableRow hover selected={selectionMode === "SPECIAL"} onClick={handleSelectSpecial} sx={{ cursor: "pointer" }}>
+                        <TableCell padding="checkbox">
+                          <Radio checked={selectionMode === "SPECIAL"} onChange={handleSelectSpecial} />
+                        </TableCell>
+                        <TableCell>1</TableCell>
+                        <TableCell>{specialRule.label}</TableCell>
+                        <TableCell align="right">{fmt(specialRule.unitPrice)}</TableCell>
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
               </Box>
 
-              <Alert severity="info">
-                Base {fmt(product.pricingConfig.basePrice)}
-                {product.pricingConfig.minimumPrice > 0 ? ` | Minimo ${fmt(product.pricingConfig.minimumPrice)}` : ""}
-                {product.pricingConfig.quantityScales.length > 0
-                  ? ` | ${product.pricingConfig.quantityScales.length} escalas configuradas`
-                  : " | Sin escalas adicionales"}
-              </Alert>
-
-              {canEditManualPrice ? (
+              <Box display="grid" gridTemplateColumns={{ xs: "1fr", md: canEditManualPrice ? "1fr 1fr" : "1fr" }} gap={2}>
                 <TextField
-                  label="Precio manual autorizado"
+                  label="Cantidad a agregar"
                   type="number"
-                  inputProps={{ min: 0, step: 1 }}
-                  value={manualUnitPrice}
-                  onChange={(event) => setManualUnitPrice(event.target.value)}
-                  helperText="Opcional. Solo para roles autorizados."
+                  inputProps={{ min: 1, step: 1 }}
+                  value={qty}
+                  onChange={(event) => setQty(event.target.value)}
+                  helperText="Se carga con la cantidad sugerida por la opcion elegida, pero puedes ajustarla."
                 />
-              ) : null}
 
-              {pricingResult && !pricingResult.ok ? (
-                <Alert severity="error">{pricingResult.message}</Alert>
-              ) : pricingResult?.ok ? (
+                {canEditManualPrice ? (
+                  <TextField
+                    label="Precio manual autorizado"
+                    type="number"
+                    inputProps={{ min: 0, step: 1 }}
+                    value={manualUnitPrice}
+                    onChange={(event) => handleManualPriceChange(event.target.value)}
+                    helperText="Si lo diligencias, esta opcion reemplaza la seleccion de la tabla."
+                  />
+                ) : null}
+              </Box>
+
+              {preview && !preview.ok ? (
+                <Alert severity="error">{preview.message}</Alert>
+              ) : preview?.ok ? (
                 <Box
                   sx={{
                     border: "1px solid",
                     borderColor: "divider",
                     borderRadius: 2,
                     p: 2,
-                    bgcolor: "background.paper",
                   }}
                 >
                   <Stack spacing={1}>
-                    <Row label="Precio unitario" value={fmt(pricingResult.quote.unitPrice)} />
-                    <Row label="Subtotal" value={fmt(pricingResult.quote.subtotal)} />
-                    <Row label="Regla aplicada" value={pricingResult.quote.sourceLabel} />
-                    <Row label="Minimo aplicado" value={pricingResult.quote.minimumApplied ? "Si" : "No"} />
+                    <Row label="Precio unitario" value={fmt(preview.quote.unitPrice)} />
+                    <Row label="Subtotal" value={fmt(preview.quote.subtotal)} />
+                    <Row label="Origen aplicado" value={preview.quote.sourceLabel} />
+                    <Row label="Cantidad sugerida" value={String(normalizedQty)} />
                   </Stack>
                 </Box>
               ) : null}
@@ -217,7 +265,7 @@ export default function ProductPricingDialog({
         <Button onClick={onClose} color="inherit">
           Cancelar
         </Button>
-        <Button variant="contained" onClick={handleConfirm} disabled={!pricingResult?.ok}>
+        <Button variant="contained" onClick={handleConfirm} disabled={!preview?.ok}>
           Agregar
         </Button>
       </DialogActions>

@@ -2,6 +2,7 @@ export type Money = number;
 
 export type ProductPricingScale = {
   minQty: number;
+  label?: string | null;
   unitPrice: number;
 };
 
@@ -41,8 +42,11 @@ export type CartItem = {
   price: Money;
   qty: number;
   taxRate?: number;
+  selectedScaleMinQty?: number | null;
+  selectedScaleLabel?: string | null;
   specialRuleId?: string | null;
   specialRuleLabel?: string | null;
+  pricingSource?: "BASE_PRICE" | "AUTO_SCALE" | "MANUAL_SCALE" | "SPECIAL_RULE" | "MANUAL_OVERRIDE";
   pricingSourceLabel?: string | null;
   minimumPrice?: number;
   pricingEnabled?: boolean;

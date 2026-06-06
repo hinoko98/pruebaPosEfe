@@ -17,7 +17,9 @@ function roundMoney(value: number) {
 }
 
 export function calculateSalePrice(cost: number, marginPercent = 0, hasTax = false, taxRate = 0) {
-  const basePrice = Number(cost || 0) * (1 + Number(marginPercent || 0) / 100);
+  const normalizedCost = Number(cost || 0);
+  const normalizedMargin = Math.min(Math.max(Number(marginPercent || 0), 0), 99.99) / 100;
+  const basePrice = normalizedMargin >= 1 ? 0 : normalizedCost / (1 - normalizedMargin);
   const total = hasTax ? basePrice * (1 + Number(taxRate || 0)) : basePrice;
   return roundMoney(total);
 }
@@ -35,5 +37,9 @@ export function calculateMarginFromPrice(cost: number, salePrice: number, hasTax
       ? normalizedSalePrice / (1 + Number(taxRate || 0))
       : normalizedSalePrice;
 
-  return Number((((baseWithoutTax - normalizedCost) / normalizedCost) * 100).toFixed(2));
+  if (baseWithoutTax <= 0) {
+    return 0;
+  }
+
+  return Number((((baseWithoutTax - normalizedCost) / baseWithoutTax) * 100).toFixed(2));
 }

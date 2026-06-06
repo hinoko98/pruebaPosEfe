@@ -1632,6 +1632,7 @@ ipcMain.handle("sales:create", async (_event, payload) => {
       fallbackPrice: product.price,
       pricingConfig: productPricingConfig,
       qty: item.qty,
+      selectedScaleMinQty: item.pricingContext?.selectedScaleMinQty ?? null,
       specialRuleId: item.pricingContext?.specialRuleId ?? null,
       manualUnitPrice: item.pricingContext?.manualUnitPrice ?? null,
       canOverrideMinimum: canEditSaleItemPrices,
@@ -1767,6 +1768,8 @@ ipcMain.handle("sales:create", async (_event, payload) => {
               lineTotal: item.lineTotal,
               lineProfit: item.lineProfit,
               pricingContextJson: JSON.stringify({
+                scaleMinQty: item.quote.scaleMinQty,
+                scaleLabel: item.quote.scaleLabel,
                 specialRuleId: item.quote.specialRuleId,
                 specialRuleLabel: item.quote.specialRuleLabel,
                 source: item.quote.source,

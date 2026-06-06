@@ -41,7 +41,6 @@ import { APP_PERMISSION_KEYS } from "@/features/user/app-permissions";
 import { useTablePagination } from "@/hooks/useTablePagination";
 import ProductCreateView from "@/features/products/views/ProductCreateView";
 import ProductEditView from "@/features/products/views/ProductEditView";
-import { getReferenceUnitPrice } from "../../../../shared/productPricing";
 
 function currency(value: number) {
   return new Intl.NumberFormat("es-CO", {
@@ -70,7 +69,7 @@ function salePriceLabel(product: Product) {
     return currency(product.price);
   }
 
-  return `Desde ${currency(getReferenceUnitPrice(product.price, product.pricingConfig))}`;
+  return `Base ${currency(product.price)} | ${product.pricingConfig.quantityScales.length} escalas`;
 }
 
 function buildSubcategoryMap(categories: Awaited<ReturnType<typeof window.api.listProductCategories>>["categories"]) {
@@ -403,7 +402,7 @@ export default function ProductListView() {
               <DetailRow label="Categoria" value={categoryLabel(viewProduct)} />
               <DetailRow label="Stock actual" value={String(viewProduct.stock)} />
               <DetailRow label="Costo actual" value={currency(viewProduct.cost)} />
-              <DetailRow label="% de ganancia" value={`${viewProduct.marginPercent}%`} />
+              <DetailRow label="Margen %" value={`${viewProduct.marginPercent}%`} />
               <DetailRow label="Utilidad estimada por unidad" value={currency(estimatedUnitProfit(viewProduct))} />
               <DetailRow label="IVA" value={getTaxLabel(viewProduct.hasTax, viewProduct.taxRate)} />
               <DetailRow

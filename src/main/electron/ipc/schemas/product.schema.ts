@@ -21,6 +21,7 @@ const allowedTaxRates = [0, 0.05, 0.19] as const;
 
 const productPricingScaleSchema = z.object({
   minQty: z.number().int().min(1, "La cantidad minima debe ser mayor a 0"),
+  label: z.string().trim().max(80).optional().nullable(),
   unitPrice: z.number().min(0, "El precio unitario no puede ser negativo"),
 });
 
@@ -50,6 +51,14 @@ export const productPricingConfigSchema = z
     }
 
     const seenScaleQuantities = new Set<number>();
+    if (data.quantityScales.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Debes configurar al menos una escala valida",
+        path: ["quantityScales"],
+      });
+    }
+
     for (const [scaleIndex, scale] of data.quantityScales.entries()) {
       if (scale.unitPrice < data.minimumPrice) {
         ctx.addIssue({
@@ -71,6 +80,14 @@ export const productPricingConfigSchema = z
     }
 
     const seenRuleIds = new Set<string>();
+    if (data.specialPriceRules.length > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Solo se permite una tarifa especial por producto",
+        path: ["specialPriceRules"],
+      });
+    }
+
     for (const [ruleIndex, rule] of data.specialPriceRules.entries()) {
       if (rule.unitPrice < data.minimumPrice) {
         ctx.addIssue({

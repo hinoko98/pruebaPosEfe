@@ -2,6 +2,7 @@ export type Money = number;
 
 export type ProductPricingScale = {
   minQty: number;
+  label?: string | null;
   unitPrice: number;
 };
 
